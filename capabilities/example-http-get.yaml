@@ -1,0 +1,16 @@
+name: http.get
+description: "Make a GET request to any URL and return the response"
+sideEffect: read
+estimateCents: 1
+http:
+  url: "{{input.url}}"
+  method: GET
+input:
+  url:
+    type: string
+    required: true
+    description: "The URL to fetch"
+output:
+  body:
+    type: object
+    description: "The response body"

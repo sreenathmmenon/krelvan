@@ -1,0 +1,151 @@
+/**
+ * "notify_webhook" capability — POST a JSON payload to a webhook URL.
+ *
+ * Security: SSRF guard rejects private/loopback hostnames.
+ *
+ * Input:
+ *   url     — required; must be a valid URL pointing to a public host.
+ *   payload — JSON string or object to send (default {}). Objects are JSON.stringify'd.
+ *   event   — optional string; added as X-Genesis-Event header.
+ *   secret  — optional string; if present, body is HMAC-SHA256 signed and sent as
+ *             X-Genesis-Signature header.
+ *
+ * Output:
+ *   { notified, status, error? }
+ *
+ * Cost: 2 on success, 1 on failure, 0 on validation failure.
+ */
+
+import { createHmac } from "node:crypto";
+import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
+import { getLogger } from "../observability/logger.js";
+
+const log = getLogger("notify-webhook");
+
+const TIMEOUT_MS = 10_000;
+
+/** Patterns that indicate private / loopback addresses. */
+const PRIVATE_PATTERNS: RegExp[] = [
+  /^localhost$/i,
+  /^127\./,
+  /^10\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^192\.168\./,
+  /^0\.0\.0\.0$/,
+  /^::1$/,
+  /^\[:/,
+];
+
+function isPrivateHost(hostname: string): boolean {
+  return PRIVATE_PATTERNS.some((re) => re.test(hostname));
+}
+
+function buildBody(payload: unknown): string {
+  if (typeof payload === "string") return payload;
+  if (payload === null || payload === undefined) return "{}";
+  try {
+    return JSON.stringify(payload);
+  } catch {
+    return "{}";
+  }
+}
+
+export const notifyWebhookCapability: CapabilityPlugin = {
+  name: "notify_webhook",
+  sideEffect: "write-reversible",
+
+  estimateCents: () => 2,
+
+  async invoke(call: EffectCall): Promise<{ output: unknown; claimedCostCents: number }> {
+    const input = call.input as Record<string, unknown>;
+
+    // ── Input validation ──────────────────────────────────────────────────────
+
+    const rawUrl = input["url"];
+    if (!rawUrl || typeof rawUrl !== "string" || rawUrl.trim() === "") {
+      return {
+        output: { notified: false, status: 0, error: "url is required" },
+        claimedCostCents: 0,
+      };
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl.trim());
+    } catch {
+      return {
+        output: { notified: false, status: 0, error: "url is required" },
+        claimedCostCents: 0,
+      };
+    }
+
+    // ── SSRF guard ────────────────────────────────────────────────────────────
+    if (isPrivateHost(parsed.hostname)) {
+      log.warn({ nodeId: call.nodeId, hostname: parsed.hostname }, "notify_webhook: SSRF guard blocked private address");
+      return {
+        output: { notified: false, status: 0, error: "SSRF: private addresses are not allowed" },
+        claimedCostCents: 0,
+      };
+    }
+
+    // ── Build request body ────────────────────────────────────────────────────
+    const body = buildBody(input["payload"] ?? {});
+
+    // ── Build headers ─────────────────────────────────────────────────────────
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+
+    const event = input["event"];
+    if (typeof event === "string" && event.trim() !== "") {
+      headers["x-genesis-event"] = event.trim();
+    }
+
+    const secret = input["secret"];
+    if (typeof secret === "string" && secret !== "") {
+      const sig = createHmac("sha256", secret).update(body).digest("hex");
+      headers["x-genesis-signature"] = sig;
+    }
+
+    // ── Fetch ─────────────────────────────────────────────────────────────────
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    log.info(
+      { nodeId: call.nodeId, url: rawUrl.trim(), bodyLen: body.length, hasEvent: !!event, hasSig: !!secret },
+      "notify_webhook: posting webhook",
+    );
+
+    let resp: Response;
+    try {
+      resp = await fetch(rawUrl.trim(), {
+        method: "POST",
+        headers,
+        body,
+        signal: controller.signal,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      const msg = (e as Error).message ?? String(e);
+      log.warn({ nodeId: call.nodeId, url: rawUrl.trim(), err: msg }, "notify_webhook: network error");
+      return {
+        output: { notified: false, status: 0, error: msg },
+        claimedCostCents: 1,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const notified = resp.status >= 200 && resp.status < 300;
+
+    log.info(
+      { nodeId: call.nodeId, status: resp.status, notified },
+      "notify_webhook: webhook delivered",
+    );
+
+    return {
+      output: { notified, status: resp.status },
+      claimedCostCents: notified ? 2 : 1,
+    };
+  },
+};

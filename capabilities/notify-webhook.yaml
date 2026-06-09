@@ -1,0 +1,38 @@
+name: webhook.notify
+description: POST a JSON event notification to a configured webhook endpoint.
+sideEffect: message-human
+estimateCents: 0
+
+http:
+  url: "{{input.webhookUrl}}"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+    Authorization: "Bearer {{secret:webhook-secret}}"
+  body:
+    event: "{{input.event}}"
+    payload: "{{input.payload}}"
+
+input:
+  webhookUrl:
+    type: string
+    required: true
+    description: The webhook URL to POST to
+  event:
+    type: string
+    required: true
+    description: Event name/type
+  payload:
+    type: string
+    description: Optional payload string (JSON-encoded if structured data)
+
+output:
+  status:
+    type: string
+    description: HTTP status code of the response
+
+successCodes:
+  - 200
+  - 201
+  - 202
+  - 204

@@ -1,0 +1,28 @@
+name: web.fetch
+description: Fetch the contents of a public URL and return the response body as text.
+sideEffect: read
+estimateCents: 0
+
+http:
+  url: "{{input.url}}"
+  method: GET
+  headers:
+    User-Agent: "Genesis-Agent/1.0"
+
+input:
+  url:
+    type: string
+    required: true
+    description: The URL to fetch (must be publicly accessible, no auth required)
+
+output:
+  body:
+    type: string
+    description: Response body as plain text
+
+responseField: body
+
+successCodes:
+  - 200
+  - 201
+  - 204
