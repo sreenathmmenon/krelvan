@@ -6,3 +6,5 @@ node_modules/
 /data/*.db*
 dist/
 .DS_Store
+web/.next/
+web/node_modules/
