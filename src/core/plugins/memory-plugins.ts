@@ -16,7 +16,7 @@
  *     Input: { summary?: string } — if absent, auto-summarizes from run state.
  *
  * Both capabilities read/write memory files under:
- *   GENESIS_DATA_DIR/memory/<agentId>.(episodes|semantic).json
+ *   KRELVAN_DATA_DIR/memory/<agentId>.(episodes|semantic).json
  *
  * The memory file format is intentionally simple flat JSON — the same format
  * that projectMemory() in memory.ts folds from the ledger. We mirror the
@@ -34,7 +34,7 @@ import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("memory-plugins");
 
-const DATA_DIR = process.env["GENESIS_DATA_DIR"] ?? "./data";
+const DATA_DIR = process.env["KRELVAN_DATA_DIR"] ?? "./data";
 const MEMORY_DIR = join(DATA_DIR, "memory");
 
 function ensureMemoryDir(): void {

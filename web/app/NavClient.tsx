@@ -60,7 +60,7 @@ export default function NavClient() {
             fontWeight: 700, fontSize: 17, color: "var(--brand)",
             letterSpacing: "-.02em", textDecoration: "none",
           }}>
-            Genesis
+            Krelvan
           </a>
           <nav style={{ display: "flex", gap: "var(--s5)" }} aria-label="Main navigation">
             {NAV_LINKS.map(link => {

@@ -1,82 +1,16 @@
 "use client";
 
-import { useState, useEffect, use, useCallback, useRef, useReducer } from "react";
+import { useState, useEffect, use, useRef, useReducer, useMemo } from "react";
 import {
-  getAgent, getAgentRuns, getRun, getRunEvents, timeAgo,
+  getAgent, getAgentRuns, getRun, getRunEvents, startRun, timeAgo,
   type AgentRecord, type RunRecord, type RunDetail, type LedgerEvent,
   type ManifestNode, type ManifestEdge, type ManifestExpr, API_BASE,
 } from "../../../lib/api";
+import { layoutGraph, graphBounds, edgePath, type NodePos } from "../../../lib/layout";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface NodePos  { x: number; y: number; w: number; h: number; }
 interface ViewXform { tx: number; ty: number; scale: number; }
-
-// ── Layout — Sugiyama-lite, left-to-right ─────────────────────────────────────
-
-const NODE_W = 180;
-const NODE_H = 104;   // taller to fit capability pills
-const H_GAP  = 100;
-const V_GAP  = 64;
-
-function layoutNodes(
-  nodes: ManifestNode[],
-  edges: ManifestEdge[],
-  entry: string,
-): Map<string, NodePos> {
-  const layer = new Map<string, number>();
-  const visited = new Set<string>();
-
-  function visit(id: string, depth: number) {
-    if (!visited.has(id) || (layer.get(id) ?? 0) < depth) {
-      layer.set(id, depth);
-      visited.add(id);
-      for (const e of edges) if (e.from === id) visit(e.to, depth + 1);
-    }
-  }
-  visit(entry, 0);
-  for (const n of nodes) if (!layer.has(n.id)) layer.set(n.id, 0);
-
-  const byLayer = new Map<number, string[]>();
-  for (const n of nodes) {
-    const l = layer.get(n.id)!;
-    if (!byLayer.has(l)) byLayer.set(l, []);
-    byLayer.get(l)!.push(n.id);
-  }
-
-  const maxLayer = Math.max(0, ...[...layer.values()]);
-  const positions = new Map<string, NodePos>();
-  for (let l = 0; l <= maxLayer; l++) {
-    const col = byLayer.get(l) ?? [];
-    col.forEach((id, rowIdx) => {
-      positions.set(id, {
-        x: l * (NODE_W + H_GAP),
-        y: rowIdx * (NODE_H + V_GAP),
-        w: NODE_W,
-        h: NODE_H,
-      });
-    });
-  }
-  return positions;
-}
-
-function canvasBounds(positions: Map<string, NodePos>) {
-  let maxX = 0, maxY = 0;
-  for (const p of positions.values()) {
-    maxX = Math.max(maxX, p.x + p.w);
-    maxY = Math.max(maxY, p.y + p.h);
-  }
-  return { w: maxX + H_GAP * 2, h: maxY + V_GAP * 2 };
-}
-
-function edgePath(from: NodePos, to: NodePos): string {
-  const x1 = from.x + from.w;
-  const y1 = from.y + from.h / 2;
-  const x2 = to.x;
-  const y2 = to.y + to.h / 2;
-  const cx = (x1 + x2) / 2;
-  return `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`;
-}
 
 // ── Edge condition label renderer ─────────────────────────────────────────────
 
@@ -158,10 +92,11 @@ function replayUpTo(events: LedgerEvent[], cursor: number): ReplayState {
 // ── Pan + zoom reducer ────────────────────────────────────────────────────────
 
 type PanAction =
-  | { type: "wheel"; dx: number; dy: number; cx: number; cy: number; dz: number }
+  | { type: "wheel"; dz: number; cx: number; cy: number }
   | { type: "pan_start"; x: number; y: number }
   | { type: "pan_move"; x: number; y: number }
   | { type: "pan_end" }
+  | { type: "zoom_step"; factor: number; cx: number; cy: number }
   | { type: "reset"; containerW: number; containerH: number; graphW: number; graphH: number };
 
 interface PanState extends ViewXform { dragging: boolean; lastX: number; lastY: number; }
@@ -169,14 +104,26 @@ interface PanState extends ViewXform { dragging: boolean; lastX: number; lastY: 
 function panReducer(state: PanState, action: PanAction): PanState {
   switch (action.type) {
     case "wheel": {
-      const factor = 1 - action.dz * 0.001;
-      const newScale = Math.max(0.2, Math.min(3, state.scale * factor));
-      const scaleChange = newScale / state.scale;
+      // Clamp delta to avoid jumpy trackpad behaviour (trackpads send pixels, mice send lines)
+      const normalized = Math.max(-40, Math.min(40, action.dz));
+      const factor = 1 - normalized * 0.008;
+      const newScale = Math.max(0.15, Math.min(4, state.scale * factor));
+      const sr = newScale / state.scale;
       return {
         ...state,
         scale: newScale,
-        tx: action.cx - scaleChange * (action.cx - state.tx),
-        ty: action.cy - scaleChange * (action.cy - state.ty),
+        tx: action.cx - sr * (action.cx - state.tx),
+        ty: action.cy - sr * (action.cy - state.ty),
+      };
+    }
+    case "zoom_step": {
+      const newScale = Math.max(0.15, Math.min(4, state.scale * action.factor));
+      const sr = newScale / state.scale;
+      return {
+        ...state,
+        scale: newScale,
+        tx: action.cx - sr * (action.cx - state.tx),
+        ty: action.cy - sr * (action.cy - state.ty),
       };
     }
     case "pan_start":
@@ -191,6 +138,93 @@ function panReducer(state: PanState, action: PanAction): PanState {
       return { ...state, scale: s, tx: (action.containerW - action.graphW * s) / 2, ty: (action.containerH - action.graphH * s) / 2 - 40, dragging: false, lastX: 0, lastY: 0 };
     }
   }
+}
+
+// ── Run selector dropdown ──────────────────────────────────────────────────────
+
+function RunSelectorDropdown({ runs, selectedRunId, onSelect }: {
+  runs: RunRecord[];
+  selectedRunId: string | null;
+  onSelect: (id: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onOutside);
+    return () => document.removeEventListener("mousedown", onOutside);
+  }, []);
+
+  const selected = runs.find(r => r.runId === selectedRunId);
+  const statusColor = (s: string) =>
+    s === "running" ? "var(--live)" : s === "completed" ? "var(--ok)" : s === "failed" ? "var(--danger)" : "var(--ink-muted)";
+  const statusDot = (s: string) =>
+    s === "running" ? "⬤" : s === "completed" ? "✓" : s === "failed" ? "✗" : "○";
+
+  return (
+    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          fontSize: 12, padding: "5px 10px", borderRadius: "var(--r)",
+          border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)",
+          cursor: "pointer", display: "flex", alignItems: "center", gap: 6, minWidth: 180, maxWidth: 240,
+        }}
+      >
+        {selected ? (
+          <>
+            <span style={{ color: statusColor(selected.status), fontSize: 10, flexShrink: 0 }}>{statusDot(selected.status)}</span>
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>{selected.manifestName}</span>
+            <span style={{ color: "var(--ink-muted)", flexShrink: 0, fontSize: 11 }}>{timeAgo(selected.createdAt)}</span>
+          </>
+        ) : (
+          <span style={{ color: "var(--ink-soft)", flex: 1, textAlign: "left" }}>Blueprint (no run)</span>
+        )}
+        <span style={{ color: "var(--ink-muted)", fontSize: 9, flexShrink: 0 }}>▾</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, minWidth: 260, zIndex: 100,
+          background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--r)",
+          boxShadow: "var(--shadow-md)", overflow: "hidden",
+        }}>
+          <div
+            onClick={() => { onSelect(null); setOpen(false); }}
+            style={{
+              padding: "8px 12px", fontSize: 12, cursor: "pointer",
+              borderBottom: "1px solid var(--line)",
+              background: !selectedRunId ? "var(--brand-tint)" : "transparent",
+              color: !selectedRunId ? "var(--brand)" : "var(--ink-soft)",
+            }}
+          >
+            Blueprint only
+          </div>
+          {runs.map(r => (
+            <div
+              key={r.runId}
+              onClick={() => { onSelect(r.runId); setOpen(false); }}
+              style={{
+                padding: "8px 12px", fontSize: 12, cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 8,
+                borderBottom: "1px solid var(--line)",
+                background: r.runId === selectedRunId ? "var(--brand-tint)" : "transparent",
+              }}
+              onMouseEnter={e => { if (r.runId !== selectedRunId) (e.currentTarget as HTMLDivElement).style.background = "var(--surface-hover)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = r.runId === selectedRunId ? "var(--brand-tint)" : "transparent"; }}
+            >
+              <span style={{ color: statusColor(r.status), fontSize: 11, flexShrink: 0 }}>{statusDot(r.status)}</span>
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: r.runId === selectedRunId ? 600 : 400 }}>{r.manifestName}</span>
+              <span style={{ color: "var(--ink-muted)", fontSize: 11, flexShrink: 0 }}>{timeAgo(r.createdAt)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -211,12 +245,20 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   const [scrubCursor, setScrubCursor] = useState<number | null>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [startingRun, setStartingRun] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [pan, dispatchPan] = useReducer(panReducer, {
     tx: 80, ty: 80, scale: 1, dragging: false, lastX: 0, lastY: 0,
   });
+
+  // Canvas mount fade-in
+  useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 30);
+    return () => clearTimeout(t);
+  }, []);
 
   // ── Load agent + runs ──────────────────────────────────────────────────────
 
@@ -249,6 +291,8 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
       }
     }
     void loadRun();
+    setScrubCursor(null);
+    setIsScrubbing(false);
   }, [selectedRunId]);
 
   // ── SSE for live runs ──────────────────────────────────────────────────────
@@ -286,10 +330,11 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   // ── Fit graph to viewport on first load ───────────────────────────────────
 
   const manifest = detail?.manifest ?? agent?.signed.manifest ?? null;
-  const positions = manifest
-    ? layoutNodes(manifest.nodes, manifest.edges, manifest.entry)
-    : new Map<string, NodePos>();
-  const { w: graphW, h: graphH } = canvasBounds(positions);
+  const positions = useMemo(
+    () => manifest ? layoutGraph(manifest.nodes, manifest.edges, manifest.entry) : new Map<string, NodePos>(),
+    [manifest],
+  );
+  const { w: graphW, h: graphH } = graphBounds(positions);
 
   useEffect(() => {
     if (!containerRef.current || !manifest) return;
@@ -313,8 +358,11 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
     runSpentCents: liveProjection.budget.runSpentCents,
   } : null;
 
-  const scrubbedProjection: ReplayState | null =
-    isScrubbing && scrubCursor !== null ? replayUpTo(events, scrubCursor) : null;
+  // Memoized — avoids O(n) full-replay scan on every render during scrubbing
+  const scrubbedProjection: ReplayState | null = useMemo(
+    () => isScrubbing && scrubCursor !== null ? replayUpTo(events, scrubCursor) : null,
+    [events, scrubCursor, isScrubbing],
+  );
 
   const activeProjection: ReplayState | null =
     scrubbedProjection ?? (mode === "live" ? normalizedLive : null);
@@ -337,23 +385,49 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
       if (e.key === "0" && !e.metaKey && !e.ctrlKey) {
         const c = containerRef.current;
         if (!c || !manifest) return;
-        const b = canvasBounds(positions);
-        dispatchPan({ type: "reset", containerW: c.clientWidth, containerH: c.clientHeight, graphW: b.w, graphH: b.h });
+        dispatchPan({ type: "reset", containerW: c.clientWidth, containerH: c.clientHeight, graphW, graphH });
+      }
+      if ((e.key === "=" || e.key === "+") && !e.metaKey) {
+        const c = containerRef.current;
+        if (!c) return;
+        dispatchPan({ type: "zoom_step", factor: 1.2, cx: c.clientWidth / 2, cy: c.clientHeight / 2 });
+      }
+      if (e.key === "-" && !e.metaKey) {
+        const c = containerRef.current;
+        if (!c) return;
+        dispatchPan({ type: "zoom_step", factor: 1 / 1.2, cx: c.clientWidth / 2, cy: c.clientHeight / 2 });
       }
       if (e.key === "Tab" && !e.shiftKey && !e.metaKey) {
         if (selectedRunId) { e.preventDefault(); setMode(m => m === "blueprint" ? "live" : "blueprint"); }
       }
+      // Arrow keys step through timeline when live or scrubbing
+      if (mode === "live" || isScrubbing) {
+        if (e.key === "ArrowRight") {
+          setScrubCursor(prev => {
+            const next = Math.min(events.length - 1, (prev ?? events.length - 1) + 1);
+            setIsScrubbing(next < events.length - 1);
+            return next;
+          });
+        }
+        if (e.key === "ArrowLeft") {
+          setScrubCursor(prev => {
+            const next = Math.max(0, (prev ?? events.length - 1) - 1);
+            setIsScrubbing(true);
+            return next;
+          });
+        }
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedNode, selectedRunId, manifest, graphW, graphH]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedRunId, manifest, graphW, graphH, mode, isScrubbing, events.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Pointer handlers for pan ──────────────────────────────────────────────
 
   function onWheel(e: React.WheelEvent) {
     e.preventDefault();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    dispatchPan({ type: "wheel", dx: 0, dy: 0, dz: e.deltaY, cx: e.clientX - rect.left, cy: e.clientY - rect.top });
+    dispatchPan({ type: "wheel", dz: e.deltaY, cx: e.clientX - rect.left, cy: e.clientY - rect.top });
   }
 
   function onPointerDown(e: React.PointerEvent) {
@@ -383,7 +457,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   );
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--canvas)" }}>
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--canvas)", opacity: mounted ? 1 : 0, transition: "opacity 200ms ease" }}>
 
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
       <div style={{
@@ -398,29 +472,42 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
 
         <div style={{ width: 1, height: 20, background: "var(--line)" }} />
 
-        {/* agent name */}
-        <span style={{ fontWeight: 700, fontSize: 14, color: "var(--ink)", letterSpacing: "-.01em", flexShrink: 0 }}>
-          {agent.signed.manifest.name}
-        </span>
+        {/* agent name + intent */}
+        <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 1, maxWidth: 220 }}>
+          <span style={{ fontWeight: 700, fontSize: 14, color: "var(--ink)", letterSpacing: "-.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {agent.signed.manifest.name}
+          </span>
+          {agent.signed.provenance.intent && (
+            <span style={{ fontSize: 11, color: "var(--ink-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {agent.signed.provenance.intent.length > 60 ? agent.signed.provenance.intent.slice(0, 57) + "…" : agent.signed.provenance.intent}
+            </span>
+          )}
+        </div>
+
+        {/* tamper-evident ledger badge */}
+        <a
+          href={selectedRunId ? `/runs/${selectedRunId}#timeline` : `/agents/${agentId}`}
+          title="Every event is HMAC-chained — the ledger cannot be altered without detection"
+          style={{
+            display: "flex", alignItems: "center", gap: 4,
+            padding: "3px 9px", borderRadius: "var(--r-pill)",
+            background: "var(--ok-tint)", border: "1px solid rgba(22,121,76,.2)",
+            fontSize: 11, fontWeight: 600, color: "var(--ok)",
+            textDecoration: "none", flexShrink: 0,
+            transition: "background 120ms",
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = "#bbf7d0")}
+          onMouseLeave={e => (e.currentTarget.style.background = "var(--ok-tint)")}
+        >
+          ✓ Signed
+        </a>
 
         {/* run selector */}
-        <select
-          value={selectedRunId ?? ""}
-          onChange={e => { setSelectedRunId(e.target.value || null); setMode(e.target.value ? "live" : "blueprint"); }}
-          style={{
-            fontSize: 12, padding: "4px 8px", borderRadius: "var(--r)",
-            border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)",
-            cursor: "pointer", maxWidth: 220,
-          }}
-        >
-          <option value="">Blueprint (no run)</option>
-          {runs.map(r => (
-            <option key={r.runId} value={r.runId}>
-              {r.status === "running" ? "⬤ " : r.status === "completed" ? "✓ " : r.status === "failed" ? "✗ " : ""}
-              {r.manifestName} · {timeAgo(r.createdAt)}
-            </option>
-          ))}
-        </select>
+        <RunSelectorDropdown
+          runs={runs}
+          selectedRunId={selectedRunId}
+          onSelect={(id) => { setSelectedRunId(id); setMode(id ? "live" : "blueprint"); }}
+        />
 
         {/* blueprint / live toggle */}
         {selectedRunId && (
@@ -459,6 +546,33 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
           </div>
         )}
 
+        {/* run again */}
+        <button
+          onClick={() => {
+            if (startingRun) return;
+            setStartingRun(true);
+            startRun(agentId)
+              .then(async r => {
+                const [updatedRuns] = await Promise.all([getAgentRuns(agentId)]);
+                setRuns(updatedRuns);
+                setSelectedRunId(r.runId);
+                setMode("live");
+              })
+              .finally(() => setStartingRun(false));
+          }}
+          disabled={startingRun || detail?.run.status === "running"}
+          style={{
+            padding: "5px 14px", fontSize: 12, fontWeight: 600, borderRadius: "var(--r)",
+            border: "none", cursor: startingRun ? "default" : "pointer",
+            background: "var(--brand)", color: "#fff",
+            opacity: (startingRun || detail?.run.status === "running") ? 0.55 : 1,
+            transition: "opacity 150ms",
+            flexShrink: 0,
+          }}
+        >
+          {startingRun ? "Starting…" : "▶ Run again"}
+        </button>
+
         <div style={{ flex: 1 }} />
 
         {/* run stats */}
@@ -482,25 +596,38 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
           </div>
         )}
 
-        {/* fit button */}
-        <button onClick={() => {
-          if (!containerRef.current) return;
-          const { width, height } = containerRef.current.getBoundingClientRect();
-          dispatchPan({ type: "reset", containerW: width, containerH: height, graphW, graphH });
-        }} title="Fit graph to viewport (0)" style={{
-          padding: "4px 10px", fontSize: 12, borderRadius: "var(--r)",
-          border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer", color: "var(--ink-soft)",
-          flexShrink: 0,
-        }}>
-          ⊡ Fit
-        </button>
+        {/* zoom + fit controls */}
+        <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
+          <button
+            onClick={() => { const c = containerRef.current; if (!c) return; dispatchPan({ type: "zoom_step", factor: 1 / 1.2, cx: c.clientWidth / 2, cy: c.clientHeight / 2 }); }}
+            title="Zoom out (−)"
+            style={{ padding: "3px 8px", fontSize: 14, borderRadius: "var(--r)", border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer", color: "var(--ink-soft)", lineHeight: 1 }}
+          >−</button>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)", minWidth: 36, textAlign: "center" }}>
+            {Math.round(pan.scale * 100)}%
+          </span>
+          <button
+            onClick={() => { const c = containerRef.current; if (!c) return; dispatchPan({ type: "zoom_step", factor: 1.2, cx: c.clientWidth / 2, cy: c.clientHeight / 2 }); }}
+            title="Zoom in (+)"
+            style={{ padding: "3px 8px", fontSize: 14, borderRadius: "var(--r)", border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer", color: "var(--ink-soft)", lineHeight: 1 }}
+          >+</button>
+          <button onClick={() => {
+            if (!containerRef.current) return;
+            const { width, height } = containerRef.current.getBoundingClientRect();
+            dispatchPan({ type: "reset", containerW: width, containerH: height, graphW, graphH });
+          }} title="Fit graph to viewport (0)" style={{
+            padding: "3px 10px", fontSize: 12, borderRadius: "var(--r)",
+            border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer", color: "var(--ink-soft)",
+          }}>⊡</button>
+        </div>
 
-        <span style={{ fontSize: 10, color: "var(--ink-muted)", flexShrink: 0 }}>
-          <kbd style={{ fontFamily: "var(--font-mono)", background: "var(--surface-sunken)", border: "1px solid var(--line)", borderRadius: 3, padding: "1px 5px" }}>0</kbd> fit
-          {" · "}
-          <kbd style={{ fontFamily: "var(--font-mono)", background: "var(--surface-sunken)", border: "1px solid var(--line)", borderRadius: 3, padding: "1px 5px" }}>Tab</kbd> mode
-          {" · "}
-          <kbd style={{ fontFamily: "var(--font-mono)", background: "var(--surface-sunken)", border: "1px solid var(--line)", borderRadius: 3, padding: "1px 5px" }}>Esc</kbd> deselect
+        <span style={{ fontSize: 10, color: "var(--ink-muted)", flexShrink: 0, display: "flex", gap: 6 }}>
+          {[["0","fit"],["+/−","zoom"],["Tab","mode"],["Esc","desel"]].map(([k, l]) => (
+            <span key={k}>
+              <kbd style={{ fontFamily: "var(--font-mono)", background: "var(--surface-sunken)", border: "1px solid var(--line)", borderRadius: 3, padding: "1px 4px" }}>{k}</kbd>
+              {" "}{l}
+            </span>
+          ))}
         </span>
       </div>
 
@@ -657,6 +784,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
                       heatFraction={heatFraction}
                       showCost={showCost}
                       nodeCost={nodeCost}
+                      isEntry={node.id === manifest.entry}
                       onClick={() => setSelectedNode(selectedNode === node.id ? null : node.id)}
                     />
                   );
@@ -666,7 +794,43 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
             </svg>
           )}
 
-          {/* ── HMAC badge ─────────────────────────────────────────────── */}
+          {/* ── No runs onboarding ─────────────────────────────────────── */}
+          {runs.length === 0 && !loading && mode === "blueprint" && (
+            <div style={{
+              position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+              zIndex: 10, pointerEvents: "auto", textAlign: "center",
+              background: "rgba(248,247,244,.96)", border: "1px solid var(--line-strong)",
+              borderRadius: "var(--r)", padding: "var(--s6) var(--s7)",
+              boxShadow: "var(--shadow-md)", maxWidth: 320,
+            }}>
+              <div style={{ fontSize: 28, marginBottom: "var(--s3)" }}>▶</div>
+              <p style={{ fontWeight: 700, fontSize: 15, marginBottom: "var(--s2)", letterSpacing: "-.01em" }}>This is the blueprint</p>
+              <p style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.6, marginBottom: "var(--s5)" }}>
+                Run the agent to see it execute live — every decision, cost, and transition recorded to a tamper-evident ledger.
+              </p>
+              <button
+                className="btn btn-primary"
+                disabled={startingRun}
+                style={{ opacity: startingRun ? 0.6 : 1 }}
+                onClick={() => {
+                  if (startingRun) return;
+                  setStartingRun(true);
+                  startRun(agentId)
+                    .then(async r => {
+                      const updatedRuns = await getAgentRuns(agentId);
+                      setRuns(updatedRuns);
+                      setSelectedRunId(r.runId);
+                      setMode("live");
+                    })
+                    .finally(() => setStartingRun(false));
+                }}
+              >
+                {startingRun ? "Starting…" : "▶ Run now"}
+              </button>
+            </div>
+          )}
+
+          {/* ── Ledger badge ───────────────────────────────────────────── */}
           {events.length > 0 && (
             <div style={{
               position: "absolute", bottom: isScrubbing ? 72 : 16, right: 16, zIndex: 5,
@@ -676,9 +840,10 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
               display: "flex", alignItems: "center", gap: 5,
               border: "1px solid var(--ok)",
               transition: "bottom 200ms",
-            }} title="Append-only ledger — HMAC-signed, tamper-evident">
+              cursor: "help",
+            }} title="Append-only ledger — each event is SHA-256 content-addressed, hash-chained, and HMAC-signed. No event can be altered after it is written.">
               <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--ok)", display: "inline-block" }} />
-              {events.length} events · HMAC verified
+              {events.length} events · Tamper-evident ledger
             </div>
           )}
 
@@ -736,10 +901,16 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
             )}
             {/* event label at cursor */}
             {isScrubbing && scrubCursor !== null && events[scrubCursor] && (
-              <span style={{ fontSize: 11, color: "var(--ink-soft)", fontFamily: "var(--font-mono)", flexShrink: 0, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span style={{ fontSize: 11, color: "var(--ink-soft)", fontFamily: "var(--font-mono)", flexShrink: 0, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {events[scrubCursor]!.type}{events[scrubCursor]!.nodeId ? ` · ${events[scrubCursor]!.nodeId}` : ""}
               </span>
             )}
+            <span style={{ fontSize: 10, color: "var(--ink-muted)", flexShrink: 0 }}>
+              <kbd style={{ fontFamily: "var(--font-mono)", background: "var(--surface-sunken)", border: "1px solid var(--line)", borderRadius: 3, padding: "1px 4px" }}>←</kbd>
+              {" / "}
+              <kbd style={{ fontFamily: "var(--font-mono)", background: "var(--surface-sunken)", border: "1px solid var(--line)", borderRadius: 3, padding: "1px 4px" }}>→</kbd>
+              {" step"}
+            </span>
           </div>
         )}
       </div>
@@ -760,7 +931,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
 
 // ── Canvas Node (SVG) ─────────────────────────────────────────────────────────
 
-function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showCost, nodeCost, onClick }: {
+function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showCost, nodeCost, isEntry, onClick }: {
   node: ManifestNode;
   pos: NodePos;
   status: "running" | "done" | "idle";
@@ -769,6 +940,7 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showC
   heatFraction: number;
   showCost: boolean;
   nodeCost: number;
+  isEntry: boolean;
   onClick: () => void;
 }) {
   const { x, y, w, h } = pos;
@@ -776,22 +948,21 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showC
 
   const baseBg    = status === "running" ? "#FEF3E0" : status === "done" ? "#DCFCE7" : "#FFFFFF";
   const heatRgba  = heatFraction > 0 ? `rgba(217,119,6,${Math.min(0.78, heatFraction * 0.85)})` : "transparent";
-  const border    = status === "running" ? "#D97706" : status === "done" ? "#16794C" : isSelected ? "#0E7C75" : "#E7E3DC";
-  const bw        = status !== "idle" || isSelected ? 2 : 1;
+  const border    = status === "running" ? "#D97706" : status === "done" ? "#16794C" : (isSelected || isEntry) ? "#0E7C75" : "#E7E3DC";
+  const bw        = status !== "idle" || isSelected || isEntry ? 2 : 1;
 
   // Capability pills — up to 3, then "+N"
   const caps = node.capabilities.slice(0, 3);
   const extra = node.capabilities.length - caps.length;
-  const PILL_H = 16;
+  const PILL_H = 18;
   const PILL_PAD_X = 6;
-  const PILL_START_Y = y + 58;
+  const PILL_START_Y = y + 62;
 
-  // Compute pill positions
   let pillX = x + 10;
   const pills: Array<{ text: string; px: number; pw: number }> = [];
   for (const c of caps) {
     const text = `${capIcon(c.name)} ${c.name.length > 8 ? c.name.slice(0, 7) + "…" : c.name}`;
-    const pw = Math.min(70, text.length * 6.2 + PILL_PAD_X * 2);
+    const pw = Math.min(72, text.length * 6.5 + PILL_PAD_X * 2);
     pills.push({ text, px: pillX, pw });
     pillX += pw + 5;
   }
@@ -825,16 +996,24 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showC
         style={{ transition: "fill 350ms, stroke 350ms" }}
       />
 
-      {/* node id — truncated */}
+      {/* entry marker — small teal triangle above top-left corner */}
+      {isEntry && (
+        <polygon
+          points={`${x+10},${y} ${x+22},${y} ${x+16},${y-8}`}
+          fill="var(--brand)" opacity={0.75}
+        />
+      )}
+
+      {/* role — primary label, bold */}
       <text x={x + 14} y={y + 20} fontSize={13} fontWeight={700}
         fill={status === "running" ? "var(--live)" : status === "done" ? "var(--ok)" : "var(--ink)"}
         dominantBaseline="middle">
-        {node.id.length > 20 ? node.id.slice(0, 18) + "…" : node.id}
+        {node.role.length > 22 ? node.role.slice(0, 20) + "…" : node.role}
       </text>
 
-      {/* role */}
-      <text x={x + 14} y={y + 37} fontSize={10} fill="#8A938F" dominantBaseline="middle">
-        {node.role.length > 26 ? node.role.slice(0, 24) + "…" : node.role}
+      {/* node id — secondary, muted mono */}
+      <text x={x + 14} y={y + 38} fontSize={10} fill="var(--ink-muted)" dominantBaseline="middle" fontFamily="var(--font-mono)">
+        {node.id.length > 26 ? node.id.slice(0, 24) + "…" : node.id}
       </text>
 
       {/* capability pills — clipped to node width */}
@@ -848,7 +1027,7 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showC
           <g key={i}>
             <rect x={px} y={PILL_START_Y} width={pw} height={PILL_H} rx={5}
               fill="var(--canvas)" stroke="var(--line)" strokeWidth={1} />
-            <text x={px + PILL_PAD_X} y={PILL_START_Y + PILL_H / 2} fontSize={9}
+            <text x={px + PILL_PAD_X} y={PILL_START_Y + PILL_H / 2} fontSize={11}
               fill="var(--ink-soft)" dominantBaseline="middle">{text}</text>
           </g>
         ))}
@@ -902,6 +1081,26 @@ function CopyButton({ text }: { text: string }) {
 
 // ── Node detail drawer (right side) ──────────────────────────────────────────
 
+function CloseButton({ onClose }: { onClose: () => void }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      onClick={onClose}
+      aria-label="Close"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: hovered ? "var(--surface-sunken)" : "none",
+        border: "none", cursor: "pointer",
+        width: 28, height: 28, borderRadius: "var(--r)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: "var(--ink-muted)", fontSize: 16, transition: "background 120ms",
+        flexShrink: 0,
+      }}
+    >✕</button>
+  );
+}
+
 function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }: {
   node: ManifestNode;
   projection: ReplayState | null;
@@ -911,11 +1110,17 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
 }) {
   const ns = projection?.nodes[node.id];
   const status = ns?.concluded ? "done" : ns?.entered ? "running" : "idle";
+  const [showGlobal, setShowGlobal] = useState(false);
 
   // Outputs from run state
   const nodeState = Object.entries(liveProjection?.state ?? {})
     .filter(([k]) => k.startsWith(`${node.id}.`))
     .map(([k, v]) => ({ key: k.slice(node.id.length + 1), value: v }));
+
+  // Full run state (global keys, non-private)
+  const globalState = Object.entries(liveProjection?.state ?? {})
+    .filter(([k]) => !k.startsWith(`${node.id}.`) && !k.startsWith("_"))
+    .map(([k, v]) => ({ key: k, value: v }));
 
   // Per-cap costs
   const perCapCosts = Object.entries(projection?.perCapSpentCents ?? liveProjection?.budget.perCapSpentCents ?? {})
@@ -936,17 +1141,19 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
 
   return (
     <div style={{
-      position: "fixed", right: 0, top: 52, bottom: 0, width: 320,
+      position: "fixed", right: 0, top: 52, bottom: 0, width: 340,
       background: "var(--surface)", borderLeft: "1px solid var(--line)",
       overflowY: "auto", zIndex: 30,
       display: "flex", flexDirection: "column",
     }}>
       {/* header */}
       <div style={{ padding: "var(--s4) var(--s5)", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}>
-        <div>
-          <div style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>{node.id}</div>
-          <div style={{ fontSize: 11, color: "var(--ink-muted)", marginTop: 2 }}>{node.role}</div>
-          <div style={{ marginTop: "var(--s2)", display: "flex", gap: "var(--s2)", flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, flex: 1, marginRight: "var(--s3)" }}>
+          {/* role is primary */}
+          <div style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", marginBottom: 2, wordBreak: "break-word" }}>{node.role}</div>
+          {/* id is secondary */}
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-muted)", marginBottom: "var(--s2)", wordBreak: "break-all" }}>{node.id}</div>
+          <div style={{ display: "flex", gap: "var(--s2)", flexWrap: "wrap" }}>
             <span style={{
               fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: "var(--r-pill)",
               background: status === "running" ? "var(--live-tint)" : status === "done" ? "var(--ok-tint)" : "var(--surface-sunken)",
@@ -962,7 +1169,7 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
             </span>
           </div>
         </div>
-        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "var(--ink-muted)", padding: "4px 8px", borderRadius: "var(--r)" }}>×</button>
+        <CloseButton onClose={onClose} />
       </div>
 
       <div style={{ padding: "var(--s4) var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s5)", flex: 1 }}>
@@ -1063,6 +1270,36 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
                 </div>
               ))}
             </div>
+          </section>
+        )}
+
+        {/* Global state inspector */}
+        {globalState.length > 0 && (
+          <section>
+            <button
+              onClick={() => setShowGlobal(s => !s)}
+              style={{
+                width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: 0,
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--ink-muted)",
+                marginBottom: showGlobal ? "var(--s3)" : 0,
+              }}
+            >
+              Full run state ({globalState.length} keys)
+              <span style={{ fontSize: 10 }}>{showGlobal ? "▴" : "▾"}</span>
+            </button>
+            {showGlobal && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
+                {globalState.map(({ key, value }) => (
+                  <div key={key} style={{ background: "var(--surface-sunken)", borderRadius: "var(--r)", padding: "var(--s2) var(--s3)" }}>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-muted)", marginBottom: 2 }}>{key}</div>
+                    <div style={{ fontSize: 11, color: "var(--ink-soft)", wordBreak: "break-word", maxHeight: 60, overflow: "hidden" }}>
+                      {String(value).slice(0, 300)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
       </div>

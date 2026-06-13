@@ -6,8 +6,8 @@
  *   *.js             → TypeScript/JS capability module (compiled or tsx-run)
  *   mcp-servers.json → MCP server connection configs
  *
- * TypeScript (.ts) files: Genesis cannot dynamically import raw .ts files without
- * tsx registered globally. Users should either compile to .js first, or run Genesis
+ * TypeScript (.ts) files: Krelvan cannot dynamically import raw .ts files without
+ * tsx registered globally. Users should either compile to .js first, or run Krelvan
  * with `tsx` (which is the default: `tsx src/api/index.ts`). In tsx mode, .ts files
  * ARE importable — so we also accept .ts here when tsx is registered.
  *

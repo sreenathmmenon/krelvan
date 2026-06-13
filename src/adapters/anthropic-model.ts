@@ -42,12 +42,12 @@ export class AnthropicModel implements ModelPort {
 
   constructor(private readonly cfg: AnthropicConfig) {
     const providerDefault = (() => {
-      const p = cfg.llmConfig?.provider ?? process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic";
+      const p = cfg.llmConfig?.provider ?? process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
       if (p === "openai") return "gpt-4o";
       if (p === "ollama") return "llama3.2";
       return "claude-sonnet-4-6";
     })();
-    this.model = cfg.model ?? process.env["GENESIS_LLM_MODEL"] ?? providerDefault;
+    this.model = cfg.model ?? process.env["KRELVAN_LLM_MODEL"] ?? providerDefault;
     this.fetchImpl = cfg.fetchImpl ?? fetch;
   }
 
@@ -91,9 +91,9 @@ export class AnthropicModel implements ModelPort {
     } else {
       // Production path: use the shared LLM client (supports all providers)
       const clientConfig: LLMClientConfig = this.cfg.llmConfig ?? {
-        provider: (process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic") as LLMClientConfig["provider"],
-        apiKey: this.cfg.apiKey || process.env["GENESIS_LLM_API_KEY"],
-        baseUrl: process.env["GENESIS_LLM_BASE_URL"],
+        provider: (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") as LLMClientConfig["provider"],
+        apiKey: this.cfg.apiKey || process.env["KRELVAN_LLM_API_KEY"],
+        baseUrl: process.env["KRELVAN_LLM_BASE_URL"],
       };
       const client = makeLLMClient(clientConfig);
       try {
@@ -129,7 +129,7 @@ export class AnthropicModel implements ModelPort {
     }
 
     return [
-      "You are a manifest compiler for Genesis — an AI agent platform. Given a user's natural-language intent,",
+      "You are a manifest compiler for Krelvan — an AI agent platform. Given a user's natural-language intent,",
       "output ONLY a JSON object describing a multi-node agent workflow. Output NOTHING else — no prose, no code fences.",
       "",
       "The JSON MUST match exactly this shape:",

@@ -1,15 +1,29 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
-  listAgents, listRuns, buildAgent, startRun, deleteAgent, timeAgo,
+  listAgents, listRuns, buildAgent, startRun, deleteAgent, explainRun, explainBuild, timeAgo,
   type AgentRecord, type RunRecord, type BuildResult, type ManifestNode, type ManifestEdge,
 } from "../lib/api";
 
-const EXAMPLES = [
-  "Email me top AI news every morning at 8am",
-  "Alert me when a GitHub PR has no review for 24h",
-  "Send a weekly competitor pricing digest",
-  "Summarize my newsletters every Sunday",
+const EXAMPLES: { text: string; label?: string; hero?: boolean }[] = [
+  {
+    text: "Investigate why our API error rate spiked in the last hour and recommend whether to roll back",
+    label: "Multi-step incident triage",
+    hero: true,
+  },
+  {
+    text: "Monitor our deploy pipeline — if error rate exceeds 5% in the first 10 minutes, roll back and page the on-call engineer",
+    label: "Deploy watchdog",
+  },
+  {
+    text: "Review the last 3 failed customer onboarding sessions, determine whether each was a product gap or user error, and draft a tailored response for each",
+    label: "Onboarding failure analysis",
+  },
+  {
+    text: "Investigate why checkout conversion dropped this week — determine if it's a product bug, pricing change, or seasonal variation",
+    label: "Conversion drop investigation",
+  },
 ];
 
 const BUILD_STAGES = ["Proposing graph…", "Validating…", "Finalising agent…"];
@@ -209,17 +223,59 @@ function FullMiniGraph({ nodes, edges, entry }: { nodes: ManifestNode[]; edges: 
 
 function BuildPreviewModal({ result, onRun, onDiscard }: { result: BuildResult; onRun: () => void; onDiscard: () => void }) {
   const { agent, graph, attempts, warnings } = result;
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const [rationale, setRationale] = useState<string | null>(null);
+  const [rationaleLoading, setRationaleLoading] = useState(true);
+
+  useEffect(() => {
+    setRationaleLoading(true);
+    void explainBuild(agent.id)
+      .then(r => setRationale(r.rationale))
+      .catch(() => setRationale(null))
+      .finally(() => setRationaleLoading(false));
+  }, [agent.id]);
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onDiscard();
+      if (e.key === "Tab") {
+        const focusable = Array.from(
+          document.getElementById("build-preview-dialog")?.querySelectorAll<HTMLElement>(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          ) ?? []
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0]!;
+        const last = focusable[focusable.length - 1]!;
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onDiscard]);
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 1000,
-      background: "rgba(17,32,31,.42)", backdropFilter: "blur(4px)",
-      display: "flex", alignItems: "center", justifyContent: "center", padding: "var(--s6)",
-    }}>
-      <div className="card" style={{ maxWidth: 680, width: "100%", padding: "var(--s6)", animation: "fade-in 150ms ease forwards" }}>
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(17,32,31,.42)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center", padding: "var(--s6)",
+      }}
+      onClick={e => { if (e.target === e.currentTarget) onDiscard(); }}
+    >
+      <div
+        id="build-preview-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="build-preview-title"
+        className="card"
+        style={{ maxWidth: 680, width: "100%", padding: "var(--s6)", animation: "fade-in 150ms ease forwards" }}
+      >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "var(--s5)" }}>
           <div>
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: "var(--s1)" }}>
+            <h2 id="build-preview-title" style={{ fontSize: 18, fontWeight: 700, marginBottom: "var(--s1)" }}>
               Agent compiled — review before running
             </h2>
             <p className="soft small">
@@ -227,6 +283,7 @@ function BuildPreviewModal({ result, onRun, onDiscard }: { result: BuildResult; 
             </p>
           </div>
           <button
+            ref={closeButtonRef}
             onClick={onDiscard}
             aria-label="Close"
             style={{
@@ -254,8 +311,23 @@ function BuildPreviewModal({ result, onRun, onDiscard }: { result: BuildResult; 
           </div>
         ))}
 
-        <div style={{ background: "var(--graph-bg)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "var(--s4)", marginBottom: "var(--s5)", overflow: "auto" }}>
+        <div style={{ background: "var(--graph-bg)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "var(--s4)", marginBottom: "var(--s4)", overflow: "auto" }}>
           <FullMiniGraph nodes={graph.nodes} edges={graph.edges} entry={graph.entry} />
+        </div>
+
+        {/* architect's rationale — why this graph */}
+        <div style={{
+          marginBottom: "var(--s5)", padding: "var(--s4)",
+          background: "var(--brand-tint)", borderRadius: "var(--r)",
+          border: "1px solid rgba(14,124,117,.15)",
+          minHeight: 52, display: "flex", alignItems: "flex-start", gap: "var(--s3)",
+        }}>
+          <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>✦</span>
+          {rationaleLoading ? (
+            <span style={{ fontSize: 13, color: "var(--brand)", fontStyle: "italic" }}>Understanding the design…</span>
+          ) : rationale ? (
+            <p style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.65, margin: 0 }}>{rationale}</p>
+          ) : null}
         </div>
 
         <div style={{ marginBottom: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
@@ -286,9 +358,16 @@ function BuildPreviewModal({ result, onRun, onDiscard }: { result: BuildResult; 
   );
 }
 
+
 // ── Agent card ────────────────────────────────────────────────────────────────
 
-function AgentCard({ agent, agentRuns, onRun, onDelete }: { agent: AgentRecord; agentRuns: RunRecord[]; onRun: () => void; onDelete: () => void }) {
+function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
+  agent: AgentRecord;
+  agentRuns: RunRecord[];
+  onRun: () => void;
+  onDelete: () => void;
+  summary?: string | null;
+}) {
   const lastRun = agentRuns[0];
   const runningCount = agentRuns.filter(r => r.status === "running").length;
   const status = runningCount > 0 ? "running" : lastRun?.status ?? "idle";
@@ -341,13 +420,23 @@ function AgentCard({ agent, agentRuns, onRun, onDelete }: { agent: AgentRecord; 
         onMouseLeave={e => (e.currentTarget.style.boxShadow = "var(--shadow-sm)")}
       >
         {/* header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <span style={{ fontWeight: 700, fontSize: 13, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "68%" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s2)" }}>
+          <span style={{ fontWeight: 700, fontSize: 13, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
             {agent.signed.manifest.name}
           </span>
-          <span className={`badge badge-${status === "completed" ? "done" : status === "running" ? "running" : "neutral"}`} style={{ flexShrink: 0 }}>
-            {status === "running" && <span className="dot" />}{status}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexShrink: 0 }}>
+            <a
+              href={`/canvas/${agent.id}`}
+              onClick={e => e.stopPropagation()}
+              title="Open canvas"
+              style={{ fontSize: 11, color: "var(--brand)", fontWeight: 600, padding: "2px 7px", background: "var(--brand-tint)", borderRadius: "var(--r-pill)", textDecoration: "none", lineHeight: 1.6 }}
+            >
+              Canvas ↗
+            </a>
+            <span className={`badge badge-${status === "completed" ? "done" : status === "running" ? "running" : "neutral"}`}>
+              {status === "running" && <span className="dot" />}{status}
+            </span>
+          </div>
         </div>
 
         {/* mini graph */}
@@ -361,10 +450,29 @@ function AgentCard({ agent, agentRuns, onRun, onDelete }: { agent: AgentRecord; 
           </div>
         )}
 
-        {/* intent */}
-        <p className="small soft" style={{ lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", flex: 1 }}>
-          {agent.signed.provenance.intent}
-        </p>
+        {/* summary or intent */}
+        {summary ? (
+          <div style={{ flex: 1 }}>
+            <p className="small" style={{ lineHeight: 1.5, color: "var(--ink-soft)", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>
+              {summary}
+            </p>
+            {lastRun && (
+              <a
+                href={`/runs/${lastRun.runId}?tab=explain`}
+                onClick={e => e.stopPropagation()}
+                style={{ fontSize: 11, color: "var(--brand)", fontWeight: 500, display: "inline-block", marginTop: 4 }}
+              >
+                View reasoning trace →
+              </a>
+            )}
+          </div>
+        ) : (
+          <p className="small soft" style={{ lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", flex: 1 }}>
+            {summary === null ? (
+              <span style={{ color: "var(--ink-muted)", fontStyle: "italic" }}>Generating summary…</span>
+            ) : agent.signed.provenance.intent}
+          </p>
+        )}
 
         {/* footer */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -413,6 +521,7 @@ function AgentCard({ agent, agentRuns, onRun, onDelete }: { agent: AgentRecord; 
 // ── Home page ─────────────────────────────────────────────────────────────────
 
 export default function Home() {
+  const router = useRouter();
   const [intent, setIntent] = useState("");
   const [building, setBuilding] = useState(false);
   const [buildStage, setBuildStage] = useState(0);
@@ -422,6 +531,9 @@ export default function Home() {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [composeFocused, setComposeFocused] = useState(false);
+  // runId → summary text (null = generating, string = done, key absent = not started)
+  const [summaries, setSummaries] = useState<Record<string, string | null>>({});
+  const fetchingSummaries = useRef<Set<string>>(new Set());
 
   const reload = useCallback(async () => {
     try {
@@ -431,6 +543,26 @@ export default function Home() {
     } catch { /* API not yet reachable */ }
     finally { setLoading(false); }
   }, []);
+
+  // Auto-fetch summaries for completed runs whose agents still exist
+  useEffect(() => {
+    for (const run of runs) {
+      if (run.status !== "completed") continue;
+      if (fetchingSummaries.current.has(run.runId)) continue;
+      if (summaries[run.runId] !== undefined) continue;
+      fetchingSummaries.current.add(run.runId);
+      setSummaries(prev => ({ ...prev, [run.runId]: null }));
+      void explainRun(run.runId)
+        .then(res => {
+          const firstLine = res.explanation.split("\n").filter(l => l.trim()).slice(0, 2).join(" ").slice(0, 220);
+          setSummaries(prev => ({ ...prev, [run.runId]: firstLine }));
+        })
+        .catch(() => {
+          setSummaries(prev => { const n = { ...prev }; delete n[run.runId]; return n; });
+          fetchingSummaries.current.delete(run.runId);
+        });
+    }
+  }, [runs, summaries]);
 
   useEffect(() => {
     void reload();
@@ -465,9 +597,17 @@ export default function Home() {
   async function handleRunBuilt() {
     if (!buildResult) return;
     const agentId = buildResult.agent.id;
+    const savedResult = buildResult;
     setBuildResult(null);
-    await startRun(agentId);
-    await reload();
+    try {
+      const run = await startRun(agentId);
+      await reload();
+      // Go to canvas — the home of the visual graph — with the live run pre-selected
+      router.push(`/canvas/${agentId}?run=${run.runId}`);
+    } catch (err) {
+      setBuildError((err as Error).message);
+      setBuildResult(savedResult);
+    }
   }
 
   const running = runs.filter(r => r.status === "running").length;
@@ -490,10 +630,10 @@ export default function Home() {
         <div className="container" style={{ maxWidth: 760, textAlign: "center" }}>
           <p className="micro" style={{ marginBottom: "var(--s3)" }}>Your AI agent workspace</p>
           <h1 style={{ fontSize: 32, fontWeight: 300, letterSpacing: "-.025em", lineHeight: 1.25, marginBottom: "var(--s3)", color: "var(--ink)" }}>
-            What should your agents do today?
+            Agents that reason, decide, and show their work
           </h1>
-          <p className="soft" style={{ fontSize: 15, maxWidth: "48ch", margin: "0 auto var(--s6)" }}>
-            Describe a goal. Genesis builds an agent, runs it, and keeps a signed record of everything it did.
+          <p className="soft" style={{ fontSize: 15, maxWidth: "52ch", margin: "0 auto var(--s6)" }}>
+            Describe an outcome in plain English. Krelvan builds a signed, tamper-evident agent that investigates, branches, and acts — not a script that fires when triggered.
           </p>
 
           <form
@@ -509,10 +649,10 @@ export default function Home() {
           >
             <textarea
               value={intent}
-              onChange={e => setIntent(e.target.value)}
+              onChange={e => { setIntent(e.target.value); if (buildError) setBuildError(null); }}
               onFocus={() => setComposeFocused(true)}
               onBlur={() => setComposeFocused(false)}
-              placeholder="e.g. Email me the top AI news every morning at 8am"
+              placeholder="e.g. Review this contract and tell me what we should negotiate before signing"
               rows={3}
               style={{
                 width: "100%", resize: "none", border: "none", outline: "none",
@@ -521,15 +661,55 @@ export default function Home() {
               }}
             />
 
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)", marginBottom: "var(--s4)" }}>
-              {EXAMPLES.map(ex => (
-                <button key={ex} type="button" className="chip" onClick={() => setIntent(ex)}>{ex}</button>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)", marginBottom: "var(--s4)" }}>
+              {/* hero chip */}
+              {EXAMPLES.filter(e => e.hero).map(ex => (
+                <button
+                  key={ex.text}
+                  type="button"
+                  onClick={() => setIntent(ex.text)}
+                  style={{
+                    width: "100%", textAlign: "left", padding: "var(--s3) var(--s4)",
+                    background: "var(--brand-tint)", border: "1.5px solid var(--brand)",
+                    borderRadius: "var(--r)", cursor: "pointer",
+                    display: "flex", flexDirection: "column", gap: 2,
+                    transition: "background 120ms",
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(14,124,117,.12)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "var(--brand-tint)")}
+                >
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--brand)", textTransform: "uppercase", letterSpacing: ".06em" }}>{ex.label}</span>
+                  <span style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.5 }}>{ex.text}</span>
+                </button>
               ))}
+              {/* regular chips */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)" }}>
+                {EXAMPLES.filter(e => !e.hero).map(ex => (
+                  <button
+                    key={ex.text}
+                    type="button"
+                    className="chip"
+                    onClick={() => setIntent(ex.text)}
+                    style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1 }}
+                  >
+                    {ex.label && <span style={{ fontSize: 9, fontWeight: 700, color: "var(--brand)", textTransform: "uppercase", letterSpacing: ".05em" }}>{ex.label}</span>}
+                    <span>{ex.text}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {buildError && (
-              <div style={{ marginBottom: "var(--s4)", padding: "var(--s3) var(--s4)", background: "var(--danger-tint)", borderRadius: "var(--r)", fontSize: 13, color: "var(--danger)" }}>
-                {buildError}
+              <div
+                role="alert"
+                style={{ marginBottom: "var(--s4)", padding: "var(--s3) var(--s4)", background: "var(--danger-tint)", borderRadius: "var(--r)", fontSize: 13, color: "var(--danger)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s2)" }}
+              >
+                <span>{buildError}</span>
+                <button
+                  onClick={() => setBuildError(null)}
+                  aria-label="Dismiss error"
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontSize: 16, lineHeight: 1, flexShrink: 0, padding: "0 2px" }}
+                >×</button>
               </div>
             )}
 
@@ -600,15 +780,21 @@ export default function Home() {
 
             {agents.length > 0 && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--s4)" }}>
-                {agents.map(a => (
+                {agents.map(a => {
+                  const agentRuns = runs.filter(r => r.agentId === a.id);
+                  const lastCompletedRun = agentRuns.find(r => r.status === "completed");
+                  const cardSummary = lastCompletedRun ? (summaries[lastCompletedRun.runId] ?? null) : undefined;
+                  return (
                   <AgentCard
                     key={a.id}
                     agent={a}
-                    agentRuns={runs.filter(r => r.agentId === a.id)}
-                    onRun={() => { void startRun(a.id).then(reload); }}
+                    agentRuns={agentRuns}
+                    summary={cardSummary}
+                    onRun={() => { void startRun(a.id).then(r => { void reload(); router.push(`/canvas/${a.id}?run=${r.runId}`); }); }}
                     onDelete={() => { void reload(); }}
                   />
-                ))}
+                  );
+                })}
                 <a
                   href="#"
                   onClick={e => { e.preventDefault(); const ta = document.querySelector<HTMLTextAreaElement>("textarea"); ta?.focus(); ta?.scrollIntoView({ behavior: "smooth", block: "center" }); }}

@@ -1,5 +1,5 @@
 /*
- * Genesis design tokens — warm teal + amber.
+ * Krelvan design tokens — warm teal + amber.
  * Single source of truth. Council-directed: warm paper canvas, teal brand,
  * amber = LIVE/energy ONLY (never a default button), Geist Mono for all numbers.
  * DELETE dark/lime/cool-slate — replaced here entirely.
@@ -202,6 +202,9 @@ a:hover { color: var(--brand-hover); }
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
 /* graph node states */
 .graph-node-running {
@@ -251,6 +254,23 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
 
+/* screen-reader only — visually hidden, still announced */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

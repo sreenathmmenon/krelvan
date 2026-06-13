@@ -4,7 +4,7 @@
  * Priority order:
  *   1. BRAVE_SEARCH_API_KEY set → call Brave Search API (https://api.search.brave.com)
  *      Returns top 5 results as { title, url, snippet }.
- *   2. GENESIS_ANTHROPIC_KEY set (no Brave key) → call Claude haiku to synthesize an
+ *   2. KRELVAN_ANTHROPIC_KEY set (no Brave key) → call Claude haiku to synthesize an
  *      answer from its training knowledge. Returns a single synthetic result.
  *   3. Neither key set → returns empty results with a clear error message. Never throws.
  *
@@ -50,7 +50,7 @@ export const webSearchCapability: CapabilityPlugin = {
 
     const braveKey = process.env["BRAVE_SEARCH_API_KEY"];
     // LLM fallback works with any configured provider
-    const hasLlm = !!(process.env["GENESIS_LLM_API_KEY"] ?? process.env["GENESIS_ANTHROPIC_KEY"] ?? process.env["GENESIS_LLM_PROVIDER"] === "ollama");
+    const hasLlm = !!(process.env["KRELVAN_LLM_API_KEY"] ?? process.env["KRELVAN_ANTHROPIC_KEY"] ?? process.env["KRELVAN_LLM_PROVIDER"] === "ollama");
 
     // ── Path 1: Brave Search API ───────────────────────────────────────────────
     if (braveKey) {
@@ -97,8 +97,8 @@ export const webSearchCapability: CapabilityPlugin = {
 
     // ── Path 2: LLM synthesis via configured provider ────────────────────────
     if (hasLlm) {
-      const provider = process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic";
-      const model = process.env["GENESIS_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
+      const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
+      const model = process.env["KRELVAN_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
       log.info({ nodeId: call.nodeId, query, model, provider }, "web_search: no Brave key — falling back to LLM synthesis");
 
       const client = getLLMClient();
@@ -136,7 +136,7 @@ export const webSearchCapability: CapabilityPlugin = {
         results: [] as { title: string; url: string; snippet: string }[],
         query,
         count: 0,
-        error: "no search provider configured — set BRAVE_SEARCH_API_KEY, or configure GENESIS_LLM_PROVIDER",
+        error: "no search provider configured — set BRAVE_SEARCH_API_KEY, or configure KRELVAN_LLM_PROVIDER",
       },
       claimedCostCents: 0,
     };

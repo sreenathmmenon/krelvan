@@ -379,7 +379,7 @@ function Empty() {
       <div style={{ fontSize: 32, marginBottom: "var(--s4)" }}>⏰</div>
       <div style={{ fontWeight: 600, marginBottom: "var(--s2)", fontSize: 15 }}>No schedules yet</div>
       <div style={{ fontSize: 13, color: "var(--ink-soft)", maxWidth: 400, margin: "0 auto" }}>
-        Schedules make Genesis autonomous. Create an agent, then schedule it to run every day,
+        Schedules make Krelvan autonomous. Create an agent, then schedule it to run every day,
         every hour, or on any cron expression you need.
       </div>
     </div>

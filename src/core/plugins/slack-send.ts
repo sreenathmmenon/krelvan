@@ -2,7 +2,7 @@
  * "slack_send" capability — send a message via Slack Incoming Webhooks.
  *
  * Requires:
- *   GENESIS_SLACK_WEBHOOK_URL — incoming webhook URL (can be overridden per call)
+ *   KRELVAN_SLACK_WEBHOOK_URL — incoming webhook URL (can be overridden per call)
  *
  * If no webhook URL is available (not in env, not in input), returns
  * { sent: false, error: "..." } without throwing (graceful degradation).
@@ -11,7 +11,7 @@
  *   text        — message text (required)
  *   channel     — override channel (optional; only works with bot-token webhooks)
  *   blocks      — optional JSON string for Block Kit blocks array
- *   webhook_url — per-call override of GENESIS_SLACK_WEBHOOK_URL (optional)
+ *   webhook_url — per-call override of KRELVAN_SLACK_WEBHOOK_URL (optional)
  *
  * Output: { sent, error? }
  *
@@ -47,12 +47,12 @@ export const slackSendCapability: CapabilityPlugin = {
     const webhookUrl =
       input["webhook_url"] != null
         ? String(input["webhook_url"])
-        : (process.env["GENESIS_SLACK_WEBHOOK_URL"] ?? "");
+        : (process.env["KRELVAN_SLACK_WEBHOOK_URL"] ?? "");
 
     if (!webhookUrl) {
-      log.warn({ nodeId: call.nodeId }, "slack-send: GENESIS_SLACK_WEBHOOK_URL not set");
+      log.warn({ nodeId: call.nodeId }, "slack-send: KRELVAN_SLACK_WEBHOOK_URL not set");
       return {
-        output: { sent: false, error: "GENESIS_SLACK_WEBHOOK_URL not set" } satisfies SlackSendOutput,
+        output: { sent: false, error: "KRELVAN_SLACK_WEBHOOK_URL not set" } satisfies SlackSendOutput,
         claimedCostCents: 0,
       };
     }

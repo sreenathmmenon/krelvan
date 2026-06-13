@@ -128,7 +128,7 @@ export default TextTransformPlugin;
 
 // ── Demo ──────────────────────────────────────────────────────────────────────
 
-console.log("\n=== Genesis Plugin Lifecycle Demo ===\n");
+console.log("\n=== Krelvan Plugin Lifecycle Demo ===\n");
 
 // 1. Install YAML plugin
 console.log("1. Installing web.fetch (YAML)...");

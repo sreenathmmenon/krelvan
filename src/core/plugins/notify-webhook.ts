@@ -6,9 +6,9 @@
  * Input:
  *   url     — required; must be a valid URL pointing to a public host.
  *   payload — JSON string or object to send (default {}). Objects are JSON.stringify'd.
- *   event   — optional string; added as X-Genesis-Event header.
+ *   event   — optional string; added as X-Krelvan-Event header.
  *   secret  — optional string; if present, body is HMAC-SHA256 signed and sent as
- *             X-Genesis-Signature header.
+ *             X-Krelvan-Signature header.
  *
  * Output:
  *   { notified, status, error? }
@@ -98,13 +98,13 @@ export const notifyWebhookCapability: CapabilityPlugin = {
 
     const event = input["event"];
     if (typeof event === "string" && event.trim() !== "") {
-      headers["x-genesis-event"] = event.trim();
+      headers["x-krelvan-event"] = event.trim();
     }
 
     const secret = input["secret"];
     if (typeof secret === "string" && secret !== "") {
       const sig = createHmac("sha256", secret).update(body).digest("hex");
-      headers["x-genesis-signature"] = sig;
+      headers["x-krelvan-signature"] = sig;
     }
 
     // ── Fetch ─────────────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@ import "./globals.css";
 import NavClient from "./NavClient";
 
 export const metadata: Metadata = {
-  title: "Genesis — own your agents",
+  title: "Krelvan — own your agents",
   description: "Describe an outcome. Get an agent you own.",
 };
 

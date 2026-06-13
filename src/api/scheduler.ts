@@ -1,4 +1,4 @@
-// Genesis Scheduler — runs agents on a time-based schedule.
+// Krelvan Scheduler — runs agents on a time-based schedule.
 //
 // Supports cron expressions and simple interval schedules.
 // Zero third-party dependencies — uses Node's built-in setInterval/setTimeout.

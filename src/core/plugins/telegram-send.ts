@@ -2,15 +2,15 @@
  * "telegram_send" capability — send a message via Telegram Bot API.
  *
  * Requires:
- *   GENESIS_TELEGRAM_TOKEN   — bot token (required)
- *   GENESIS_TELEGRAM_CHAT_ID — default chat_id (used when call.input["chat_id"] absent)
+ *   KRELVAN_TELEGRAM_TOKEN   — bot token (required)
+ *   KRELVAN_TELEGRAM_CHAT_ID — default chat_id (used when call.input["chat_id"] absent)
  *
  * If the token is not configured, returns { sent: false, error: "..." }
  * without throwing (graceful degradation).
  *
  * Input keys:
  *   text       — message text (required)
- *   chat_id    — override GENESIS_TELEGRAM_CHAT_ID (optional)
+ *   chat_id    — override KRELVAN_TELEGRAM_CHAT_ID (optional)
  *   parse_mode — "HTML" | "Markdown" (default: "HTML")
  *
  * Output: { sent, messageId?, chatId?, error? }
@@ -54,11 +54,11 @@ export const telegramSendCapability: CapabilityPlugin = {
   estimateCents: () => 1,
 
   async invoke(call: EffectCall) {
-    const token = process.env["GENESIS_TELEGRAM_TOKEN"];
+    const token = process.env["KRELVAN_TELEGRAM_TOKEN"];
     if (!token) {
-      log.warn({ nodeId: call.nodeId }, "telegram-send: GENESIS_TELEGRAM_TOKEN not set");
+      log.warn({ nodeId: call.nodeId }, "telegram-send: KRELVAN_TELEGRAM_TOKEN not set");
       return {
-        output: { sent: false, error: "GENESIS_TELEGRAM_TOKEN not set" } satisfies TelegramSendOutput,
+        output: { sent: false, error: "KRELVAN_TELEGRAM_TOKEN not set" } satisfies TelegramSendOutput,
         claimedCostCents: 0,
       };
     }
@@ -75,16 +75,16 @@ export const telegramSendCapability: CapabilityPlugin = {
     }
 
     const chatIdInput = input["chat_id"];
-    const defaultChatId = process.env["GENESIS_TELEGRAM_CHAT_ID"];
+    const defaultChatId = process.env["KRELVAN_TELEGRAM_CHAT_ID"];
     const chatId: string | number | undefined =
       chatIdInput != null
         ? (typeof chatIdInput === "number" ? chatIdInput : String(chatIdInput))
         : (defaultChatId != null ? defaultChatId : undefined);
 
     if (chatId === undefined || chatId === "") {
-      log.warn({ nodeId: call.nodeId }, "telegram-send: no chat_id provided (set GENESIS_TELEGRAM_CHAT_ID or pass chat_id in input)");
+      log.warn({ nodeId: call.nodeId }, "telegram-send: no chat_id provided (set KRELVAN_TELEGRAM_CHAT_ID or pass chat_id in input)");
       return {
-        output: { sent: false, error: "no chat_id provided — set GENESIS_TELEGRAM_CHAT_ID or pass chat_id in input" } satisfies TelegramSendOutput,
+        output: { sent: false, error: "no chat_id provided — set KRELVAN_TELEGRAM_CHAT_ID or pass chat_id in input" } satisfies TelegramSendOutput,
         claimedCostCents: 0,
       };
     }

@@ -2,8 +2,8 @@
  * "email_send" capability — send an email via Resend API or raw SMTP.
  *
  * Provider selection:
- *   1. Resend (GENESIS_RESEND_KEY) — primary, single HTTP call.
- *   2. SMTP (GENESIS_SMTP_HOST + GENESIS_SMTP_USER + GENESIS_SMTP_PASS) — fallback,
+ *   1. Resend (KRELVAN_RESEND_KEY) — primary, single HTTP call.
+ *   2. SMTP (KRELVAN_SMTP_HOST + KRELVAN_SMTP_USER + KRELVAN_SMTP_PASS) — fallback,
  *      raw ESMTP over node:net (no npm deps), AUTH LOGIN, EHLO handshake.
  *
  * If neither provider is configured, returns { sent: false, error: "..." }
@@ -11,9 +11,9 @@
  *
  * Input keys:
  *   to      — recipient email address (required)
- *   subject — email subject (default: "Message from Genesis agent")
+ *   subject — email subject (default: "Message from Krelvan agent")
  *   body    — plain-text body content (required)
- *   from    — sender address (default: "genesis@agents.local")
+ *   from    — sender address (default: "krelvan@agents.local")
  *
  * Output: { sent, messageId?, provider?, error? }
  *
@@ -155,7 +155,7 @@ async function sendViaSMTP(
         }
 
         // EHLO
-        smtpWrite(socket, `EHLO genesis-agent`);
+        smtpWrite(socket, `EHLO krelvan-agent`);
         const ehloResp = await readSMTPResponse(socket);
         if (smtpCode(ehloResp) !== 250) {
           fail(`EHLO failed: ${ehloResp.slice(0, 80)}`);
@@ -274,11 +274,11 @@ export const emailSendCapability: CapabilityPlugin = {
       };
     }
 
-    const subject = input["subject"] != null ? String(input["subject"]) : "Message from Genesis agent";
-    const from = input["from"] != null ? String(input["from"]) : "genesis@agents.local";
+    const subject = input["subject"] != null ? String(input["subject"]) : "Message from Krelvan agent";
+    const from = input["from"] != null ? String(input["from"]) : "krelvan@agents.local";
 
     // Path 1: Resend
-    const resendKey = process.env["GENESIS_RESEND_KEY"];
+    const resendKey = process.env["KRELVAN_RESEND_KEY"];
     if (resendKey) {
       const result = await sendViaResend(resendKey, from, to, subject, body);
       return {
@@ -288,13 +288,13 @@ export const emailSendCapability: CapabilityPlugin = {
     }
 
     // Path 2: SMTP
-    const smtpHost = process.env["GENESIS_SMTP_HOST"];
-    const smtpUser = process.env["GENESIS_SMTP_USER"];
-    const smtpPass = process.env["GENESIS_SMTP_PASS"];
+    const smtpHost = process.env["KRELVAN_SMTP_HOST"];
+    const smtpUser = process.env["KRELVAN_SMTP_USER"];
+    const smtpPass = process.env["KRELVAN_SMTP_PASS"];
 
     if (smtpHost && smtpUser && smtpPass) {
-      const smtpPort = parseInt(process.env["GENESIS_SMTP_PORT"] ?? "587", 10);
-      const smtpFrom = process.env["GENESIS_SMTP_FROM"] ?? from;
+      const smtpPort = parseInt(process.env["KRELVAN_SMTP_PORT"] ?? "587", 10);
+      const smtpFrom = process.env["KRELVAN_SMTP_FROM"] ?? from;
       const result = await sendViaSMTP(smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, to, subject, body);
       return {
         output: result satisfies EmailSendOutput,
@@ -303,7 +303,7 @@ export const emailSendCapability: CapabilityPlugin = {
     }
 
     // No provider configured
-    log.warn({ nodeId: call.nodeId }, "email-send: no email provider configured (set GENESIS_RESEND_KEY or GENESIS_SMTP_HOST/USER/PASS)");
+    log.warn({ nodeId: call.nodeId }, "email-send: no email provider configured (set KRELVAN_RESEND_KEY or KRELVAN_SMTP_HOST/USER/PASS)");
     return {
       output: { sent: false, error: "no email provider configured" } satisfies EmailSendOutput,
       claimedCostCents: 0,

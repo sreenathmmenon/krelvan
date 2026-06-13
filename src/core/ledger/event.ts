@@ -1,5 +1,5 @@
 /**
- * The Event — the atom of Genesis.
+ * The Event — the atom of Krelvan.
  *
  * The one principle: the ledger IS the runtime. Execution is a projection of an
  * append-only, content-addressed, signed event log. Every causal step is an event.

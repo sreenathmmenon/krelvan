@@ -1,5 +1,5 @@
 /**
- * GenesisRuntime — the single wiring object for the API server.
+ * KrelvanRuntime — the single wiring object for the API server.
  *
  * Holds:
  *  - The ledger store (SQLite)
@@ -351,7 +351,7 @@ export class CapabilityRegistry {
   }
 }
 
-// ── GenesisRuntime ─────────────────────────────────────────────────────────────
+// ── KrelvanRuntime ─────────────────────────────────────────────────────────────
 
 export interface RuntimeConfig {
   dataDir: string;
@@ -371,7 +371,7 @@ export interface RuntimeConfig {
   capabilitiesDir?: string;
 }
 
-export class GenesisRuntime {
+export class KrelvanRuntime {
   readonly store: SqliteLedgerStore;
   readonly agentRegistry: AgentRegistry;
   readonly runRegistry: RunRegistry;
@@ -399,8 +399,8 @@ export class GenesisRuntime {
     mkdirSync(config.dataDir, { recursive: true });
 
     this.ring = new HmacKeyring();
-    this.ownerSigner = this.ring.addKey("owner", "genesis-owner-secret", { epoch: 1, validFrom: 0, validUntil: null });
-    this.supervisorSigner = this.ring.addKey("supervisor", "genesis-sup-secret", { epoch: 1, validFrom: 0, validUntil: null });
+    this.ownerSigner = this.ring.addKey("owner", "krelvan-owner-secret", { epoch: 1, validFrom: 0, validUntil: null });
+    this.supervisorSigner = this.ring.addKey("supervisor", "krelvan-sup-secret", { epoch: 1, validFrom: 0, validUntil: null });
 
     this.store = new SqliteLedgerStore(join(config.dataDir, "ledger.db"));
     this.agentRegistry = new AgentRegistry(config.dataDir);
@@ -456,9 +456,9 @@ export class GenesisRuntime {
 
     // Compiler — built lazily per compile so knownAgents is always current.
     this.anthropicApiKey = config.anthropicApiKey ?? null;
-    this.llmProvider = config.llmProvider ?? process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic";
-    this.llmApiKey = config.llmApiKey ?? config.anthropicApiKey ?? process.env["GENESIS_LLM_API_KEY"] ?? process.env["GENESIS_ANTHROPIC_KEY"] ?? null;
-    this.llmBaseUrl = config.llmBaseUrl ?? process.env["GENESIS_LLM_BASE_URL"];
+    this.llmProvider = config.llmProvider ?? process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
+    this.llmApiKey = config.llmApiKey ?? config.anthropicApiKey ?? process.env["KRELVAN_LLM_API_KEY"] ?? process.env["KRELVAN_ANTHROPIC_KEY"] ?? null;
+    this.llmBaseUrl = config.llmBaseUrl ?? process.env["KRELVAN_LLM_BASE_URL"];
     this.compiler = this.buildCompiler();
   }
 
@@ -987,7 +987,7 @@ export class GenesisRuntime {
   }
 
   private registerBuiltinCapabilities(): void {
-    // LLM + memory capabilities — always available, require GENESIS_ANTHROPIC_KEY at invoke time
+    // LLM + memory capabilities — always available, require KRELVAN_ANTHROPIC_KEY at invoke time
     this.capabilityRegistry.registerBuiltin(thinkCapability, "LLM reasoning node — calls Claude to think and produce a result");
     this.capabilityRegistry.registerBuiltin(recallCapability, "Read from agent semantic memory across runs");
     this.capabilityRegistry.registerBuiltin(rememberCapability, "Write episode to agent memory after a run");

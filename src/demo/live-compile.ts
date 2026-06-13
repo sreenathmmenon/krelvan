@@ -3,10 +3,10 @@
  * monotonicity-checks + signs → engine runs it off the ledger.
  *
  * This is the only code path that makes a real network call. It reads the API key
- * from the environment (GENESIS_ANTHROPIC_KEY) — never hardcoded, never printed.
+ * from the environment (KRELVAN_ANTHROPIC_KEY) — never hardcoded, never printed.
  * If no key is present it exits cleanly (so the demo is safe to run anywhere).
  *
- * Run: GENESIS_ANTHROPIC_KEY=sk-... npm run demo:live
+ * Run: KRELVAN_ANTHROPIC_KEY=sk-... npm run demo:live
  */
 
 import { AnthropicModel } from "../adapters/anthropic-model.js";
@@ -21,10 +21,10 @@ let clock = 1;
 const now = () => clock++;
 
 async function main(): Promise<void> {
-  const apiKey = process.env.GENESIS_ANTHROPIC_KEY;
+  const apiKey = process.env.KRELVAN_ANTHROPIC_KEY;
   if (!apiKey) {
-    console.log("\nNo GENESIS_ANTHROPIC_KEY set — skipping the live model call.");
-    console.log("Run:  GENESIS_ANTHROPIC_KEY=sk-ant-... npm run demo:live\n");
+    console.log("\nNo KRELVAN_ANTHROPIC_KEY set — skipping the live model call.");
+    console.log("Run:  KRELVAN_ANTHROPIC_KEY=sk-ant-... npm run demo:live\n");
     process.exit(0);
   }
 

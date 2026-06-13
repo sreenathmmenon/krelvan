@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
-import { listRuns, timeAgo, type RunRecord } from "../../lib/api";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { listRuns, explainRun, timeAgo, type RunRecord } from "../../lib/api";
 
 type Filter = "all" | "running" | "halted" | "completed" | "failed";
 
@@ -64,6 +64,9 @@ export default function RunsPage() {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
+  // runId → first-line summary (null = fetching, absent = not started)
+  const [summaries, setSummaries] = useState<Record<string, string | null>>({});
+  const fetchingRef = useRef<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -77,6 +80,26 @@ export default function RunsPage() {
     const t = setInterval(() => void load(), 3000);
     return () => clearInterval(t);
   }, [load]);
+
+  // Auto-fetch one-line summaries for completed runs
+  useEffect(() => {
+    for (const run of runs) {
+      if (run.status !== "completed") continue;
+      if (fetchingRef.current.has(run.runId)) continue;
+      if (summaries[run.runId] !== undefined) continue;
+      fetchingRef.current.add(run.runId);
+      setSummaries(prev => ({ ...prev, [run.runId]: null }));
+      void explainRun(run.runId)
+        .then(res => {
+          const line = res.explanation.split("\n").filter(l => l.trim())[0] ?? "";
+          setSummaries(prev => ({ ...prev, [run.runId]: line.slice(0, 160) }));
+        })
+        .catch(() => {
+          setSummaries(prev => { const n = { ...prev }; delete n[run.runId]; return n; });
+          fetchingRef.current.delete(run.runId);
+        });
+    }
+  }, [runs, summaries]);
 
   const filtered = filter === "all" ? runs : runs.filter(r => r.status === filter);
 
@@ -138,7 +161,7 @@ export default function RunsPage() {
             gap: "var(--s4)", padding: "var(--s3) var(--s5)",
             background: "var(--surface-sunken)",
           }}>
-            {["Workflow", "Status", "Cost ↓", "Run ID", "When", ""].map((h, i) => (
+            {["Agent", "Status", "Cost ↓", "Run ID", "When", ""].map((h, i) => (
               <span key={i} className="micro" style={{ textAlign: i >= 2 && i <= 4 ? "right" : "left" }}>{h}</span>
             ))}
           </div>
@@ -149,6 +172,7 @@ export default function RunsPage() {
               : r.status === "failed" ? "badge-failed"
               : r.status === "halted" ? "badge-paused"
               : "badge-neutral";
+            const summary = summaries[r.runId];
             return (
               <a
                 key={r.runId}
@@ -164,9 +188,15 @@ export default function RunsPage() {
                 onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-hover)")}
                 onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
               >
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{r.manifestName}</div>
-                  {r.reason && <div className="small muted" style={{ marginTop: 2 }}>{r.reason}</div>}
+                  {summary ? (
+                    <div className="small muted" style={{ marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summary}</div>
+                  ) : summary === null ? (
+                    <div className="small" style={{ marginTop: 2, color: "var(--ink-muted)", fontStyle: "italic" }}>Generating summary…</div>
+                  ) : r.reason ? (
+                    <div className="small muted" style={{ marginTop: 2 }}>{r.reason}</div>
+                  ) : null}
                 </div>
                 <span className={`badge ${badgeCls}`} style={{ width: "fit-content" }}>
                   {r.status === "running" && <span className="dot" />}

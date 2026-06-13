@@ -8,8 +8,8 @@
  *   nodeId.result    — the final answer/decision (string)
  *   nodeId.next      — optional: name of the next node to route to (Level 2)
  *
- * Provider is configured via GENESIS_LLM_PROVIDER (anthropic/openai/ollama).
- * Model is GENESIS_THINK_MODEL or GENESIS_LLM_MODEL, with provider-appropriate defaults.
+ * Provider is configured via KRELVAN_LLM_PROVIDER (anthropic/openai/ollama).
+ * Model is KRELVAN_THINK_MODEL or KRELVAN_LLM_MODEL, with provider-appropriate defaults.
  *
  * Side effect class: "read" — the LLM only reads and reasons, no external writes.
  * The result is captured in the ledger as a CAPTURED EffectResult (non-deterministic
@@ -23,9 +23,9 @@ import { getLogger } from "../observability/logger.js";
 const log = getLogger("think");
 
 function defaultModel(): string {
-  if (process.env["GENESIS_THINK_MODEL"]) return process.env["GENESIS_THINK_MODEL"];
-  if (process.env["GENESIS_LLM_MODEL"]) return process.env["GENESIS_LLM_MODEL"];
-  const provider = process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic";
+  if (process.env["KRELVAN_THINK_MODEL"]) return process.env["KRELVAN_THINK_MODEL"];
+  if (process.env["KRELVAN_LLM_MODEL"]) return process.env["KRELVAN_LLM_MODEL"];
+  const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
   if (provider === "openai") return "gpt-4o";
   if (provider === "ollama") return "llama3.2";
   return "claude-sonnet-4-6";
@@ -125,7 +125,7 @@ export const thinkCapability: CapabilityPlugin = {
     ].filter(Boolean).join("\n");
 
     const model = defaultModel();
-    const provider = (process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic") as "anthropic" | "openai" | "ollama";
+    const provider = (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") as "anthropic" | "openai" | "ollama";
 
     log.info({ nodeId: call.nodeId, model, provider }, "think: calling LLM");
 

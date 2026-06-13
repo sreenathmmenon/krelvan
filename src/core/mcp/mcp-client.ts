@@ -1,9 +1,9 @@
 /**
- * MCP (Model Context Protocol) client — connects Genesis to any MCP server.
+ * MCP (Model Context Protocol) client — connects Krelvan to any MCP server.
  *
  * MCP is Anthropic's open standard for connecting AI to tools and data.
  * Hundreds of companies already publish MCP servers (GitHub, Stripe, Notion,
- * Slack, Linear, Postgres, …). By speaking MCP natively, Genesis gets all of
+ * Slack, Linear, Postgres, …). By speaking MCP natively, Krelvan gets all of
  * them for free — no per-integration code needed.
  *
  * Transport: stdio (local process) or HTTP/SSE (remote server).
@@ -16,7 +16,7 @@
  *   → tools/call  { name, arguments }
  *   ← { content: [{ type, text }] }
  *
- * Each MCP tool becomes a Genesis CapabilityPlugin automatically.
+ * Each MCP tool becomes a Krelvan CapabilityPlugin automatically.
  * Side effect is inferred from the tool name / description heuristics; can be
  * overridden in the MCP server config.
  *
@@ -148,7 +148,7 @@ export class StdioMcpTransport {
     await this.request("initialize", {
       protocolVersion: "2024-11-05",
       capabilities: { tools: {} },
-      clientInfo: { name: "genesis", version: "0.0.1" },
+      clientInfo: { name: "krelvan", version: "0.0.1" },
     });
 
     // Send initialized notification (no response expected)
@@ -227,7 +227,7 @@ export class HttpMcpTransport {
     await this.request("initialize", {
       protocolVersion: "2024-11-05",
       capabilities: { tools: {} },
-      clientInfo: { name: "genesis", version: "0.0.1" },
+      clientInfo: { name: "krelvan", version: "0.0.1" },
     });
     this.ready = true;
     log.info({ server: this.config.name, url: this.config.url }, "mcp http server connected");
@@ -294,7 +294,7 @@ export class McpClient {
   }
 
   /**
-   * Convert all discovered MCP tools into Genesis CapabilityPlugins.
+   * Convert all discovered MCP tools into Krelvan CapabilityPlugins.
    * Each plugin name is prefixed with the server name: "github.create_issue"
    */
   toCapabilityPlugins(): CapabilityPlugin[] {

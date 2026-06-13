@@ -1,97 +1,26 @@
 "use client";
 
 import { useState, useEffect, use, useCallback, useRef } from "react";
-import { getRun, getRunEvents, listApprovals, resolveApproval, explainRun, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type PendingApproval, type RunExplanation, API_BASE } from "../../../lib/api";
+import { useRouter } from "next/navigation";
+import { getRun, getRunEvents, listApprovals, resolveApproval, explainRun, startRun, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type PendingApproval, type RunExplanation, API_BASE } from "../../../lib/api";
+import { layoutGraph, graphBounds, edgePath } from "../../../lib/layout";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ManifestNode { id: string; role: string; capabilities: { name: string; sideEffect: string; budgetCents: number }[]; autonomy: string; }
 import { type ManifestExpr } from "../../../lib/api";
+import { type NodePos } from "../../../lib/layout";
 interface ManifestEdge  { from: string; to: string; when?: ManifestExpr; }
 type Manifest = RunManifest;
 
-interface NodePos { x: number; y: number; w: number; h: number; }
-
-// ── Layout engine (Sugiyama-lite: topological layers → coordinates) ───────────
-
-const NODE_W = 160;
-const NODE_H = 72;
-const H_GAP  = 80;
-const V_GAP  = 56;
-
-function layoutManifest(manifest: Manifest): Map<string, NodePos> {
-  const nodes = manifest.nodes;
-  const edges = manifest.edges;
-  const ids = nodes.map(n => n.id);
-
-  // Assign layers via longest-path from entry
-  const layer = new Map<string, number>();
-  const visited = new Set<string>();
-
-  function visit(id: string, depth: number) {
-    if (!visited.has(id) || (layer.get(id) ?? 0) < depth) {
-      layer.set(id, depth);
-      visited.add(id);
-      for (const e of edges) {
-        if (e.from === id) visit(e.to, depth + 1);
-      }
-    }
-  }
-  visit(manifest.entry, 0);
-  // any unreachable nodes get layer 0
-  for (const id of ids) if (!layer.has(id)) layer.set(id, 0);
-
-  // Group by layer
-  const byLayer = new Map<number, string[]>();
-  for (const id of ids) {
-    const l = layer.get(id)!;
-    if (!byLayer.has(l)) byLayer.set(l, []);
-    byLayer.get(l)!.push(id);
-  }
-
-  const maxLayer = Math.max(...[...layer.values()]);
-  const positions = new Map<string, NodePos>();
-
-  for (let l = 0; l <= maxLayer; l++) {
-    const col = byLayer.get(l) ?? [];
-    col.forEach((id, rowIdx) => {
-      positions.set(id, {
-        x: l * (NODE_W + H_GAP),
-        y: rowIdx * (NODE_H + V_GAP),
-        w: NODE_W,
-        h: NODE_H,
-      });
-    });
-  }
-
-  return positions;
-}
-
-// Compute canvas size from positions
-function canvasBounds(positions: Map<string, NodePos>) {
-  let maxX = 0, maxY = 0;
-  for (const p of positions.values()) {
-    maxX = Math.max(maxX, p.x + p.w);
-    maxY = Math.max(maxY, p.y + p.h);
-  }
-  return { w: maxX + H_GAP, h: maxY + V_GAP };
-}
-
-// Cubic bezier path between two node boxes
-function edgePath(from: NodePos, to: NodePos): string {
-  const x1 = from.x + from.w;
-  const y1 = from.y + from.h / 2;
-  const x2 = to.x;
-  const y2 = to.y + to.h / 2;
-  const cx = (x1 + x2) / 2;
-  return `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`;
-}
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function RunPage({ params }: { params: Promise<{ id: string }> }) {
+  const router = useRouter();
   const { id } = use(params);
   const [detail, setDetail]     = useState<RunDetail | null>(null);
+  const [startingRun, setStartingRun] = useState(false);
   const [events, setEvents]     = useState<LedgerEvent[]>([]);
   const [loading, setLoading]   = useState(true);
   const [tab, setTab]           = useState<"canvas" | "timeline" | "state" | "explain">("canvas");
@@ -179,20 +108,46 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     };
   }, [detail?.run.status, connectSSE]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-generate explanation when run completes — no click required
+  const autoExplainedRef = useRef(false);
+  useEffect(() => {
+    if (autoExplainedRef.current) return;
+    if (!detail) return;
+    if (detail.run.status !== "completed" && detail.run.status !== "failed") return;
+    if (explanation) return;
+    autoExplainedRef.current = true;
+    setExplaining(true);
+    setExplainError(null);
+    void explainRun(id)
+      .then(res => setExplanation(res))
+      .catch(err => setExplainError((err as Error).message))
+      .finally(() => setExplaining(false));
+  }, [detail?.run.status, explanation, id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleResolveApproval(correlationId: string, decision: "approve" | "deny") {
     setResolving(correlationId);
     try {
       await resolveApproval(correlationId, id, decision);
       setApprovals(prev => prev.filter(a => a.correlationId !== correlationId));
       if (decision === "approve") {
-        // Re-open SSE — run will resume
+        // Status update triggers the useEffect which opens SSE — do not call connectSSE() directly
         setDetail(prev => prev ? { ...prev, run: { ...prev.run, status: "running" } } : prev);
-        connectSSE();
       } else {
         setDetail(prev => prev ? { ...prev, run: { ...prev.run, status: "failed" } } : prev);
       }
     } finally {
       setResolving(null);
+    }
+  }
+
+  async function handleRunAgain() {
+    if (!detail || startingRun) return;
+    setStartingRun(true);
+    try {
+      const newRun = await startRun(detail.run.agentId);
+      router.push(`/runs/${newRun.runId}`);
+    } catch { /* ignore */ } finally {
+      setStartingRun(false);
     }
   }
 
@@ -279,13 +234,26 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               )}
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "var(--s1)" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "var(--s2)" }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: statusColor, display: "flex", alignItems: "center", gap: 6 }}>
               {(run.status === "running" || run.status === "halted") && <span className="status-dot running" />}
               {run.status === "halted" ? "awaiting approval" : run.status}
             </div>
             {run.spentCents != null && (
               <div style={{ fontFamily: "var(--font-mono)", fontSize: 22, fontWeight: 600, color: "var(--ink)" }}>{run.spentCents}¢</div>
+            )}
+            {(run.status === "completed" || run.status === "failed") && (
+              <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center" }}>
+                <a href={`/canvas/${run.agentId}`} className="btn btn-secondary btn-sm">View agent →</a>
+                <button
+                  className="btn btn-primary btn-sm"
+                  disabled={startingRun}
+                  onClick={() => void handleRunAgain()}
+                  style={{ opacity: startingRun ? 0.6 : 1 }}
+                >
+                  {startingRun ? "Starting…" : "▶ Run again"}
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -294,13 +262,73 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       {/* budget bar */}
       <BudgetBar spent={projection.budget.runSpentCents} total={projection.budget.runReservedCents || run.spentCents || 200} status={run.status} />
 
+      {/* auto-explanation banner — shown above tabs, no click required */}
+      {(explaining || explanation || explainError) && (run.status === "completed" || run.status === "failed") && (
+        <div style={{
+          marginTop: "var(--s5)",
+          padding: "var(--s4) var(--s5)",
+          background: explanation ? "var(--surface)" : "var(--canvas)",
+          border: `1px solid ${explanation ? "var(--line)" : "var(--line-strong)"}`,
+          borderRadius: "var(--r)",
+          boxShadow: explanation ? "var(--shadow-sm)" : "none",
+        }}>
+          {explaining && !explanation && (
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", color: "var(--ink-muted)", fontSize: 13 }}>
+              <span style={{
+                width: 14, height: 14, borderRadius: "50%",
+                border: "2px solid var(--brand)", borderTopColor: "transparent",
+                display: "inline-block", animation: "spin 0.8s linear infinite",
+                flexShrink: 0,
+              }} />
+              Generating explanation…
+            </div>
+          )}
+          {explanation && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--s3)" }}>
+                <span className="micro" style={{ color: "var(--brand)" }}>✦ Agent reasoning</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--s4)" }}>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-muted)" }}>{timeAgo(explanation.generatedAt)}</span>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ opacity: explaining ? .6 : 1 }}
+                    disabled={explaining}
+                    onClick={() => {
+                      setExplaining(true);
+                      setExplainError(null);
+                      void explainRun(id).then(res => setExplanation(res)).catch(err => setExplainError((err as Error).message)).finally(() => setExplaining(false));
+                    }}
+                  >
+                    {explaining ? "Generating…" : "Regenerate"}
+                  </button>
+                </div>
+              </div>
+              <div style={{ fontSize: 14, lineHeight: 1.75, color: "var(--ink)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                {explanation.explanation}
+              </div>
+            </div>
+          )}
+          {explainError && !explanation && (
+            <div style={{ fontSize: 13, color: "var(--danger)", display: "flex", alignItems: "center", gap: "var(--s3)" }}>
+              <span>⚠</span> {explainError}
+              <button className="btn btn-secondary btn-sm" onClick={() => {
+                setExplaining(true); setExplainError(null);
+                void explainRun(id).then(res => setExplanation(res)).catch(err => setExplainError((err as Error).message)).finally(() => setExplaining(false));
+              }}>Retry</button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* tabs */}
-      <div role="tablist" style={{ display: "flex", gap: 0, marginBottom: "var(--s5)", borderBottom: "1px solid var(--line)", marginTop: "var(--s5)" }}>
+      <div role="tablist" aria-label="Run detail" style={{ display: "flex", gap: 0, marginBottom: "var(--s5)", borderBottom: "1px solid var(--line)", marginTop: "var(--s5)" }}>
         {(["canvas", "timeline", "state", "explain"] as const).map(t => (
           <button
             key={t}
             role="tab"
+            id={`tab-${t}`}
             aria-selected={tab === t}
+            aria-controls={`panel-${t}`}
             onClick={() => setTab(t)}
             style={{
               padding: "var(--s3) var(--s4)", border: "none", background: "none", cursor: "pointer",
@@ -317,7 +345,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
       {/* canvas / graph */}
       {tab === "canvas" && (
-        <div style={{ display: "grid", gridTemplateColumns: selectedNode ? "1fr 300px" : "1fr", gap: "var(--s5)", alignItems: "start" }}>
+        <div role="tabpanel" id="panel-canvas" aria-labelledby="tab-canvas" style={{ display: "grid", gridTemplateColumns: selectedNode ? "1fr 300px" : "1fr", gap: "var(--s5)", alignItems: "start" }}>
           <GraphCanvas
             manifest={syntheticManifest}
             projection={projection}
@@ -339,7 +367,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
       {/* timeline */}
       {tab === "timeline" && (
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div role="tabpanel" id="panel-timeline" aria-labelledby="tab-timeline" className="card" style={{ padding: 0, overflow: "hidden" }}>
           {events.length === 0 && <p style={{ padding: "var(--s4)", fontSize: 13, color: "var(--ink-muted)" }}>No events yet.</p>}
           {events.map((e, i) => (
             <div key={e.id} style={{
@@ -363,7 +391,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
       {/* state */}
       {tab === "state" && (
-        <div>
+        <div role="tabpanel" id="panel-state" aria-labelledby="tab-state">
           {Object.keys(projection.state).length === 0
             ? <p style={{ fontSize: 13, color: "var(--ink-muted)" }}>No run state yet.</p>
             : (
@@ -385,6 +413,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
       {/* explain */}
       {tab === "explain" && (
+        <div role="tabpanel" id="panel-explain" aria-labelledby="tab-explain">
         <ExplainPanel
           runId={id}
           status={run.status}
@@ -404,6 +433,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             }
           }}
         />
+        </div>
       )}
     </div>
   );
@@ -462,7 +492,7 @@ function ExplainPanel({ runId, status, explanation, loading, error, onGenerate }
             Understand this run in plain English
           </p>
           <p style={{ fontSize: 13, color: "var(--ink-soft)", maxWidth: "44ch", margin: "0 auto var(--s6)", lineHeight: 1.6 }}>
-            Genesis reads every event in this run and explains what each node did, why it succeeded or failed, and what was spent.
+            Krelvan reads every event in this run and explains what each node did, why it succeeded or failed, and what was spent.
           </p>
           {!isTerminal && (
             <p style={{ fontSize: 12, color: "var(--live)", marginBottom: "var(--s5)", fontWeight: 500 }}>
@@ -503,8 +533,8 @@ function GraphCanvas({ manifest, projection, events, selectedNode, onSelectNode 
   selectedNode: string | null;
   onSelectNode: (id: string | null) => void;
 }) {
-  const positions = layoutManifest(manifest);
-  const { w, h } = canvasBounds(positions);
+  const positions = layoutGraph(manifest.nodes, manifest.edges, manifest.entry);
+  const { w, h } = graphBounds(positions);
   const PAD = 32;
 
   // Which edge is currently active (the edge TO the running node)
@@ -804,6 +834,18 @@ function NodeDetail({ nodeId, projection, events, budgetCents, onClose }: {
     .filter(([k]) => k.startsWith(`${nodeId}.`))
     .map(([k, v]) => ({ key: k.slice(nodeId.length + 1), value: v }));
 
+  // Extract reasoning text from EffectResult output.thought
+  const thoughtText = (() => {
+    for (const e of nodeEvents) {
+      if (e.type === "EffectResult") {
+        const output = (e.payload as Record<string, unknown>)["output"] as Record<string, unknown> | undefined;
+        const t = output?.["thought"];
+        if (typeof t === "string" && t.length > 0) return t;
+      }
+    }
+    return null;
+  })();
+
   // Collect per-cap costs
   const perCapCosts = Object.entries(projection.budget.perCapSpentCents)
     .filter(([k]) => k.startsWith(`${nodeId}:`))
@@ -851,6 +893,14 @@ function NodeDetail({ nodeId, projection, events, budgetCents, onClose }: {
         </div>
       )}
 
+      {/* reasoning */}
+      {thoughtText && (
+        <div style={{ marginBottom: "var(--s4)" }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: "var(--s2)" }}>Reasoning</div>
+          <ReasoningBlock text={thoughtText} />
+        </div>
+      )}
+
       {/* cost */}
       {perCapCosts.length > 0 && (
         <div style={{ marginBottom: "var(--s4)" }}>
@@ -889,6 +939,34 @@ function NodeDetail({ nodeId, projection, events, budgetCents, onClose }: {
 
       {nodeState.length === 0 && perCapCosts.length === 0 && nodeEvents.length === 0 && (
         <p style={{ fontSize: 12, color: "var(--ink-muted)" }}>Node has not run yet.</p>
+      )}
+    </div>
+  );
+}
+
+// ── Reasoning block ───────────────────────────────────────────────────────────
+
+function ReasoningBlock({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const SHORT = 280;
+  const isLong = text.length > SHORT;
+  const shown = expanded || !isLong ? text : text.slice(0, SHORT) + "…";
+  return (
+    <div style={{
+      background: "var(--surface-sunken)", borderRadius: "var(--r)",
+      padding: "var(--s3) var(--s4)",
+      borderLeft: "2px solid var(--brand)",
+    }}>
+      <p style={{ fontSize: 12, lineHeight: 1.65, color: "var(--ink-soft)", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        {shown}
+      </p>
+      {isLong && (
+        <button
+          onClick={() => setExpanded(e => !e)}
+          style={{ marginTop: "var(--s2)", fontSize: 11, color: "var(--brand)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
       )}
     </div>
   );

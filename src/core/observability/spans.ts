@@ -1,5 +1,5 @@
 /**
- * Structured spans for Genesis runs — a lightweight OTEL-compatible trace model.
+ * Structured spans for Krelvan runs — a lightweight OTEL-compatible trace model.
  *
  * Rather than requiring a full OTEL SDK dependency, we define a minimal span
  * interface and emit structured JSON-serializable records. A real production

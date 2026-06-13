@@ -1,8 +1,8 @@
 {
-  "name": "genesis-web",
+  "name": "krelvan-web",
   "version": "0.0.1",
   "private": true,
-  "description": "Genesis web UI — the ledger made visible.",
+  "description": "Krelvan web UI — the ledger made visible.",
   "scripts": {
     "dev": "next dev -p 3100",
     "build": "next build",

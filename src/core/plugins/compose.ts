@@ -2,7 +2,7 @@
  * "compose" capability — text composition via the configured LLM.
  *
  * Supports three styles: "brief" (default), "detailed", "bullet".
- * Provider is configured via GENESIS_LLM_PROVIDER (anthropic/openai/ollama).
+ * Provider is configured via KRELVAN_LLM_PROVIDER (anthropic/openai/ollama).
  *
  * Input keys:
  *   topic   — the subject to write about (required)
@@ -36,8 +36,8 @@ function styleInstruction(style: CompositionStyle): string {
 }
 
 function defaultModel(): string {
-  if (process.env["GENESIS_LLM_MODEL"]) return process.env["GENESIS_LLM_MODEL"];
-  const provider = process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic";
+  if (process.env["KRELVAN_LLM_MODEL"]) return process.env["KRELVAN_LLM_MODEL"];
+  const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
   if (provider === "openai") return "gpt-4o-mini";
   if (provider === "ollama") return "llama3.2";
   return "claude-haiku-4-5-20251001";
@@ -61,7 +61,7 @@ export const composeCapability: CapabilityPlugin = {
       : "brief";
 
     const model = defaultModel();
-    const provider = (process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic") as "anthropic" | "openai" | "ollama";
+    const provider = (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") as "anthropic" | "openai" | "ollama";
 
     log.info({ nodeId: call.nodeId, topic, style, model, provider }, "compose: calling LLM");
 

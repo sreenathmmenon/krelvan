@@ -1,5 +1,5 @@
 /**
- * Typed API client — talks to the Genesis API server.
+ * Typed API client — talks to the Krelvan API server.
  * All data the UI shows comes from here; nothing is hardcoded.
  */
 
@@ -164,6 +164,10 @@ export async function buildAgent(intent: string): Promise<BuildResult> {
 
 export async function deleteAgent(id: string): Promise<void> {
   await apiFetch(`/api/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function explainBuild(agentId: string): Promise<{ rationale: string; generatedAt: number; agentId: string }> {
+  return apiFetch(`/api/agents/${encodeURIComponent(agentId)}/explain-build`);
 }
 
 export async function listRuns(): Promise<RunRecord[]> {

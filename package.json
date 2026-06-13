@@ -1,7 +1,7 @@
 {
-  "name": "genesis",
+  "name": "krelvan",
   "version": "0.0.1",
-  "description": "Genesis \u2014 own, run, and trust your own AI agents. The ledger is the runtime.",
+  "description": "Krelvan \u2014 own, run, and trust your own AI agents. The ledger is the runtime.",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {

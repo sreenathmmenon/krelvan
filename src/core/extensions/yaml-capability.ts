@@ -2,7 +2,7 @@
  * YAML capability loader — turns a declarative .yaml file into a CapabilityPlugin.
  *
  * This is the zero-TypeScript path for adding capabilities. A power user or ops
- * person drops a .yaml file in their capabilities/ directory and Genesis picks it
+ * person drops a .yaml file in their capabilities/ directory and Krelvan picks it
  * up at startup — no code required.
  *
  * The loader:

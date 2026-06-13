@@ -35,9 +35,9 @@ import { getLogger } from "../observability/logger.js";
 const log = getLogger("llm-route");
 
 function defaultModel(): string {
-  if (process.env["GENESIS_ROUTE_MODEL"]) return process.env["GENESIS_ROUTE_MODEL"];
-  if (process.env["GENESIS_LLM_MODEL"]) return process.env["GENESIS_LLM_MODEL"];
-  const provider = process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic";
+  if (process.env["KRELVAN_ROUTE_MODEL"]) return process.env["KRELVAN_ROUTE_MODEL"];
+  if (process.env["KRELVAN_LLM_MODEL"]) return process.env["KRELVAN_LLM_MODEL"];
+  const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
   if (provider === "openai") return "gpt-4o-mini";
   if (provider === "ollama") return "llama3.2";
   return "claude-haiku-4-5-20251001";
@@ -96,7 +96,7 @@ export const llmRouteCapability: CapabilityPlugin = {
     ].filter(Boolean).join("\n");
 
     const model = defaultModel();
-    const provider = (process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic") as "anthropic" | "openai" | "ollama";
+    const provider = (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") as "anthropic" | "openai" | "ollama";
 
     log.info({ nodeId: call.nodeId, candidates, model, provider }, "llm_route: routing");
 

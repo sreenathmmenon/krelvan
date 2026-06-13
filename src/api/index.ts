@@ -1,27 +1,27 @@
 /**
- * Genesis API — entry point.
+ * Krelvan API — entry point.
  *
  * Usage (Anthropic — default):
- *   GENESIS_ANTHROPIC_KEY=sk-ant-… npm run api
+ *   KRELVAN_ANTHROPIC_KEY=sk-ant-… npm run api
  *
  * Usage (OpenAI):
- *   GENESIS_LLM_PROVIDER=openai GENESIS_LLM_API_KEY=sk-… npm run api
+ *   KRELVAN_LLM_PROVIDER=openai KRELVAN_LLM_API_KEY=sk-… npm run api
  *
  * Usage (OpenRouter):
- *   GENESIS_LLM_PROVIDER=openai
- *   GENESIS_LLM_BASE_URL=https://openrouter.ai/api/v1
- *   GENESIS_LLM_API_KEY=sk-or-…
- *   GENESIS_LLM_MODEL=anthropic/claude-sonnet-4-6
+ *   KRELVAN_LLM_PROVIDER=openai
+ *   KRELVAN_LLM_BASE_URL=https://openrouter.ai/api/v1
+ *   KRELVAN_LLM_API_KEY=sk-or-…
+ *   KRELVAN_LLM_MODEL=anthropic/claude-sonnet-4-6
  *
  * Usage (Ollama — local, no API key needed):
- *   GENESIS_LLM_PROVIDER=ollama GENESIS_LLM_MODEL=llama3.2 npm run api
+ *   KRELVAN_LLM_PROVIDER=ollama KRELVAN_LLM_MODEL=llama3.2 npm run api
  *
  * Data is persisted to ./data/ (ledger.db + JSON registries).
  */
 
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { GenesisRuntime } from "./runtime.js";
+import { KrelvanRuntime } from "./runtime.js";
 import { createApiServer } from "./server.js";
 import { getLogger } from "../core/observability/logger.js";
 
@@ -44,14 +44,14 @@ import { getLogger } from "../core/observability/logger.js";
 const log = getLogger("main");
 
 const PORT = Number(process.env["PORT"] ?? 3200);
-const DATA_DIR = process.env["GENESIS_DATA_DIR"] ?? "./data";
-const CAPABILITIES_DIR = process.env["GENESIS_CAPABILITIES_DIR"] ?? "./capabilities";
+const DATA_DIR = process.env["KRELVAN_DATA_DIR"] ?? "./data";
+const CAPABILITIES_DIR = process.env["KRELVAN_CAPABILITIES_DIR"] ?? "./capabilities";
 
-// LLM config — new unified vars take precedence; GENESIS_ANTHROPIC_KEY is legacy fallback
-const LLM_PROVIDER = process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic";
-const LLM_API_KEY = process.env["GENESIS_LLM_API_KEY"] ?? process.env["GENESIS_ANTHROPIC_KEY"];
-const LLM_BASE_URL = process.env["GENESIS_LLM_BASE_URL"];
-const LLM_MODEL = process.env["GENESIS_LLM_MODEL"];
+// LLM config — new unified vars take precedence; KRELVAN_ANTHROPIC_KEY is legacy fallback
+const LLM_PROVIDER = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
+const LLM_API_KEY = process.env["KRELVAN_LLM_API_KEY"] ?? process.env["KRELVAN_ANTHROPIC_KEY"];
+const LLM_BASE_URL = process.env["KRELVAN_LLM_BASE_URL"];
+const LLM_MODEL = process.env["KRELVAN_LLM_MODEL"];
 
 const hasLlm = !!(LLM_API_KEY) || LLM_PROVIDER === "ollama";
 
@@ -64,9 +64,9 @@ async function main(): Promise<void> {
     llmModel: LLM_MODEL ?? "(provider default)",
     llmBaseUrl: LLM_BASE_URL ?? "(provider default)",
     hasLlm,
-  }, "starting Genesis API");
+  }, "starting Krelvan API");
 
-  const runtime = new GenesisRuntime({
+  const runtime = new KrelvanRuntime({
     dataDir: DATA_DIR,
     port: PORT,
     anthropicApiKey: LLM_API_KEY,
@@ -84,7 +84,7 @@ async function main(): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     server.on("error", reject);
     server.listen(PORT, () => {
-      log.info({ port: PORT }, "Genesis API listening");
+      log.info({ port: PORT }, "Krelvan API listening");
       resolve();
     });
   });

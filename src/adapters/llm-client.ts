@@ -1,39 +1,39 @@
 /**
- * LLMClient — the single interface every LLM call in Genesis goes through.
+ * LLMClient — the single interface every LLM call in Krelvan goes through.
  *
- * Providers supported (selected via GENESIS_LLM_PROVIDER env var):
- *   "anthropic"  — Anthropic API (default). Uses GENESIS_LLM_API_KEY or GENESIS_ANTHROPIC_KEY.
+ * Providers supported (selected via KRELVAN_LLM_PROVIDER env var):
+ *   "anthropic"  — Anthropic API (default). Uses KRELVAN_LLM_API_KEY or KRELVAN_ANTHROPIC_KEY.
  *   "openai"     — OpenAI API. Also covers any OpenAI-compatible endpoint:
  *                  OpenRouter, Groq, Together, Fireworks, LM Studio, Ollama (/v1 compat mode).
- *                  Set GENESIS_LLM_BASE_URL to override the base URL.
+ *                  Set KRELVAN_LLM_BASE_URL to override the base URL.
  *   "ollama"     — Ollama native API (http://localhost:11434). No API key needed.
  *
  * Env vars:
- *   GENESIS_LLM_PROVIDER      — "anthropic" | "openai" | "ollama"  (default: "anthropic")
- *   GENESIS_LLM_API_KEY       — API key for the provider (falls back to GENESIS_ANTHROPIC_KEY for anthropic)
- *   GENESIS_LLM_BASE_URL      — Base URL override (e.g. https://openrouter.ai/api/v1)
- *   GENESIS_LLM_MODEL         — Default model to use (overrides per-capability defaults)
+ *   KRELVAN_LLM_PROVIDER      — "anthropic" | "openai" | "ollama"  (default: "anthropic")
+ *   KRELVAN_LLM_API_KEY       — API key for the provider (falls back to KRELVAN_ANTHROPIC_KEY for anthropic)
+ *   KRELVAN_LLM_BASE_URL      — Base URL override (e.g. https://openrouter.ai/api/v1)
+ *   KRELVAN_LLM_MODEL         — Default model to use (overrides per-capability defaults)
  *
  * Per-capability model overrides (still work):
- *   GENESIS_THINK_MODEL       — model for think capability
- *   GENESIS_ROUTE_MODEL       — model for llm_route capability
+ *   KRELVAN_THINK_MODEL       — model for think capability
+ *   KRELVAN_ROUTE_MODEL       — model for llm_route capability
  *
  * OpenRouter example:
- *   GENESIS_LLM_PROVIDER=openai
- *   GENESIS_LLM_BASE_URL=https://openrouter.ai/api/v1
- *   GENESIS_LLM_API_KEY=sk-or-...
- *   GENESIS_LLM_MODEL=anthropic/claude-sonnet-4-6   (or any OpenRouter model slug)
+ *   KRELVAN_LLM_PROVIDER=openai
+ *   KRELVAN_LLM_BASE_URL=https://openrouter.ai/api/v1
+ *   KRELVAN_LLM_API_KEY=sk-or-...
+ *   KRELVAN_LLM_MODEL=anthropic/claude-sonnet-4-6   (or any OpenRouter model slug)
  *
  * Ollama example:
- *   GENESIS_LLM_PROVIDER=ollama
- *   GENESIS_LLM_MODEL=llama3.2
+ *   KRELVAN_LLM_PROVIDER=ollama
+ *   KRELVAN_LLM_MODEL=llama3.2
  *   (no API key needed; Ollama must be running locally)
  *
  * Groq example:
- *   GENESIS_LLM_PROVIDER=openai
- *   GENESIS_LLM_BASE_URL=https://api.groq.com/openai/v1
- *   GENESIS_LLM_API_KEY=gsk_...
- *   GENESIS_LLM_MODEL=llama-3.3-70b-versatile
+ *   KRELVAN_LLM_PROVIDER=openai
+ *   KRELVAN_LLM_BASE_URL=https://api.groq.com/openai/v1
+ *   KRELVAN_LLM_API_KEY=gsk_...
+ *   KRELVAN_LLM_MODEL=llama-3.3-70b-versatile
  */
 
 import { fetchWithRetry } from "./http-retry.js";
@@ -244,9 +244,9 @@ let _sharedClient: LLMClient | null = null;
 export function getLLMClient(): LLMClient {
   if (_sharedClient) return _sharedClient;
 
-  const provider = (process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic") as LLMProvider;
-  const apiKey = process.env["GENESIS_LLM_API_KEY"] ?? process.env["GENESIS_ANTHROPIC_KEY"] ?? "";
-  const baseUrl = process.env["GENESIS_LLM_BASE_URL"];
+  const provider = (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") as LLMProvider;
+  const apiKey = process.env["KRELVAN_LLM_API_KEY"] ?? process.env["KRELVAN_ANTHROPIC_KEY"] ?? "";
+  const baseUrl = process.env["KRELVAN_LLM_BASE_URL"];
 
   log.info({ provider, hasApiKey: !!apiKey, baseUrl }, "llm-client: initialising");
 

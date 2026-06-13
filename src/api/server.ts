@@ -1,5 +1,5 @@
 /**
- * Genesis HTTP API server.
+ * Krelvan HTTP API server.
  *
  * Plain Node http module — zero new runtime dependencies. Serves the UI and the
  * REST API. All state lives in the ledger (SQLite); the server is stateless between
@@ -41,7 +41,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { getLogger } from "../core/observability/logger.js";
-import type { GenesisRuntime } from "./runtime.js";
+import type { KrelvanRuntime } from "./runtime.js";
 import type { Manifest } from "../core/manifest/manifest.js";
 import { getLLMClient } from "../adapters/llm-client.js";
 
@@ -170,7 +170,7 @@ function jsonError(res: ServerResponse, status: number, message: string): void {
 
 // ── server factory ────────────────────────────────────────────────────────────
 
-export function createApiServer(runtime: GenesisRuntime) {
+export function createApiServer(runtime: KrelvanRuntime) {
   const routes: Route[] = [
     { method: "GET",    pattern: ["api", "health"],                  handler: handleHealth },
     { method: "GET",    pattern: ["api", "agents"],                  handler: (q, r) => handleListAgents(q, r, runtime) },
@@ -188,6 +188,7 @@ export function createApiServer(runtime: GenesisRuntime) {
     { method: "GET",    pattern: ["api", "runs", ":id", "stream"],   handler: (q, r, p) => handleRunStream(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "events"],   handler: (q, r, p) => handleRunEvents(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "explain"],  handler: (q, r, p) => handleRunExplain(q, r, p, runtime) },
+    { method: "GET",    pattern: ["api", "agents", ":id", "explain-build"], handler: (q, r, p) => handleExplainBuild(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "capabilities"],                              handler: (q, r) => handleListCapabilities(q, r, runtime) },
     { method: "POST",   pattern: ["api", "capabilities"],                              handler: (q, r) => handleInstallCapability(q, r, runtime) },
     { method: "PATCH",  pattern: ["api", "capabilities", ":name"],                    handler: (q, r, p) => handlePatchCapability(q, r, p, runtime) },
@@ -244,12 +245,12 @@ async function handleHealth(_req: IncomingMessage, res: ServerResponse): Promise
   json(res, 200, { ok: true, ts: Date.now() });
 }
 
-async function handleListAgents(_req: IncomingMessage, res: ServerResponse, rt: GenesisRuntime): Promise<void> {
+async function handleListAgents(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const agents = rt.agentRegistry.list();
   json(res, 200, { agents });
 }
 
-async function handleCreateAgent(req: IncomingMessage, res: ServerResponse, rt: GenesisRuntime): Promise<void> {
+async function handleCreateAgent(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const raw = await readBody(req);
   let body: { intent?: string; apiKey?: string };
   try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
@@ -274,7 +275,7 @@ async function handleCreateAgent(req: IncomingMessage, res: ServerResponse, rt: 
   json(res, 201, { agent });
 }
 
-async function handleBuildAgent(req: IncomingMessage, res: ServerResponse, rt: GenesisRuntime): Promise<void> {
+async function handleBuildAgent(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const raw = await readBody(req);
   let body: { intent?: string };
   try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
@@ -306,7 +307,7 @@ async function handleBuildAgent(req: IncomingMessage, res: ServerResponse, rt: G
   });
 }
 
-async function handleImportAgent(req: IncomingMessage, res: ServerResponse, rt: GenesisRuntime): Promise<void> {
+async function handleImportAgent(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const raw = await readBody(req);
   let manifest: unknown;
   try { manifest = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
@@ -319,13 +320,13 @@ async function handleImportAgent(req: IncomingMessage, res: ServerResponse, rt: 
   json(res, 201, { agent: result.agent });
 }
 
-async function handleGetAgent(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleGetAgent(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const agent = rt.agentRegistry.get(params["id"] ?? "");
   if (!agent) { jsonError(res, 404, "agent not found"); return; }
   json(res, 200, { agent });
 }
 
-async function handleDeleteAgent(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleDeleteAgent(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const id = params["id"] ?? "";
   const agent = rt.agentRegistry.get(id);
   if (!agent) { jsonError(res, 404, "agent not found"); return; }
@@ -335,7 +336,7 @@ async function handleDeleteAgent(_req: IncomingMessage, res: ServerResponse, par
   json(res, 200, { ok: true, id });
 }
 
-async function handleAgentRuns(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleAgentRuns(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const agentId = params["id"] ?? "";
   const agent = rt.agentRegistry.get(agentId);
   if (!agent) { jsonError(res, 404, "agent not found"); return; }
@@ -343,12 +344,12 @@ async function handleAgentRuns(_req: IncomingMessage, res: ServerResponse, param
   json(res, 200, { runs, agentId });
 }
 
-async function handleListRuns(_req: IncomingMessage, res: ServerResponse, rt: GenesisRuntime): Promise<void> {
+async function handleListRuns(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const runs = rt.runRegistry.list();
   json(res, 200, { runs });
 }
 
-async function handleStartRun(req: IncomingMessage, res: ServerResponse, rt: GenesisRuntime): Promise<void> {
+async function handleStartRun(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const raw = await readBody(req);
   let body: { agentId?: string; initialState?: Record<string, string | number | boolean | null> };
   try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
@@ -366,7 +367,7 @@ async function handleStartRun(req: IncomingMessage, res: ServerResponse, rt: Gen
   json(res, 201, { run: runRecord });
 }
 
-async function handleGetRun(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleGetRun(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const record = rt.runRegistry.get(params["id"] ?? "");
   if (!record) { jsonError(res, 404, "run not found"); return; }
 
@@ -394,7 +395,7 @@ async function handleGetRun(_req: IncomingMessage, res: ServerResponse, params: 
   });
 }
 
-async function handleRunStream(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleRunStream(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const record = rt.runRegistry.get(params["id"] ?? "");
   if (!record) { jsonError(res, 404, "run not found"); return; }
 
@@ -488,7 +489,7 @@ async function handleRunStream(req: IncomingMessage, res: ServerResponse, params
   }, 15_000);
 }
 
-async function handleRunEvents(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleRunEvents(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const record = rt.runRegistry.get(params["id"] ?? "");
   if (!record) { jsonError(res, 404, "run not found"); return; }
 
@@ -506,11 +507,11 @@ async function handleRunEvents(_req: IncomingMessage, res: ServerResponse, param
   json(res, 200, { events: safe, runId: record.runId });
 }
 
-async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const record = rt.runRegistry.get(params["id"] ?? "");
   if (!record) { jsonError(res, 404, "run not found"); return; }
 
-  if (!rt.hasLlm) { jsonError(res, 503, "no LLM provider configured — set GENESIS_LLM_PROVIDER + GENESIS_LLM_API_KEY (or GENESIS_ANTHROPIC_KEY for Anthropic)"); return; }
+  if (!rt.hasLlm) { jsonError(res, 503, "no LLM provider configured — set KRELVAN_LLM_PROVIDER + KRELVAN_LLM_API_KEY (or KRELVAN_ANTHROPIC_KEY for Anthropic)"); return; }
 
   const events = await rt.store.readRun("default", record.runId);
 
@@ -545,7 +546,7 @@ async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, para
   ].filter(Boolean).join("\n");
 
   const prompt = [
-    "You are explaining a Genesis AI agent run to a non-technical user.",
+    "You are explaining a Krelvan AI agent run to a non-technical user.",
     "Given the event log below, write a clear, friendly explanation:",
     "1. What the agent did overall (1–2 sentences).",
     "2. What each node did and what it produced (one bullet per node, in order).",
@@ -562,11 +563,11 @@ async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, para
 
   let explanation: string;
   try {
-    const provider = process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic";
-    const model = process.env["GENESIS_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
+    const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
+    const model = process.env["KRELVAN_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
     const client = getLLMClient();
     const response = await client.complete({
-      system: "You are explaining a Genesis AI agent run to a non-technical user. Be clear, specific, and friendly.",
+      system: "You are explaining a Krelvan AI agent run to a non-technical user. Be clear, specific, and friendly.",
       messages: [{ role: "user", content: prompt }],
       model,
       maxTokens: 1024,
@@ -583,7 +584,58 @@ async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, para
   json(res, 200, { explanation, generatedAt: Date.now(), runId: record.runId });
 }
 
-async function handleListCapabilities(_req: IncomingMessage, res: ServerResponse, rt: GenesisRuntime): Promise<void> {
+async function handleExplainBuild(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const agent = rt.agentRegistry.get(params["id"] ?? "");
+  if (!agent) { jsonError(res, 404, "agent not found"); return; }
+
+  if (!rt.hasLlm) { jsonError(res, 503, "no LLM provider configured"); return; }
+
+  const manifest = agent.signed.manifest;
+  const nodeLines = manifest.nodes.map(n =>
+    `  - ${n.id} (${n.role.slice(0, 80)}): ${n.capabilities.map(c => c.name).join(", ")}`
+  ).join("\n");
+  const edgeLines = (manifest.edges ?? []).map(e => `  - ${e.from} → ${e.to}`).join("\n");
+
+  const prompt = [
+    `You are the architect who just designed this agent. Explain your design decisions in 2–3 sentences, written in first person.`,
+    `Focus on WHY — why this number of nodes, why these capabilities, why this routing. Be specific about the trade-offs.`,
+    `Do not describe what the agent does (the user can see that). Explain why it is built THIS way and not another way.`,
+    `Keep it under 60 words. No bullet points. Plain prose.`,
+    ``,
+    `Intent: ${agent.signed.provenance.intent}`,
+    ``,
+    `Nodes:`,
+    nodeLines,
+    ``,
+    `Edges:`,
+    edgeLines || "  (single node, no routing needed)",
+    `Entry: ${manifest.entry}`,
+  ].join("\n");
+
+  let rationale: string;
+  try {
+    const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
+    const model = process.env["KRELVAN_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
+    const client = getLLMClient();
+    const response = await client.complete({
+      system: "You are a concise AI architect explaining your design decisions. Write in first person. Under 60 words.",
+      messages: [{ role: "user", content: prompt }],
+      model,
+      maxTokens: 256,
+      temperature: 0,
+    });
+    rationale = response.text?.trim() ?? "";
+    if (!rationale) { jsonError(res, 502, "LLM returned no content"); return; }
+  } catch (err) {
+    log.error({ err: (err as Error).message }, "explain-build LLM failed");
+    jsonError(res, 502, `LLM error: ${(err as Error).message}`);
+    return;
+  }
+
+  json(res, 200, { rationale, agentId: agent.id, generatedAt: Date.now() });
+}
+
+async function handleListCapabilities(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const caps = rt.capabilityRegistry.list();
   json(res, 200, { capabilities: caps });
 }
@@ -594,7 +646,7 @@ async function handleListCapabilities(_req: IncomingMessage, res: ServerResponse
  *   1. JSON body { yaml: string, name: string } → legacy in-memory YAML install
  *   2. multipart/form-data with file field + optional name/version fields → file-based plugin install
  */
-async function handleInstallCapability(req: IncomingMessage, res: ServerResponse, rt: GenesisRuntime): Promise<void> {
+async function handleInstallCapability(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const contentType = req.headers["content-type"] ?? "";
 
   if (contentType.startsWith("multipart/form-data")) {
@@ -632,7 +684,7 @@ async function handleInstallCapability(req: IncomingMessage, res: ServerResponse
   json(res, 201, { capability: result.capability });
 }
 
-async function handlePatchCapability(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handlePatchCapability(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const name = params["name"] ?? "";
   const raw = await readBody(req);
   let body: { enabled?: boolean; reason?: string };
@@ -661,7 +713,7 @@ async function handlePatchCapability(req: IncomingMessage, res: ServerResponse, 
   }
 }
 
-async function handleEnableCapability(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleEnableCapability(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const name = params["name"] ?? "";
   const result = await rt.enablePlugin(name);
   if (!result.ok) {
@@ -673,7 +725,7 @@ async function handleEnableCapability(_req: IncomingMessage, res: ServerResponse
   json(res, 200, { capability: cap });
 }
 
-async function handleDisableCapability(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleDisableCapability(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const name = params["name"] ?? "";
   let reason: string | undefined;
   try {
@@ -693,7 +745,7 @@ async function handleDisableCapability(req: IncomingMessage, res: ServerResponse
   json(res, 200, { capability: cap });
 }
 
-async function handleUninstallCapability(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleUninstallCapability(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const name = params["name"] ?? "";
   // Try the full lifecycle uninstall first (for file-based plugins).
   const lifecycleResult = await rt.uninstallPlugin(name);
@@ -708,12 +760,12 @@ async function handleUninstallCapability(_req: IncomingMessage, res: ServerRespo
   json(res, 422, { error: lifecycleResult.error, detail: lifecycleResult.detail });
 }
 
-async function handleListMcp(_req: IncomingMessage, res: ServerResponse, rt: GenesisRuntime): Promise<void> {
+async function handleListMcp(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const servers = rt.mcpRegistry.listServers();
   json(res, 200, { servers });
 }
 
-async function handleConnectMcp(req: IncomingMessage, res: ServerResponse, rt: GenesisRuntime): Promise<void> {
+async function handleConnectMcp(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const raw = await readBody(req);
   let body: unknown;
   try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
@@ -727,19 +779,19 @@ async function handleConnectMcp(req: IncomingMessage, res: ServerResponse, rt: G
   json(res, 201, { ok: true, tools: result.tools });
 }
 
-async function handleDisconnectMcp(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleDisconnectMcp(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   await rt.disconnectMcp(params["name"] ?? "");
   json(res, 200, { ok: true });
 }
 
 // ── HITL approval handlers ────────────────────────────────────────────────────
 
-async function handleListApprovals(_req: IncomingMessage, res: ServerResponse, rt: GenesisRuntime): Promise<void> {
+async function handleListApprovals(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const approvals = await rt.listPendingApprovals();
   json(res, 200, { approvals });
 }
 
-async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const correlationId = params["id"] ?? "";
   const raw = await readBody(req);
   let body: { decision?: string; runId?: string };
@@ -757,14 +809,14 @@ async function handleResolveApproval(req: IncomingMessage, res: ServerResponse, 
 
 // ── Agent memory handlers ─────────────────────────────────────────────────────
 
-async function handleGetAgentMemory(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleGetAgentMemory(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const agentId = params["id"] ?? "";
   if (!rt.agentRegistry.get(agentId)) { jsonError(res, 404, "agent not found"); return; }
   const memory = rt.getAgentMemory(agentId);
   json(res, 200, memory);
 }
 
-async function handleClearAgentMemory(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleClearAgentMemory(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const agentId = params["id"] ?? "";
   if (!rt.agentRegistry.get(agentId)) { jsonError(res, 404, "agent not found"); return; }
 
@@ -778,7 +830,7 @@ async function handleClearAgentMemory(_req: IncomingMessage, res: ServerResponse
 
 // ── Schedule handlers ─────────────────────────────────────────────────────────
 
-async function handleListSchedules(_req: IncomingMessage, res: ServerResponse, rt: GenesisRuntime): Promise<void> {
+async function handleListSchedules(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const schedules = rt.scheduleRegistry.list().map(s => ({
     ...s,
     armed: rt.scheduler.isArmed(s.id),
@@ -786,7 +838,7 @@ async function handleListSchedules(_req: IncomingMessage, res: ServerResponse, r
   json(res, 200, { schedules });
 }
 
-async function handleCreateSchedule(req: IncomingMessage, res: ServerResponse, rt: GenesisRuntime): Promise<void> {
+async function handleCreateSchedule(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const raw = await readBody(req);
   let body: { agentId?: string; kind?: string; spec?: string; label?: string };
   try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
@@ -809,13 +861,13 @@ async function handleCreateSchedule(req: IncomingMessage, res: ServerResponse, r
   json(res, 201, { schedule: { ...result.schedule, armed: rt.scheduler.isArmed(result.schedule.id) } });
 }
 
-async function handleGetSchedule(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleGetSchedule(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const schedule = rt.scheduleRegistry.get(params["id"] ?? "");
   if (!schedule) { jsonError(res, 404, "schedule not found"); return; }
   json(res, 200, { schedule: { ...schedule, armed: rt.scheduler.isArmed(schedule.id) } });
 }
 
-async function handlePatchSchedule(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handlePatchSchedule(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const id = params["id"] ?? "";
   const raw = await readBody(req);
   let body: { enabled?: boolean };
@@ -834,7 +886,7 @@ async function handlePatchSchedule(req: IncomingMessage, res: ServerResponse, pa
   json(res, 200, { schedule: { ...updated, armed: rt.scheduler.isArmed(id) } });
 }
 
-async function handleDeleteSchedule(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: GenesisRuntime): Promise<void> {
+async function handleDeleteSchedule(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const id = params["id"] ?? "";
   if (!rt.scheduleRegistry.get(id)) { jsonError(res, 404, "schedule not found"); return; }
   rt.scheduler.disarm(id);

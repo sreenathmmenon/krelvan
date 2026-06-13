@@ -85,6 +85,27 @@ npm run demo:compile  # intent -> compiled+signed manifest -> run
 npm run demo:live     # (needs GENESIS_ANTHROPIC_KEY) a REAL model proposes a workflow
 ```
 
+## UI work — read `docs/DESIGN_SYSTEM.md` first
+
+When building any UI: light & clean (never dark), warm teal palette (see
+`web/app/globals.css` for the canonical CSS variables), one 4px spacing scale
+(no arbitrary px), one primary action per view, progressive disclosure over
+cramming, nothing overlaps. Every screen must pass the checklist in the
+design-system doc. Fonts are open-licensed only (Inter/JetBrains Mono via Google
+Fonts); never ship another product's font files.
+
+**Canonical design tokens (source of truth: `web/app/globals.css`):**
+- Canvas: `#F8F7F4` (warm paper)
+- Ink: `#11201F` (warm near-black)
+- Brand: `#0E7C75` (teal — primary actions, structure, health)
+- Amber `#D97706` — LIVE/ENERGY ONLY: running edges, active-node ring, ticking
+  cost, running badge. Never a default button colour.
+- OK: `#16794C` (success states)
+- Danger: `#B91C1C` (error states)
+- Spacing: `--s1` (4px) through `--s9` (64px)
+
+Use `var(--brand)`, `var(--ink)`, etc. in components — never hardcode hex.
+
 ## Layout
 
 ```
@@ -97,23 +118,47 @@ src/core/            # the pure, dependency-free core
   memory/            # 4 planes, distillation provenance, untrusted-inbound gate
   channels/          # stateless adapters + the trusted interaction resolver
   observability/     # verification + counterfactual replay, cost views
-src/adapters/        # I/O adapters OUTSIDE the core (e.g. anthropic-model)
+  plugins/           # think, recall, http-get, email-send, telegram-send, etc.
+  extensions/        # YAML capability loader
+  mcp/               # MCP client (JSON-RPC 2.0, stdio + HTTP/SSE)
+src/adapters/        # I/O adapters OUTSIDE the core (Anthropic, OpenAI, Ollama)
+src/infrastructure/  # concrete persistence (SQLite plugin repo)
+src/api/             # HTTP server, GenesisRuntime wiring, scheduler
 src/demo/            # runnable end-to-end demos
-docs/                # LEDGER_SPEC, PREMORTEM, DESIGN_SYSTEM
+web/                 # Next.js 15 frontend (port 3100)
+  app/               # pages: / (builder), agents/[id], runs/, canvas/[agentId],
+                     #        capabilities/, approvals/, mcp/, schedules/
+  components/        # RunView (reusable run detail viewer)
+  lib/               # api.ts (typed client), layout.ts, ledger.ts
+capabilities/        # example YAML + JS plugin files
+docs/                # ARCHITECTURE, LEDGER_SPEC, PREMORTEM, DESIGN_SYSTEM,
+                     # FEATURE_INVENTORY, WORKFLOW, EXTENSION_MODEL
 ```
-
-## UI work — read `docs/DESIGN_SYSTEM.md` first
-
-When building any UI: light & clean (never dark), sarvam-calibrated palette
-(near-white canvas `#FAFAFA`, indigo-navy ink `#1E2033`, green accent), one 4px
-spacing scale (no arbitrary px), one primary action per view, progressive
-disclosure over cramming, nothing overlaps. Every screen must pass the checklist in
-the design-system doc. Fonts are open-licensed only (Inter/JetBrains Mono); never
-ship another product's font files.
 
 ## Status (keep this honest, update as you build)
 
-Built & verified (82 tests pass, typecheck clean): ledger, SQLite durable store,
-identity/secrets/time, capability plane, manifest+expr, kernel+engine, NL→manifest
-compiler, memory, channels, observability, and a real Anthropic model adapter.
-Not yet built: the web UI/canvas, and a Postgres (multi-tenant scale) store adapter.
+**Built & verified (82 tests pass, typecheck clean):**
+- Core: ledger (all 8 invariants), SQLite durable store, identity/secrets/time
+- Core: capability plane, manifest + expr evaluator, kernel + engine
+- Core: NL→manifest compiler (with capability monotonicity), memory (4 planes)
+- Core: channels + interaction resolver, observability + counterfactual replay
+- Core: built-in plugins (think, recall, remember, identify, http-get, http-post,
+  web-search, email-send, telegram-send, slack-send, notify-webhook, llm-route,
+  compose)
+- Core: YAML capability loader, TypeScript plugin loader
+- Core: MCP client (JSON-RPC 2.0 over stdio/HTTP)
+- Core: plugin lifecycle (install/enable/disable/uninstall, supervisor snapshot)
+- Adapters: Anthropic, OpenAI, Ollama model ports; semantic distiller
+- API: full REST server (agents, runs, capabilities, approvals, schedules, MCP)
+- API: cron + interval scheduler (survives restart)
+- Web UI: home / agent builder, agent detail (graph + runs + schedules + memory),
+  run detail (timeline + canvas + cost + explain + counterfactual), runs list,
+  interactive canvas (pan/zoom/scrubber), capabilities catalog, approvals,
+  MCP management, schedules
+
+**Not yet built:**
+- PostgreSQL multi-tenant store adapter
+- Real-time SSE push to the canvas UI (currently polls)
+- Inbound Telegram/Slack channel handling (send-only today)
+- Visual drag-to-build graph editor (canvas shows graphs; does not yet support
+  adding/removing nodes by dragging)
