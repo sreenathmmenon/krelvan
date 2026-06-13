@@ -112,7 +112,7 @@ export function validateManifest(m: Manifest): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const ids = new Set<string>();
 
-  if (m.version !== 1) issues.push({ code: "BAD_VERSION", message: `unsupported manifest version ${String(m.version)}` });
+  if (Number(m.version) !== 1) issues.push({ code: "BAD_VERSION", message: `unsupported manifest version ${String(m.version)}` });
   if (!m.nodes.length) issues.push({ code: "NO_NODES", message: "manifest has no nodes" });
 
   for (const n of m.nodes) {

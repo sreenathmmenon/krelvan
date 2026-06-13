@@ -46,11 +46,37 @@ export const webSearchCapability: CapabilityPlugin = {
 
   async invoke(call: EffectCall) {
     const input = call.input as Record<string, unknown>;
-    const query = String(input["query"] ?? "");
+
+    // Primary: explicit "query" key (set via manifest seed or prior node output).
+    // Fallback 1: the node's role text often describes what to search (strip the verb prefix).
+    // Fallback 2: the agent intent captures the overall goal.
+    let query = String(input["query"] ?? "").trim();
+    if (!query) {
+      const role = String(input["role"] ?? input[`${call.nodeId}.role`] ?? "").trim();
+      if (role) {
+        // Strip common instructional prefixes so what remains is a usable search topic.
+        query = role.replace(/^(search (for|the web for|the internet for)|look up|find|retrieve|fetch)\s+/i, "").slice(0, 200);
+      }
+    }
+    if (!query) {
+      query = String(input["intent"] ?? "").slice(0, 200).trim();
+    }
+    if (!query) {
+      log.warn({ nodeId: call.nodeId }, "web_search: no query in state — set 'query' in manifest seed");
+    }
+
+    // Guard: if still no query after all fallbacks, return early with a clear error.
+    if (!query) {
+      return {
+        output: { results: [] as { title: string; url: string; snippet: string }[], query: "", count: 0, error: "no query available — add \"query\": \"<topic>\" to the manifest seed field" },
+        claimedCostCents: 0,
+      };
+    }
 
     const braveKey = process.env["BRAVE_SEARCH_API_KEY"];
-    // LLM fallback works with any configured provider
-    const hasLlm = !!(process.env["KRELVAN_LLM_API_KEY"] ?? process.env["KRELVAN_ANTHROPIC_KEY"] ?? process.env["KRELVAN_LLM_PROVIDER"] === "ollama");
+    const llmProvider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
+    const hasLlm = llmProvider === "ollama"
+      || !!(process.env["KRELVAN_LLM_API_KEY"] || process.env["KRELVAN_ANTHROPIC_KEY"]);
 
     // ── Path 1: Brave Search API ───────────────────────────────────────────────
     if (braveKey) {

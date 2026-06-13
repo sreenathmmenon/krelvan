@@ -18,6 +18,9 @@ import type { ModelPort, ManifestProposal } from "../core/compiler/compiler.js";
 import type { Manifest } from "../core/manifest/manifest.js";
 import { makeLLMClient, type LLMClientConfig } from "./llm-client.js";
 import { fetchWithRetry, type RetryOptions } from "./http-retry.js";
+import { getLogger } from "../core/observability/logger.js";
+
+const log = getLogger("manifest-compiler");
 
 export interface AnthropicConfig {
   apiKey: string;
@@ -97,9 +100,31 @@ export class AnthropicModel implements ModelPort {
       };
       const client = makeLLMClient(clientConfig);
       try {
+        // Few-shot: give one complete Q→A exchange so the model learns the exact output format.
+        const exampleQ = "Intent: Monitor RSS feed for new posts and send a Telegram alert";
+        const exampleA = JSON.stringify({
+          version: 1,
+          name: "rss-telegram-monitor",
+          intent: "Monitor RSS feed for new posts and send a Telegram alert",
+          entry: "fetch",
+          runBudgetCents: 50,
+          maxNodeVisits: 5,
+          seed: { url: "https://feeds.example.com/rss.xml" },
+          nodes: [
+            { id: "fetch", role: "Fetch the RSS feed and return its content", autonomy: "full", capabilities: [{ name: "http_get", sideEffect: "read", budgetCents: 2 }] },
+            { id: "analyse", role: "Analyse the RSS feed content and identify new posts. Set alert_needed to true if new posts found.", autonomy: "full", capabilities: [{ name: "think", sideEffect: "read", budgetCents: 30 }] },
+            { id: "notify", role: "Send a Telegram message summarising new posts", autonomy: "act-with-veto", capabilities: [{ name: "telegram_send", sideEffect: "write-reversible", budgetCents: 2 }] },
+          ],
+          edges: [{ from: "fetch", to: "analyse" }, { from: "analyse", to: "notify" }],
+        });
+        const userMsg = `Intent: ${intent}`;
         const response = await client.complete({
           system,
-          messages: [{ role: "user", content: `Intent: ${intent}\n\nReturn ONLY the JSON manifest.` }],
+          messages: [
+            { role: "user", content: exampleQ },
+            { role: "assistant", content: exampleA },
+            { role: "user", content: userMsg },
+          ],
           model: this.model,
           maxTokens: 2048,
           temperature: 0,
@@ -111,6 +136,8 @@ export class AnthropicModel implements ModelPort {
     }
 
     if (!text.trim()) throw new ModelError("model returned no text content");
+
+    log.info({ model: this.model, textLen: text.length, preview: text.slice(0, 200) }, "manifest-compiler: raw model output");
 
     return parseManifestProposal(text);
   }
@@ -129,21 +156,22 @@ export class AnthropicModel implements ModelPort {
     }
 
     return [
-      "You are a manifest compiler for Krelvan — an AI agent platform. Given a user's natural-language intent,",
-      "output ONLY a JSON object describing a multi-node agent workflow. Output NOTHING else — no prose, no code fences.",
+      "You are a manifest compiler for Krelvan. Output ONLY valid JSON. No prose, no code fences, no wrapper keys.",
       "",
-      "The JSON MUST match exactly this shape:",
-      "{",
-      '  "version": 1,',
-      '  "name": "<short-slug>",',
-      '  "intent": "<echo the intent>",',
-      '  "entry": "<id of the first node>",',
-      '  "runBudgetCents": <integer>,',
-      '  "maxNodeVisits": <integer >= 1>,',
-      '  "nodes": [ { "id": "<slug>", "role": "<role description>", "autonomy": "suggest|act-with-veto|full",',
-      '              "capabilities": [ { "name": "<cap>", "sideEffect": "<class>", "budgetCents": <integer> } ] } ],',
-      '  "edges": [ { "from": "<id>", "to": "<id>" } ]',
-      "}",
+      "CRITICAL OUTPUT RULES (violating any of these makes the output unusable):",
+      "- Output a single JSON object at the top level. Do NOT wrap it in a 'manifest' key or any other key.",
+      "- 'version' MUST be the integer 1. Not '1', not '1.0' — the JSON number 1.",
+      "- Every node MUST have: id, role, autonomy, capabilities.",
+      "- 'entry' MUST match one of the node ids.",
+      "",
+      "CONCRETE EXAMPLE — a research agent that searches the web then summarises:",
+      '{"version":1,"name":"ai-news-digest","intent":"Find latest AI news and summarise","entry":"search","runBudgetCents":100,"maxNodeVisits":5,',
+      ' "seed":{"query":"latest artificial intelligence news 2025"},',
+      ' "nodes":[',
+      '   {"id":"search","role":"Search for the latest AI news","autonomy":"full","capabilities":[{"name":"web_search","sideEffect":"read","budgetCents":10}]},',
+      '   {"id":"summarise","role":"Summarise the top 3 AI developments from the search results","autonomy":"full","capabilities":[{"name":"think","sideEffect":"read","budgetCents":50}]}',
+      ' ],',
+      ' "edges":[{"from":"search","to":"summarise"}]}',
       "",
       "KEY CAPABILITIES — what each one does and WHEN to use it:",
       '  "think"          — calls an LLM (Claude) to reason about run state → outputs thought + result + optional next node.',
@@ -156,6 +184,9 @@ export class AnthropicModel implements ModelPort {
       '                     USE: when which node to go to next depends on the content of results.',
       '  "web_search"     — searches the web (Brave API) and returns top results as text.',
       '                     USE: any agent that needs current information, news, prices, or facts.',
+      '                     IMPORTANT: web_search reads its search query from the "query" key in run state.',
+      '                     ALWAYS include "query": "<what to search for>" in the manifest "seed" field',
+      '                     when using web_search, so the query is available from the start of the run.',
       '  "compose"        — writes text via Claude haiku given a topic, prompt, and style.',
       '                     USE: drafting messages, summaries, reports, or any text output.',
       '  "email_send"     — sends an email (Resend or SMTP). Input: to, subject, body.',
@@ -183,6 +214,7 @@ export class AnthropicModel implements ModelPort {
       "- Agents that ADAPT path based on content: use 'llm_route' instead of static edges.",
       "- Agents that NOTIFY people: end with 'email_send', 'telegram_send', or 'slack_send' depending on the channel.",
       "- Agents that FETCH external data: use 'web_search' for general web, 'http_get' for a specific API endpoint.",
+      "  When using web_search: always add the search topic to seed, e.g. \"seed\": { \"query\": \"latest AI news\" }.",
       "- Agents that TRIGGER external systems: use 'http_post' or 'notify_webhook'.",
       "- Typical patterns:",
       "    Monitoring agent:    recall → think → [if alert needed] → telegram_send/email_send → remember",
@@ -209,6 +241,12 @@ export class AnthropicModel implements ModelPort {
       "Use 'act-with-veto' for message-human nodes (email_send, telegram_send, slack_send) so the user can review before sending.",
       "Use 'suggest' for irreversible external writes (http_post to production APIs).",
       "The 'role' field on each node is the system prompt shown to 'think' at runtime — make it a precise, specific instruction.",
+      "",
+      "CRITICAL OUTPUT RULES:",
+      "- Output ONLY the JSON object. No explanation, no markdown, no code fences, no wrapper objects.",
+      "- Do NOT wrap the JSON in a 'manifest' key or any other key. The top-level object IS the manifest.",
+      "- 'version' MUST be the integer 1 (not '1', not '1.0', not a string — exactly the number 1).",
+      "- Every node MUST have 'id', 'role', 'autonomy', and 'capabilities' keys.",
     ].join("\n");
   }
 }
@@ -246,13 +284,68 @@ export function parseManifestProposal(text: string): Manifest {
   }
 
   if (typeof obj !== "object" || obj === null) throw new ModelError("model output is not an object");
-  const m = obj as Record<string, unknown>;
-  if (m.version !== 1) throw new ModelError("manifest version must be 1");
+  let m = obj as Record<string, unknown>;
+
+  // Some models (e.g. Ollama/qwen) wrap the manifest in a nested key like {"manifest": {...}}.
+  // Unwrap one level if the top-level object doesn't have the expected "nodes" or "entries" key.
+  if (!Array.isArray(m["nodes"]) && typeof m["manifest"] === "object" && m["manifest"] !== null) {
+    m = m["manifest"] as Record<string, unknown>;
+  }
+
+  // Normalize version: accept "1", "1.0", 1, 1.0 — all mean version 1.
+  if (Math.floor(Number(m.version)) !== 1) throw new ModelError("manifest version must be 1");
   if (!Array.isArray(m.nodes)) throw new ModelError("manifest.nodes must be an array");
-  if (!Array.isArray(m.edges)) throw new ModelError("manifest.edges must be an array");
-  if (typeof m.entry !== "string") throw new ModelError("manifest.entry must be a string");
-  if (typeof m.name !== "string") throw new ModelError("manifest.name must be a string");
+
+  // Tolerate missing optional top-level fields — fill in safe defaults.
+  // The compiler validates and rejects unusable manifests; the parser just ensures shape.
+  if (!Array.isArray(m.edges)) m.edges = [];
+  // If edges are empty but multiple nodes exist, auto-chain them in declaration order.
+  // This is the most common model omission — the nodes are in the right order, just not wired.
+  if ((m.edges as unknown[]).length === 0 && (m.nodes as unknown[]).length > 1) {
+    const nodes = m.nodes as Record<string, unknown>[];
+    m.edges = nodes.slice(0, -1).map((n, i) => ({
+      from: n["id"],
+      to: (nodes[i + 1] as Record<string, unknown>)["id"],
+    }));
+  }
+  if (typeof m.entry !== "string") {
+    // Default entry to the first node id if present.
+    const firstNode = m.nodes[0] as Record<string, unknown> | undefined;
+    m.entry = typeof firstNode?.["id"] === "string" ? firstNode["id"] : "";
+  }
+  if (typeof m.name !== "string" || !m.name) m.name = "unnamed-agent";
+  if (typeof m.intent !== "string") m.intent = "";
+  if (typeof m.runBudgetCents !== "number") m.runBudgetCents = 100;
+  if (typeof m.maxNodeVisits !== "number") m.maxNodeVisits = 10;
+  // Always coerce version to integer 1.
+  m.version = 1;
+
+  // Normalize each node's capabilities — fill in missing budgetCents and sideEffect defaults.
+  const capDefaultBudget: Record<string, number> = {
+    think: 50, web_search: 10, http_get: 2, http_post: 2, recall: 2, remember: 2,
+    compose: 20, email_send: 5, telegram_send: 2, slack_send: 2, notify_webhook: 2,
+    text_transform: 1, llm_route: 10,
+  };
+  const capDefaultSideEffect: Record<string, string> = {
+    think: "read", web_search: "read", http_get: "read", recall: "read", llm_route: "read",
+    remember: "write", http_post: "write", compose: "read",
+    email_send: "write-reversible", telegram_send: "write-reversible",
+    slack_send: "write-reversible", notify_webhook: "write-reversible", text_transform: "read",
+  };
+  for (const node of m.nodes as Record<string, unknown>[]) {
+    if (!Array.isArray(node["capabilities"])) continue;
+    for (const cap of node["capabilities"] as Record<string, unknown>[]) {
+      if (typeof cap["budgetCents"] !== "number" || !Number.isInteger(cap["budgetCents"]) || cap["budgetCents"] < 0) {
+        const name = typeof cap["name"] === "string" ? cap["name"] : "";
+        cap["budgetCents"] = capDefaultBudget[name] ?? 10;
+      }
+      if (typeof cap["sideEffect"] !== "string" || !cap["sideEffect"]) {
+        const name = typeof cap["name"] === "string" ? cap["name"] : "";
+        cap["sideEffect"] = capDefaultSideEffect[name] ?? "read";
+      }
+    }
+  }
 
   // Coerce/normalize into the Manifest shape; the compiler does the real validation.
-  return obj as Manifest;
+  return m as unknown as Manifest;
 }

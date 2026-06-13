@@ -185,7 +185,7 @@ class OllamaLLMClient implements LLMClient {
   constructor(private readonly baseUrl: string) {}
 
   async complete(req: LLMRequest): Promise<LLMResponse> {
-    // Ollama supports the OpenAI-compatible /v1/chat/completions endpoint
+    // Ollama native API — use format:"json" to guarantee valid JSON output (no preamble/prose).
     const body = {
       model: req.model,
       messages: [
@@ -193,6 +193,7 @@ class OllamaLLMClient implements LLMClient {
         ...req.messages,
       ],
       stream: false,
+      format: "json",
       options: {
         temperature: req.temperature,
         num_predict: req.maxTokens,
