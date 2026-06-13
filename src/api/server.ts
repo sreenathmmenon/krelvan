@@ -679,7 +679,7 @@ async function handleInstallCapability(req: IncomingMessage, res: ServerResponse
   if (!body.yaml?.trim()) { jsonError(res, 400, "yaml is required"); return; }
   if (!body.name?.trim()) { jsonError(res, 400, "name is required"); return; }
 
-  const result = rt.capabilityRegistry.installFromYaml(body.name.trim(), body.yaml.trim());
+  const result = rt.installYamlCapability(body.name.trim(), body.yaml.trim());
   if (!result.ok) { json(res, 422, { error: result.error }); return; }
   json(res, 201, { capability: result.capability });
 }

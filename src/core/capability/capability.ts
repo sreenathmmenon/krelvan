@@ -200,11 +200,13 @@ export class Supervisor {
     const p = this.#plugins.get(call.capability);
     if (!p) throw new Error(`no plugin for capability '${call.capability}'`);
     const res = await p.invoke(call);
+    // Round to integer — the ledger rejects non-integer numbers (LED-02).
+    const costCents = Math.round(res.claimedCostCents);
     return {
       idem,
-      costCents: res.claimedCostCents, // supervisor-attested in this core
+      costCents,
       output: res.output,
-      pluginClaim: { claimedCostCents: res.claimedCostCents },
+      pluginClaim: { claimedCostCents: costCents },
     };
   }
 

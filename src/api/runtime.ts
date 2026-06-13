@@ -17,7 +17,7 @@
 import { HmacKeyring, contentAddress } from "../core/ledger/crypto.js";
 import { SqliteLedgerStore } from "../core/ledger/sqlite-store.js";
 import { Engine } from "../core/kernel/engine.js";
-import { Supervisor, type CapabilityPlugin } from "../core/capability/capability.js";
+import { Supervisor, type CapabilityPlugin, type SupervisorSnapshotHandle } from "../core/capability/capability.js";
 import { Compiler } from "../core/compiler/compiler.js";
 import { getLogger } from "../core/observability/logger.js";
 import type { LedgerStore } from "../core/ledger/store.js";
@@ -394,6 +394,7 @@ export class KrelvanRuntime {
   private readonly pluginRepository: SqlitePluginRepository;
   private readonly capsDir: string;
   private supervisor: Supervisor;
+  private supervisorSnapshotHandle!: SupervisorSnapshotHandle;
   private lastTs = 0;
 
   constructor(config: RuntimeConfig) {
@@ -444,6 +445,7 @@ export class KrelvanRuntime {
       new Map(this.capabilityRegistry["plugins"] as Map<string, CapabilityPlugin>),
     );
     this.supervisor = supervisor;
+    this.supervisorSnapshotHandle = snapshotHandle;
 
     this.pluginLifecycle = new PluginLifecycleService({
       repository: this.pluginRepository,
@@ -551,6 +553,15 @@ export class KrelvanRuntime {
         installedAt: rec.installedAt,
       });
     }
+    return result;
+  }
+
+  installYamlCapability(name: string, yaml: string): { ok: true; capability: CapabilityRecord } | { ok: false; error: string } {
+    const result = this.capabilityRegistry.installFromYaml(name, yaml);
+    if (!result.ok) return result;
+    // Update supervisor snapshot so the plugin is available for runs immediately.
+    const allPlugins = new Map(this.capabilityRegistry["plugins"] as Map<string, CapabilityPlugin>);
+    this.supervisorSnapshotHandle.replaceSnapshot(allPlugins);
     return result;
   }
 
