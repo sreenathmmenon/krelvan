@@ -277,6 +277,7 @@ export class CapabilityRegistry {
     const record: CapabilityRecord = {
       name,
       kind: "yaml",
+      status: "enabled",
       sideEffect: result.plugin.sideEffect,
       estimateCents: result.plugin.estimateCents({ nodeId: "", capability: name, input: {} }),
       installedAt: Date.now(),

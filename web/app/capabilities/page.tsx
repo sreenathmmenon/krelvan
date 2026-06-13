@@ -139,6 +139,7 @@ export default function CapabilitiesPage() {
   const [file, setFile]         = useState<File | null>(null);
   const [installing, setInstalling]     = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
+  const [toast, setToast]               = useState<string | null>(null);
 
   async function reload() {
     try { setCaps(await listCapabilities()); }
@@ -154,19 +155,19 @@ export default function CapabilitiesPage() {
     setInstalling(true); setInstallError(null);
     try {
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+      let installed: CapabilityRecord;
       if (ext === "yaml" || ext === "yml") {
-        // YAML: read as text and use JSON install path
         const text = await file.text();
-        // Extract name from yaml "name: foo" line
         const nameMatch = text.match(/^name:\s*(.+)$/m);
         const name = nameMatch?.[1]?.trim() ?? file.name.replace(/\.[^.]+$/, "");
-        await installCapability(name, text);
+        installed = await installCapability(name, text);
       } else {
-        // JS / TS: multipart upload
-        await installCapabilityFile(file);
+        installed = await installCapabilityFile(file);
       }
       setFile(null); setShowInstall(false);
       await reload();
+      setToast(`"${installed.name}" installed and enabled`);
+      setTimeout(() => setToast(null), 4000);
     } catch (err) { setInstallError((err as Error).message); }
     finally { setInstalling(false); }
   }
@@ -220,6 +221,17 @@ export default function CapabilitiesPage() {
               </div>
             </div>
           </form>
+        </div>
+      )}
+
+      {toast && (
+        <div style={{
+          position: "fixed", bottom: "var(--s6)", right: "var(--s6)", zIndex: 100,
+          padding: "var(--s3) var(--s5)", background: "var(--ok)", color: "#fff",
+          borderRadius: "var(--r)", fontSize: 13, fontWeight: 500,
+          boxShadow: "0 4px 16px rgba(0,0,0,.18)",
+        }}>
+          {toast}
         </div>
       )}
 
