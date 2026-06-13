@@ -415,9 +415,9 @@ function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
     <a href={`/agents/${agent.id}`} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
       <div
         className="card"
-        style={{ padding: "var(--s4)", minHeight: 160, display: "flex", flexDirection: "column", gap: "var(--s3)", cursor: "pointer", transition: "box-shadow 140ms ease" }}
-        onMouseEnter={e => (e.currentTarget.style.boxShadow = "var(--shadow-md)")}
-        onMouseLeave={e => (e.currentTarget.style.boxShadow = "var(--shadow-sm)")}
+        style={{ padding: "var(--s5)", minHeight: 200, display: "flex", flexDirection: "column", gap: "var(--s4)", cursor: "pointer", transition: "box-shadow 140ms ease, transform 140ms ease" }}
+        onMouseEnter={e => { e.currentTarget.style.boxShadow = "var(--shadow-md)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+        onMouseLeave={e => { e.currentTarget.style.boxShadow = "var(--shadow-sm)"; e.currentTarget.style.transform = "translateY(0)"; }}
       >
         {/* header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s2)" }}>
@@ -443,7 +443,7 @@ function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
         {nodes.length > 0 && (
           <div style={{
             background: "var(--graph-bg)", borderRadius: 6,
-            border: "1px solid var(--line)", padding: "var(--s2) var(--s3)",
+            border: "1px solid var(--line)", padding: "var(--s3)",
             overflow: "hidden", maxHeight: 90,
           }}>
             <MiniGraph nodes={nodes} edges={edges} entry={agent.signed.manifest.entry} />
@@ -626,23 +626,23 @@ export default function Home() {
       )}
 
       {/* ── composer hero ── */}
-      <section style={{ background: "var(--canvas)", paddingTop: "var(--s8)", paddingBottom: "var(--s7)" }}>
-        <div className="container" style={{ maxWidth: 760, textAlign: "center" }}>
-          <p className="micro" style={{ marginBottom: "var(--s3)" }}>Your AI agent workspace</p>
-          <h1 style={{ fontSize: 32, fontWeight: 300, letterSpacing: "-.025em", lineHeight: 1.25, marginBottom: "var(--s3)", color: "var(--ink)" }}>
-            Agents that reason, decide, and show their work
+      <section style={{ background: "var(--canvas)", paddingTop: "var(--s9)", paddingBottom: "var(--s8)" }}>
+        <div className="container" style={{ maxWidth: 680, textAlign: "center" }}>
+          <p className="micro" style={{ marginBottom: "var(--s4)" }}>Your AI agent workspace</p>
+          <h1 style={{ fontSize: 36, fontWeight: 600, letterSpacing: "-.02em", lineHeight: 1.2, marginBottom: "var(--s4)", color: "var(--ink)" }}>
+            Agents that reason, decide,<br />and show their work
           </h1>
-          <p className="soft" style={{ fontSize: 15, maxWidth: "52ch", margin: "0 auto var(--s6)" }}>
-            Describe an outcome in plain English. Krelvan builds a signed, tamper-evident agent that investigates, branches, and acts — not a script that fires when triggered.
+          <p className="soft" style={{ fontSize: 16, maxWidth: "48ch", margin: "0 auto var(--s7)", lineHeight: 1.7 }}>
+            Describe an outcome in plain English. Krelvan builds a signed, tamper-evident agent that investigates, branches, and acts.
           </p>
 
           <form
             onSubmit={(e) => void handleBuild(e)}
             style={{
               background: "var(--surface)",
-              border: `1px solid ${composeFocused ? "var(--brand)" : "var(--line)"}`,
-              borderRadius: 14, padding: "var(--s5)",
-              boxShadow: composeFocused ? `var(--shadow-md), 0 0 0 3px var(--brand-ring)` : "var(--shadow-md)",
+              border: `1.5px solid ${composeFocused ? "var(--brand)" : "var(--line-strong)"}`,
+              borderRadius: 16, padding: "var(--s5)",
+              boxShadow: composeFocused ? `var(--shadow-md), 0 0 0 4px var(--brand-ring)` : "var(--shadow-sm)",
               textAlign: "left",
               transition: "border-color 150ms, box-shadow 150ms",
             }}
@@ -653,11 +653,11 @@ export default function Home() {
               onFocus={() => setComposeFocused(true)}
               onBlur={() => setComposeFocused(false)}
               placeholder="e.g. Review this contract and tell me what we should negotiate before signing"
-              rows={3}
+              rows={4}
               style={{
                 width: "100%", resize: "none", border: "none", outline: "none",
                 fontFamily: "var(--font-sans)", fontSize: 15, color: "var(--ink)",
-                background: "transparent", lineHeight: 1.6, marginBottom: "var(--s4)",
+                background: "transparent", lineHeight: 1.65, marginBottom: "var(--s4)",
               }}
             />
 
@@ -737,7 +737,7 @@ export default function Home() {
       {/* ── stat strip ── */}
       <div style={{ borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)", background: "var(--surface)" }}>
         <div className="container">
-          <div style={{ display: "flex", gap: "var(--s7)", padding: "var(--s3) 0", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--s8)", padding: "var(--s4) 0", flexWrap: "wrap", alignItems: "center" }}>
             {[
               { label: "agents",       value: String(agents.length), live: false },
               { label: "running now",  value: String(running),       live: running > 0 },
@@ -746,8 +746,8 @@ export default function Home() {
             ].map(s => (
               <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
                 {s.live && <span className="status-dot running" />}
-                <span className="mono" style={{ fontSize: 14, fontWeight: 500, color: s.live ? "var(--live)" : "var(--ink)" }}>{s.value}</span>
-                <span className="small muted">{s.label}</span>
+                <span className="mono" style={{ fontSize: 15, fontWeight: 600, color: s.live ? "var(--live)" : "var(--ink)" }}>{s.value}</span>
+                <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>{s.label}</span>
               </div>
             ))}
           </div>
@@ -755,20 +755,20 @@ export default function Home() {
       </div>
 
       {/* ── agents + activity ── */}
-      <section className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "var(--s6)", alignItems: "start" }}>
+      <section className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s9)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: "var(--s7)", alignItems: "start" }}>
 
           {/* agent cards */}
           <div>
-            <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-soft)", marginBottom: "var(--s4)", letterSpacing: ".02em", textTransform: "uppercase" }}>Your agents</h2>
+            <h2 style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-muted)", marginBottom: "var(--s5)", letterSpacing: ".06em", textTransform: "uppercase" }}>Your agents</h2>
 
             {loading && <p className="soft small">Loading…</p>}
 
             {!loading && agents.length === 0 && (
-              <div style={{ padding: "var(--s8)", textAlign: "center", border: "1.5px dashed var(--line-strong)", borderRadius: "var(--r)" }}>
-                <div style={{ fontSize: 36, marginBottom: "var(--s4)" }}>✦</div>
-                <p style={{ fontSize: 15, fontWeight: 600, marginBottom: "var(--s2)", color: "var(--ink)" }}>Build your first agent</p>
-                <p className="soft small" style={{ maxWidth: "36ch", margin: "0 auto var(--s5)" }}>Describe a goal above. Your first agent takes about 30 seconds to compile and is ready to run immediately.</p>
+              <div style={{ padding: "var(--s9)", textAlign: "center", border: "1.5px dashed var(--line-strong)", borderRadius: "var(--r-lg)", background: "var(--surface)" }}>
+                <div style={{ fontSize: 32, marginBottom: "var(--s5)", opacity: 0.5 }}>✦</div>
+                <p style={{ fontSize: 16, fontWeight: 600, marginBottom: "var(--s3)", color: "var(--ink)" }}>Build your first agent</p>
+                <p className="soft" style={{ fontSize: 14, maxWidth: "34ch", margin: "0 auto var(--s6)", lineHeight: 1.65 }}>Describe a goal above. Your first agent compiles in ~30 seconds and is ready to run immediately.</p>
                 <button
                   className="btn btn-primary"
                   onClick={() => { const ta = document.querySelector<HTMLTextAreaElement>("textarea"); ta?.focus(); ta?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
@@ -779,7 +779,7 @@ export default function Home() {
             )}
 
             {agents.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--s4)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--s5)" }}>
                 {agents.map(a => {
                   const agentRuns = runs.filter(r => r.agentId === a.id);
                   const lastCompletedRun = agentRuns.find(r => r.status === "completed");
@@ -800,7 +800,7 @@ export default function Home() {
                   onClick={e => { e.preventDefault(); const ta = document.querySelector<HTMLTextAreaElement>("textarea"); ta?.focus(); ta?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    minHeight: 160, border: "1.5px dashed var(--line-strong)", borderRadius: "var(--r)",
+                    minHeight: 200, border: "1.5px dashed var(--line-strong)", borderRadius: "var(--r)",
                     color: "var(--ink-muted)", fontSize: 13, fontWeight: 500, gap: "var(--s2)",
                     textDecoration: "none", transition: "border-color 120ms, color 120ms",
                   }}
@@ -815,7 +815,7 @@ export default function Home() {
 
           {/* recent runs */}
           <div>
-            <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-soft)", marginBottom: "var(--s4)", letterSpacing: ".02em", textTransform: "uppercase" }}>Recent runs</h2>
+            <h2 style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-muted)", marginBottom: "var(--s5)", letterSpacing: ".06em", textTransform: "uppercase" }}>Recent runs</h2>
             {recentRuns.length === 0 && <p className="soft small">No runs yet.</p>}
             {recentRuns.length > 0 && (
               <div className="card" style={{ padding: 0, overflow: "hidden" }}>

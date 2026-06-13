@@ -57,8 +57,8 @@ export default function NavClient() {
         {/* wordmark */}
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s7)" }}>
           <a href="/" style={{
-            fontWeight: 700, fontSize: 17, color: "var(--brand)",
-            letterSpacing: "-.02em", textDecoration: "none",
+            fontWeight: 800, fontSize: 18, color: "var(--brand)",
+            letterSpacing: "-.03em", textDecoration: "none",
           }}>
             Krelvan
           </a>
