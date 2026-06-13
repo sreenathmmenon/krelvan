@@ -55,12 +55,167 @@ export class AnthropicModel implements ModelPort {
   }
 
   async propose(intent: string): Promise<ManifestProposal> {
-    const system = this.buildSystemPrompt();
+    const provider = this.cfg.llmConfig?.provider ?? process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
 
+    // Anthropic supports native tool calling — use it so the model applies its
+    // trained tool-selection logic to pick capabilities by description, not by
+    // reading a text list and guessing.
+    if (provider === "anthropic" && !this.cfg.fetchImpl) {
+      return this.proposeWithTools(intent);
+    }
+
+    // Fallback for Ollama / OpenAI / test injection: structured JSON prompt.
+    return this.proposeWithPrompt(intent);
+  }
+
+  /**
+   * Anthropic tool-calling path.
+   * We define one tool — build_manifest — whose input_schema has a capability
+   * enum built from the live registry. The model uses its native tool-selection
+   * training to pick the right capabilities by reading their descriptions.
+   */
+  private async proposeWithTools(intent: string): Promise<ManifestProposal> {
+    const capNames = this.cfg.allowedCapabilities.map(c => c.name);
+
+    // Build a tools array: one tool per capability so Anthropic's tool-selection
+    // logic fires for each node the model wants to add. Plus one submit tool.
+    // Simpler and more reliable: one build_manifest tool whose schema enumerates
+    // capabilities — the model fills in the nodes array using the descriptions.
+    const tool = {
+      name: "build_manifest",
+      description: "Build the agent manifest. Call this once with the complete manifest.",
+      input_schema: {
+        type: "object",
+        required: ["version", "name", "intent", "entry", "runBudgetCents", "nodes", "edges"],
+        properties: {
+          version: { type: "number", description: "Always 1" },
+          name: { type: "string", description: "Short kebab-case agent name" },
+          intent: { type: "string", description: "The user's intent verbatim" },
+          entry: { type: "string", description: "ID of the first node to run" },
+          runBudgetCents: { type: "integer", description: "Total budget in cents" },
+          maxNodeVisits: { type: "integer", description: "Max times any node may be visited (default 5)" },
+          seed: { type: "object", description: "Initial run state key/value pairs (e.g. query for web_search)" },
+          nodes: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["id", "role", "autonomy", "capabilities"],
+              properties: {
+                id: { type: "string" },
+                role: { type: "string", description: "Precise instruction for what this node does" },
+                autonomy: { type: "string", enum: ["full", "act-with-veto", "suggest"] },
+                capabilities: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: ["name", "sideEffect", "budgetCents"],
+                    properties: {
+                      name: { type: "string", enum: capNames, description: "Capability name — must be from the allowed list" },
+                      sideEffect: { type: "string" },
+                      budgetCents: { type: "integer" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          edges: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["from", "to"],
+              properties: {
+                from: { type: "string" },
+                to: { type: "string" },
+                condition: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    // Build tool descriptions list so the model knows what each capability does.
+    const capDescriptions = this.cfg.allowedCapabilities.map(c => {
+      let line = `- **${c.name}**: ${c.description ?? c.name}`;
+      if (c.useWhen) line += ` — USE: ${c.useWhen}`;
+      if (c.notes) line += ` (NOTE: ${c.notes})`;
+      return line;
+    }).join("\n");
+
+    const system = [
+      "You are a manifest compiler. Given a user's intent, call build_manifest exactly once with the complete agent manifest.",
+      "Choose capabilities by matching their descriptions to the intent. Only use capability names from the enum.",
+      "autonomy: 'full' for read side-effects, 'act-with-veto' for message-human, 'suggest' for irreversible writes.",
+      "runBudgetCents must be an integer. budgetCents on each capability must be an integer.",
+      "",
+      "AVAILABLE CAPABILITIES:",
+      capDescriptions,
+    ].join("\n");
+
+    const clientConfig: LLMClientConfig = this.cfg.llmConfig ?? {
+      provider: "anthropic",
+      apiKey: this.cfg.apiKey || process.env["KRELVAN_LLM_API_KEY"],
+    };
+
+    const fetchImpl = (globalThis as Record<string, unknown>)["fetch"] as typeof fetch;
+    const apiKey = clientConfig.apiKey ?? "";
+
+    const body = {
+      model: this.model,
+      max_tokens: 4096,
+      temperature: 0,
+      system,
+      tools: [tool],
+      tool_choice: { type: "tool", name: "build_manifest" },
+      messages: [{ role: "user", content: intent }],
+    };
+
+    const outcome = await fetchWithRetry(
+      "https://api.anthropic.com/v1/messages",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify(body),
+      },
+      this.cfg.retry,
+      fetchImpl,
+    );
+
+    if (!outcome.ok) {
+      throw new ModelError(
+        outcome.status === 0
+          ? `network error calling model: ${outcome.rawBody}`
+          : `model API ${outcome.status}: ${outcome.rawBody}`,
+      );
+    }
+
+    const json = (await outcome.resp.json()) as {
+      content?: { type: string; name?: string; input?: unknown }[];
+    };
+
+    const toolUse = (json.content ?? []).find(c => c.type === "tool_use" && c.name === "build_manifest");
+    if (!toolUse?.input) throw new ModelError("model did not call build_manifest tool");
+
+    log.info({ model: this.model }, "manifest-compiler: tool call received");
+    // tool input is already a parsed object — convert to JSON string for the shared parser
+    return parseManifestProposal(JSON.stringify(toolUse.input));
+  }
+
+  /**
+   * Fallback path for Ollama / OpenAI / test injection.
+   * Uses a structured JSON prompt with few-shot example.
+   */
+  private async proposeWithPrompt(intent: string): Promise<ManifestProposal> {
+    const system = this.buildSystemPrompt();
     let text: string;
 
     if (this.cfg.fetchImpl) {
-      // Test-injection path: use direct Anthropic fetch with injected fetchImpl
+      // Test-injection path
       const body = {
         model: this.model,
         max_tokens: 2048,
@@ -80,7 +235,7 @@ export class AnthropicModel implements ModelPort {
           body: JSON.stringify(body),
         },
         this.cfg.retry,
-        this.fetchImpl,
+        this.cfg.fetchImpl,
       );
       if (!outcome.ok) {
         throw new ModelError(
@@ -92,7 +247,6 @@ export class AnthropicModel implements ModelPort {
       const json = (await outcome.resp.json()) as { content?: { type: string; text?: string }[] };
       text = (json.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("");
     } else {
-      // Production path: use the shared LLM client (supports all providers)
       const clientConfig: LLMClientConfig = this.cfg.llmConfig ?? {
         provider: (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") as LLMClientConfig["provider"],
         apiKey: this.cfg.apiKey || process.env["KRELVAN_LLM_API_KEY"],
@@ -100,34 +254,27 @@ export class AnthropicModel implements ModelPort {
       };
       const client = makeLLMClient(clientConfig);
       try {
-        // Few-shot: give one complete Q→A exchange so the model learns the exact output format.
         const exampleQ = "Intent: Monitor RSS feed for new posts and send a Telegram alert";
         const exampleA = JSON.stringify({
-          version: 1,
-          name: "rss-telegram-monitor",
+          version: 1, name: "rss-telegram-monitor",
           intent: "Monitor RSS feed for new posts and send a Telegram alert",
-          entry: "fetch",
-          runBudgetCents: 50,
-          maxNodeVisits: 5,
+          entry: "fetch", runBudgetCents: 50, maxNodeVisits: 5,
           seed: { url: "https://feeds.example.com/rss.xml" },
           nodes: [
-            { id: "fetch", role: "Fetch the RSS feed and return its content", autonomy: "full", capabilities: [{ name: "http_get", sideEffect: "read", budgetCents: 2 }] },
-            { id: "analyse", role: "Analyse the RSS feed content and identify new posts. Set alert_needed to true if new posts found.", autonomy: "full", capabilities: [{ name: "think", sideEffect: "read", budgetCents: 30 }] },
+            { id: "fetch", role: "Fetch the RSS feed", autonomy: "full", capabilities: [{ name: "http_get", sideEffect: "read", budgetCents: 2 }] },
+            { id: "analyse", role: "Analyse the feed and identify new posts", autonomy: "full", capabilities: [{ name: "think", sideEffect: "read", budgetCents: 30 }] },
             { id: "notify", role: "Send a Telegram message summarising new posts", autonomy: "act-with-veto", capabilities: [{ name: "telegram_send", sideEffect: "write-reversible", budgetCents: 2 }] },
           ],
           edges: [{ from: "fetch", to: "analyse" }, { from: "analyse", to: "notify" }],
         });
-        const userMsg = `Intent: ${intent}`;
         const response = await client.complete({
           system,
           messages: [
             { role: "user", content: exampleQ },
             { role: "assistant", content: exampleA },
-            { role: "user", content: userMsg },
+            { role: "user", content: `Intent: ${intent}` },
           ],
-          model: this.model,
-          maxTokens: 2048,
-          temperature: 0,
+          model: this.model, maxTokens: 2048, temperature: 0,
         });
         text = response.text;
       } catch (err) {
@@ -136,9 +283,7 @@ export class AnthropicModel implements ModelPort {
     }
 
     if (!text.trim()) throw new ModelError("model returned no text content");
-
-    log.info({ model: this.model, textLen: text.length, preview: text.slice(0, 200) }, "manifest-compiler: raw model output");
-
+    log.info({ model: this.model, preview: text.slice(0, 200) }, "manifest-compiler: raw model output");
     return parseManifestProposal(text);
   }
 
