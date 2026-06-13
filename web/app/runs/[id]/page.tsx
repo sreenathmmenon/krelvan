@@ -23,7 +23,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [startingRun, setStartingRun] = useState(false);
   const [events, setEvents]     = useState<LedgerEvent[]>([]);
   const [loading, setLoading]   = useState(true);
-  const [tab, setTab]           = useState<"canvas" | "timeline" | "state" | "explain">("canvas");
+  const [tab, setTab]           = useState<"output" | "canvas" | "timeline" | "state" | "explain">("output");
   const [explanation, setExplanation] = useState<RunExplanation | null>(null);
   const [explaining, setExplaining] = useState(false);
   const [explainError, setExplainError] = useState<string | null>(null);
@@ -322,7 +322,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
       {/* tabs */}
       <div role="tablist" aria-label="Run detail" style={{ display: "flex", gap: 0, marginBottom: "var(--s5)", borderBottom: "1px solid var(--line)", marginTop: "var(--s5)" }}>
-        {(["canvas", "timeline", "state", "explain"] as const).map(t => (
+        {(["output", "canvas", "timeline", "state", "explain"] as const).map(t => (
           <button
             key={t}
             role="tab"
@@ -338,10 +338,15 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               marginBottom: -1,
             }}
           >
-            {t === "canvas" ? "Graph" : t === "explain" ? "Explain" : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === "canvas" ? "Graph" : t === "explain" ? "Explain" : t === "output" ? "Output" : t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
+
+      {/* output — primary result panel */}
+      {tab === "output" && (
+        <OutputPanel projection={projection} manifest={syntheticManifest} run={run} />
+      )}
 
       {/* canvas / graph */}
       {tab === "canvas" && (
@@ -433,6 +438,177 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             }
           }}
         />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Output Panel ──────────────────────────────────────────────────────────────
+
+function OutputPanel({ projection, manifest, run }: {
+  projection: RunDetail["projection"];
+  manifest: Manifest;
+  run: RunDetail["run"];
+}) {
+  const [copied, setCopied] = useState(false);
+  const state = projection.state;
+
+  // Extract the "primary output" — ordered priority:
+  // 1. compose.text (human-readable composed text)
+  // 2. last node's .result  (think result from final node)
+  // 3. any .result key from any node
+  // 4. any .body key (http_get response)
+  // 5. any long string value (> 100 chars)
+  type OutputBlock = { label: string; nodeId: string; key: string; value: string; kind: "text" | "data" };
+  const outputs: OutputBlock[] = [];
+
+  // Collect all node results in node order
+  const nodeOrder = manifest.nodes.map(n => n.id);
+
+  // Pass 1: compose.text and think results (ordered by node)
+  for (const nodeId of nodeOrder) {
+    const textKey = `${nodeId}.text`;
+    const resultKey = `${nodeId}.result`;
+    if (typeof state[textKey] === "string" && String(state[textKey]).length > 20) {
+      outputs.push({ label: "Composed text", nodeId, key: textKey, value: String(state[textKey]), kind: "text" });
+    }
+    if (typeof state[resultKey] === "string" && String(state[resultKey]).length > 20) {
+      outputs.push({ label: "Result", nodeId, key: resultKey, value: String(state[resultKey]), kind: "text" });
+    }
+  }
+
+  // Pass 2: .body keys (http_get / web.fetch responses)
+  for (const nodeId of nodeOrder) {
+    const bodyKey = `${nodeId}.body`;
+    if (typeof state[bodyKey] === "string" && String(state[bodyKey]).length > 20) {
+      outputs.push({ label: "Fetched data", nodeId, key: bodyKey, value: String(state[bodyKey]), kind: "data" });
+    }
+  }
+
+  // Pass 3: web_search snippet
+  for (const nodeId of nodeOrder) {
+    const snippetKey = `${nodeId}.results`;
+    if (state[snippetKey] !== undefined) {
+      try {
+        const arr = JSON.parse(String(state[snippetKey])) as { title?: string; snippet?: string }[];
+        if (Array.isArray(arr) && arr.length > 0) {
+          const text = arr.map((r, i) => `${i + 1}. **${r.title ?? ""}**\n${r.snippet ?? ""}`).join("\n\n");
+          outputs.push({ label: "Search results", nodeId, key: snippetKey, value: text, kind: "text" });
+        }
+      } catch { /* not JSON */ }
+    }
+  }
+
+  // Scalar summary: all non-internal non-long keys grouped by node
+  const scalarsByNode: Record<string, { key: string; value: string }[]> = {};
+  for (const [k, v] of Object.entries(state)) {
+    if (k.startsWith("_")) continue;
+    const val = String(v);
+    if (val.length > 300) continue; // long text already shown above
+    if (k.endsWith(".thought") || k.endsWith(".next") || k.endsWith(".body")) continue;
+    const dot = k.indexOf(".");
+    const nodeId = dot >= 0 ? k.slice(0, dot) : k;
+    const shortKey = dot >= 0 ? k.slice(dot + 1) : k;
+    if (!scalarsByNode[nodeId]) scalarsByNode[nodeId] = [];
+    scalarsByNode[nodeId].push({ key: shortKey, value: val });
+  }
+
+  const isRunning = run.status === "running";
+  const isFailed = run.status === "failed";
+
+  function copyAll() {
+    const text = outputs.map(o => `## ${o.label} (${o.nodeId})\n\n${o.value}`).join("\n\n---\n\n");
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  if (isRunning) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "var(--s9) 0", gap: "var(--s3)" }}>
+        <span className="status-dot running" style={{ width: 10, height: 10 }} />
+        <p style={{ fontSize: 14, color: "var(--ink-muted)" }}>Agent is running — output will appear here when complete.</p>
+      </div>
+    );
+  }
+
+  if (isFailed) {
+    return (
+      <div className="card" style={{ padding: "var(--s5)", borderColor: "var(--err)", background: "var(--err-tint, #fff5f5)" }}>
+        <p style={{ fontSize: 13, fontWeight: 600, color: "var(--err)", marginBottom: "var(--s2)" }}>Run failed</p>
+        <p style={{ fontSize: 13, color: "var(--ink-soft)" }}>{run.reason ?? "No error details available."}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s5)" }}>
+
+      {/* Primary outputs */}
+      {outputs.length === 0 && (
+        <div className="card" style={{ padding: "var(--s5)", textAlign: "center" }}>
+          <p style={{ fontSize: 13, color: "var(--ink-muted)" }}>
+            No text output produced. Check the <strong>State</strong> tab for raw values.
+          </p>
+        </div>
+      )}
+
+      {outputs.map((o, idx) => (
+        <div key={o.key} className="card" style={{ padding: 0, overflow: "hidden" }}>
+          {/* header */}
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "var(--s3) var(--s4)",
+            borderBottom: "1px solid var(--line)",
+            background: "var(--surface-sunken)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)" }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--brand)", textTransform: "uppercase", letterSpacing: ".06em" }}>{o.label}</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-muted)", background: "var(--line)", padding: "2px 6px", borderRadius: 4 }}>{o.nodeId}</span>
+            </div>
+            {idx === 0 && outputs.length > 0 && (
+              <button onClick={copyAll} style={{
+                fontSize: 11, color: "var(--ink-muted)", background: "none", border: "1px solid var(--line)",
+                borderRadius: 6, padding: "3px 10px", cursor: "pointer",
+              }}>
+                {copied ? "Copied!" : "Copy all"}
+              </button>
+            )}
+          </div>
+          {/* body */}
+          <div style={{ padding: "var(--s5)", fontSize: 14, color: "var(--ink)", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+            {o.value}
+          </div>
+        </div>
+      ))}
+
+      {/* Scalar decisions summary */}
+      {Object.keys(scalarsByNode).length > 0 && (
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "var(--s3) var(--s4)", borderBottom: "1px solid var(--line)", background: "var(--surface-sunken)" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Decisions &amp; values</span>
+          </div>
+          <div style={{ padding: "var(--s4)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
+            {nodeOrder.filter(nid => scalarsByNode[nid]?.length).map(nodeId => (
+              <div key={nodeId}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--brand)", marginBottom: "var(--s2)", fontFamily: "var(--font-mono)" }}>{nodeId}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)" }}>
+                  {scalarsByNode[nodeId].map(({ key, value }) => (
+                    <div key={key} style={{
+                      display: "flex", gap: 6, alignItems: "baseline",
+                      background: "var(--surface-sunken)", borderRadius: 6, padding: "4px 10px",
+                      border: "1px solid var(--line)",
+                    }}>
+                      <span style={{ fontSize: 11, color: "var(--ink-muted)", fontFamily: "var(--font-mono)" }}>{key}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink)" }}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
