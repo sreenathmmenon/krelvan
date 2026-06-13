@@ -54,6 +54,15 @@ export interface LLMRequest {
   model: string;
   maxTokens: number;
   temperature: number;
+  /**
+   * When set, the provider is asked to return a JSON object matching this schema.
+   * Each provider implements this via its native mechanism:
+   *   Anthropic → forced tool call (tool_choice: tool, schema as input_schema)
+   *   OpenAI    → response_format json_schema
+   *   Ollama    → format: <schema>
+   * The response `.text` will be valid JSON matching the schema.
+   */
+  schema?: { name: string; description?: string; schema: Record<string, unknown> };
 }
 
 export interface LLMResponse {
@@ -78,6 +87,35 @@ class AnthropicLLMClient implements LLMClient {
   constructor(private readonly apiKey: string, private readonly baseUrl: string) {}
 
   async complete(req: LLMRequest): Promise<LLMResponse> {
+    // When a schema is requested, use a forced tool call — Anthropic's native
+    // structured output mechanism. The response is guaranteed to match the schema.
+    if (req.schema) {
+      const tool = {
+        name: req.schema.name,
+        description: req.schema.description ?? req.schema.name,
+        input_schema: req.schema.schema,
+      };
+      const body = {
+        model: req.model,
+        max_tokens: req.maxTokens,
+        temperature: req.temperature,
+        system: req.system,
+        tools: [tool],
+        tool_choice: { type: "tool", name: req.schema.name },
+        messages: req.messages,
+      };
+      const outcome = await fetchWithRetry(
+        `${this.baseUrl}/v1/messages`,
+        { method: "POST", headers: { "content-type": "application/json", "x-api-key": this.apiKey, "anthropic-version": "2023-06-01" }, body: JSON.stringify(body) },
+        { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
+      );
+      if (!outcome.ok) throw new Error(outcome.status === 0 ? `network error: ${outcome.rawBody}` : `LLM API ${outcome.status}: ${outcome.rawBody}`);
+      const json = (await outcome.resp.json()) as { content?: { type: string; name?: string; input?: unknown }[]; usage?: { input_tokens: number; output_tokens: number } };
+      const toolUse = (json.content ?? []).find(c => c.type === "tool_use" && c.name === req.schema!.name);
+      if (!toolUse?.input) throw new Error(`model did not call ${req.schema.name} tool`);
+      return { text: JSON.stringify(toolUse.input), inputTokens: json.usage?.input_tokens ?? 0, outputTokens: json.usage?.output_tokens ?? 0 };
+    }
+
     const body = {
       model: req.model,
       max_tokens: req.maxTokens,
@@ -90,39 +128,17 @@ class AnthropicLLMClient implements LLMClient {
       `${this.baseUrl}/v1/messages`,
       {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": this.apiKey,
-          "anthropic-version": "2023-06-01",
-        },
+        headers: { "content-type": "application/json", "x-api-key": this.apiKey, "anthropic-version": "2023-06-01" },
         body: JSON.stringify(body),
       },
       { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
     );
 
-    if (!outcome.ok) {
-      const msg = outcome.status === 0
-        ? `network error: ${outcome.rawBody}`
-        : `LLM API ${outcome.status}: ${outcome.rawBody}`;
-      throw new Error(msg);
-    }
+    if (!outcome.ok) throw new Error(outcome.status === 0 ? `network error: ${outcome.rawBody}` : `LLM API ${outcome.status}: ${outcome.rawBody}`);
 
-    const json = (await outcome.resp.json()) as {
-      content?: { type: string; text?: string }[];
-      usage?: { input_tokens: number; output_tokens: number };
-    };
-
-    const text = (json.content ?? [])
-      .filter(c => c.type === "text")
-      .map(c => c.text ?? "")
-      .join("")
-      .trim();
-
-    return {
-      text,
-      inputTokens: json.usage?.input_tokens ?? 0,
-      outputTokens: json.usage?.output_tokens ?? 0,
-    };
+    const json = (await outcome.resp.json()) as { content?: { type: string; text?: string }[]; usage?: { input_tokens: number; output_tokens: number } };
+    const text = (json.content ?? []).filter(c => c.type === "text").map(c => c.text ?? "").join("").trim();
+    return { text, inputTokens: json.usage?.input_tokens ?? 0, outputTokens: json.usage?.output_tokens ?? 0 };
   }
 }
 
@@ -132,50 +148,35 @@ class OpenAILLMClient implements LLMClient {
   constructor(private readonly apiKey: string, private readonly baseUrl: string) {}
 
   async complete(req: LLMRequest): Promise<LLMResponse> {
-    const body = {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (this.apiKey) headers["authorization"] = `Bearer ${this.apiKey}`;
+
+    const body: Record<string, unknown> = {
       model: req.model,
       max_tokens: req.maxTokens,
       temperature: req.temperature,
-      messages: [
-        { role: "system", content: req.system },
-        ...req.messages,
-      ],
+      messages: [{ role: "system", content: req.system }, ...req.messages],
     };
 
-    const headers: Record<string, string> = {
-      "content-type": "application/json",
-    };
-    if (this.apiKey) headers["authorization"] = `Bearer ${this.apiKey}`;
+    // OpenAI structured output via json_schema response_format.
+    if (req.schema) {
+      body["response_format"] = {
+        type: "json_schema",
+        json_schema: { name: req.schema.name, strict: true, schema: req.schema.schema },
+      };
+    }
 
     const outcome = await fetchWithRetry(
       `${this.baseUrl}/chat/completions`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      },
+      { method: "POST", headers, body: JSON.stringify(body) },
       { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
     );
 
-    if (!outcome.ok) {
-      const msg = outcome.status === 0
-        ? `network error: ${outcome.rawBody}`
-        : `LLM API ${outcome.status}: ${outcome.rawBody}`;
-      throw new Error(msg);
-    }
+    if (!outcome.ok) throw new Error(outcome.status === 0 ? `network error: ${outcome.rawBody}` : `LLM API ${outcome.status}: ${outcome.rawBody}`);
 
-    const json = (await outcome.resp.json()) as {
-      choices?: { message?: { content?: string } }[];
-      usage?: { prompt_tokens: number; completion_tokens: number };
-    };
-
+    const json = (await outcome.resp.json()) as { choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens: number; completion_tokens: number } };
     const text = (json.choices?.[0]?.message?.content ?? "").trim();
-
-    return {
-      text,
-      inputTokens: json.usage?.prompt_tokens ?? 0,
-      outputTokens: json.usage?.completion_tokens ?? 0,
-    };
+    return { text, inputTokens: json.usage?.prompt_tokens ?? 0, outputTokens: json.usage?.completion_tokens ?? 0 };
   }
 }
 
@@ -185,19 +186,14 @@ class OllamaLLMClient implements LLMClient {
   constructor(private readonly baseUrl: string) {}
 
   async complete(req: LLMRequest): Promise<LLMResponse> {
-    // Ollama native API — use format:"json" to guarantee valid JSON output (no preamble/prose).
+    // Ollama native API — format:"json" forces valid JSON; passing the full schema
+    // constrains the output to match it (supported in Ollama ≥0.4).
     const body = {
       model: req.model,
-      messages: [
-        { role: "system", content: req.system },
-        ...req.messages,
-      ],
+      messages: [{ role: "system", content: req.system }, ...req.messages],
       stream: false,
-      format: "json",
-      options: {
-        temperature: req.temperature,
-        num_predict: req.maxTokens,
-      },
+      format: req.schema ? req.schema.schema : "json",
+      options: { temperature: req.temperature, num_predict: req.maxTokens },
     };
 
     // Ollama local inference can be slow on large prompts — allow up to 10 minutes.

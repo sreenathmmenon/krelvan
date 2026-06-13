@@ -55,317 +55,137 @@ export class AnthropicModel implements ModelPort {
   }
 
   async propose(intent: string): Promise<ManifestProposal> {
-    const provider = this.cfg.llmConfig?.provider ?? process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
-
-    // Anthropic supports native tool calling — use it so the model applies its
-    // trained tool-selection logic to pick capabilities by description, not by
-    // reading a text list and guessing.
-    if (provider === "anthropic" && !this.cfg.fetchImpl) {
-      return this.proposeWithTools(intent);
-    }
-
-    // Fallback for Ollama / OpenAI / test injection: structured JSON prompt.
-    return this.proposeWithPrompt(intent);
-  }
-
-  /**
-   * Anthropic tool-calling path.
-   * We define one tool — build_manifest — whose input_schema has a capability
-   * enum built from the live registry. The model uses its native tool-selection
-   * training to pick the right capabilities by reading their descriptions.
-   */
-  private async proposeWithTools(intent: string): Promise<ManifestProposal> {
     const capNames = this.cfg.allowedCapabilities.map(c => c.name);
 
-    // Build a tools array: one tool per capability so Anthropic's tool-selection
-    // logic fires for each node the model wants to add. Plus one submit tool.
-    // Simpler and more reliable: one build_manifest tool whose schema enumerates
-    // capabilities — the model fills in the nodes array using the descriptions.
-    const tool = {
-      name: "build_manifest",
-      description: "Build the agent manifest. Call this once with the complete manifest.",
-      input_schema: {
-        type: "object",
-        required: ["version", "name", "intent", "entry", "runBudgetCents", "nodes", "edges"],
-        properties: {
-          version: { type: "number", description: "Always 1" },
-          name: { type: "string", description: "Short kebab-case agent name" },
-          intent: { type: "string", description: "The user's intent verbatim" },
-          entry: { type: "string", description: "ID of the first node to run" },
-          runBudgetCents: { type: "integer", description: "Total budget in cents" },
-          maxNodeVisits: { type: "integer", description: "Max times any node may be visited (default 5)" },
-          seed: { type: "object", description: "Initial run state key/value pairs (e.g. query for web_search)" },
-          nodes: {
-            type: "array",
-            items: {
-              type: "object",
-              required: ["id", "role", "autonomy", "capabilities"],
-              properties: {
-                id: { type: "string" },
-                role: { type: "string", description: "Precise instruction for what this node does" },
-                autonomy: { type: "string", enum: ["full", "act-with-veto", "suggest"] },
-                capabilities: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    required: ["name", "sideEffect", "budgetCents"],
-                    properties: {
-                      name: { type: "string", enum: capNames, description: "Capability name — must be from the allowed list" },
-                      sideEffect: { type: "string" },
-                      budgetCents: { type: "integer" },
-                    },
+    // Build the manifest JSON schema with capability names as an enum.
+    // Every provider (Anthropic, OpenAI, Ollama) uses this schema via its native
+    // structured-output mechanism — the LLMClient handles provider differences.
+    // The model reads capability descriptions and picks from the enum.
+    const manifestSchema = {
+      type: "object" as const,
+      required: ["version", "name", "intent", "entry", "runBudgetCents", "nodes", "edges"],
+      additionalProperties: false,
+      properties: {
+        version:        { type: "integer", description: "Always 1" },
+        name:           { type: "string",  description: "Short kebab-case agent name" },
+        intent:         { type: "string",  description: "The user's intent verbatim" },
+        entry:          { type: "string",  description: "ID of the first node to run" },
+        runBudgetCents: { type: "integer", description: `Total budget in cents, max ${this.cfg.suggestedRunBudgetCents}` },
+        maxNodeVisits:  { type: "integer", description: "Max node visits (default 5)" },
+        seed: {
+          type: "object",
+          description: "Initial run state (e.g. {\"query\": \"...\"} for web_search)",
+          additionalProperties: true,
+        },
+        nodes: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["id", "role", "autonomy", "capabilities"],
+            additionalProperties: false,
+            properties: {
+              id:       { type: "string" },
+              role:     { type: "string", description: "Precise instruction for what this node does" },
+              autonomy: { type: "string", enum: ["full", "act-with-veto", "suggest"],
+                description: "full=read-only, act-with-veto=message-human (user reviews before send), suggest=irreversible writes" },
+              capabilities: {
+                type: "array",
+                items: {
+                  type: "object",
+                  required: ["name", "sideEffect", "budgetCents"],
+                  additionalProperties: false,
+                  properties: {
+                    name:         { type: "string", enum: capNames },
+                    sideEffect:   { type: "string" },
+                    budgetCents:  { type: "integer" },
                   },
                 },
               },
             },
           },
-          edges: {
-            type: "array",
-            items: {
-              type: "object",
-              required: ["from", "to"],
-              properties: {
-                from: { type: "string" },
-                to: { type: "string" },
-                condition: { type: "string" },
-              },
+        },
+        edges: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["from", "to"],
+            additionalProperties: false,
+            properties: {
+              from:      { type: "string" },
+              to:        { type: "string" },
+              condition: { type: "string" },
             },
           },
         },
       },
     };
 
-    // Build tool descriptions list so the model knows what each capability does.
+    // System prompt: capability descriptions only — no hardcoded names.
     const capDescriptions = this.cfg.allowedCapabilities.map(c => {
-      let line = `- **${c.name}**: ${c.description ?? c.name}`;
-      if (c.useWhen) line += ` — USE: ${c.useWhen}`;
-      if (c.notes) line += ` (NOTE: ${c.notes})`;
+      let line = `- ${c.name} (${c.sideEffect}): ${c.description ?? c.name}`;
+      if (c.notes) line += `. NOTE: ${c.notes}`;
       return line;
     }).join("\n");
 
+    const agentLines = this.cfg.knownAgents?.length
+      ? ["", "Sub-agents you may delegate to (use exact id in subAgent.manifestId):",
+          ...this.cfg.knownAgents.map(a => `- ${a.id}: ${a.intent.slice(0, 100)}`)]
+      : [];
+
     const system = [
-      "You are a manifest compiler. Given a user's intent, call build_manifest exactly once with the complete agent manifest.",
-      "Choose capabilities by matching their descriptions to the intent. Only use capability names from the enum.",
-      "autonomy: 'full' for read side-effects, 'act-with-veto' for message-human, 'suggest' for irreversible writes.",
-      "runBudgetCents must be an integer. budgetCents on each capability must be an integer.",
+      "You are a manifest compiler. Given a user's intent, output a complete agent manifest.",
+      "Pick capabilities by matching their descriptions to the intent. Only use names from the capability list.",
+      "autonomy: full=read, act-with-veto=message-human (requires approval before sending), suggest=irreversible writes.",
       "",
-      "AVAILABLE CAPABILITIES:",
+      "CAPABILITIES:",
       capDescriptions,
+      ...agentLines,
     ].join("\n");
 
     const clientConfig: LLMClientConfig = this.cfg.llmConfig ?? {
-      provider: "anthropic",
+      provider: (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") as LLMClientConfig["provider"],
       apiKey: this.cfg.apiKey || process.env["KRELVAN_LLM_API_KEY"],
+      baseUrl: process.env["KRELVAN_LLM_BASE_URL"],
     };
 
-    const fetchImpl = (globalThis as Record<string, unknown>)["fetch"] as typeof fetch;
-    const apiKey = clientConfig.apiKey ?? "";
-
-    const body = {
-      model: this.model,
-      max_tokens: 4096,
-      temperature: 0,
-      system,
-      tools: [tool],
-      tool_choice: { type: "tool", name: "build_manifest" },
-      messages: [{ role: "user", content: intent }],
-    };
-
-    const outcome = await fetchWithRetry(
-      "https://api.anthropic.com/v1/messages",
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify(body),
-      },
-      this.cfg.retry,
-      fetchImpl,
-    );
-
-    if (!outcome.ok) {
-      throw new ModelError(
-        outcome.status === 0
-          ? `network error calling model: ${outcome.rawBody}`
-          : `model API ${outcome.status}: ${outcome.rawBody}`,
-      );
-    }
-
-    const json = (await outcome.resp.json()) as {
-      content?: { type: string; name?: string; input?: unknown }[];
-    };
-
-    const toolUse = (json.content ?? []).find(c => c.type === "tool_use" && c.name === "build_manifest");
-    if (!toolUse?.input) throw new ModelError("model did not call build_manifest tool");
-
-    log.info({ model: this.model }, "manifest-compiler: tool call received");
-    // tool input is already a parsed object — convert to JSON string for the shared parser
-    return parseManifestProposal(JSON.stringify(toolUse.input));
-  }
-
-  /**
-   * Fallback path for Ollama / OpenAI / test injection.
-   * Uses a structured JSON prompt with few-shot example.
-   */
-  private async proposeWithPrompt(intent: string): Promise<ManifestProposal> {
-    const system = this.buildSystemPrompt();
-    let text: string;
-
+    // Test-injection path uses a raw Anthropic fetch (no shared client).
     if (this.cfg.fetchImpl) {
-      // Test-injection path
       const body = {
-        model: this.model,
-        max_tokens: 2048,
-        temperature: 0,
-        system,
-        messages: [{ role: "user", content: `Intent: ${intent}\n\nReturn ONLY the JSON manifest.` }],
+        model: this.model, max_tokens: 4096, temperature: 0, system,
+        tools: [{ name: "build_manifest", description: "Build the manifest", input_schema: manifestSchema }],
+        tool_choice: { type: "tool", name: "build_manifest" },
+        messages: [{ role: "user", content: intent }],
       };
       const outcome = await fetchWithRetry(
         "https://api.anthropic.com/v1/messages",
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-api-key": this.cfg.apiKey,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify(body),
-        },
-        this.cfg.retry,
-        this.cfg.fetchImpl,
+        { method: "POST", headers: { "content-type": "application/json", "x-api-key": this.cfg.apiKey, "anthropic-version": "2023-06-01" }, body: JSON.stringify(body) },
+        this.cfg.retry, this.cfg.fetchImpl,
       );
-      if (!outcome.ok) {
-        throw new ModelError(
-          outcome.status === 0
-            ? `network error calling model: ${outcome.rawBody}`
-            : `model API ${outcome.status} after ${outcome.attempts} attempt(s): ${outcome.rawBody}`,
-        );
-      }
-      const json = (await outcome.resp.json()) as { content?: { type: string; text?: string }[] };
-      text = (json.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("");
-    } else {
-      const clientConfig: LLMClientConfig = this.cfg.llmConfig ?? {
-        provider: (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") as LLMClientConfig["provider"],
-        apiKey: this.cfg.apiKey || process.env["KRELVAN_LLM_API_KEY"],
-        baseUrl: process.env["KRELVAN_LLM_BASE_URL"],
-      };
-      const client = makeLLMClient(clientConfig);
-      try {
-        const exampleQ = "Intent: Monitor RSS feed for new posts and send a Telegram alert";
-        const exampleA = JSON.stringify({
-          version: 1, name: "rss-telegram-monitor",
-          intent: "Monitor RSS feed for new posts and send a Telegram alert",
-          entry: "fetch", runBudgetCents: 50, maxNodeVisits: 5,
-          seed: { url: "https://feeds.example.com/rss.xml" },
-          nodes: [
-            { id: "fetch", role: "Fetch the RSS feed", autonomy: "full", capabilities: [{ name: "http_get", sideEffect: "read", budgetCents: 2 }] },
-            { id: "analyse", role: "Analyse the feed and identify new posts", autonomy: "full", capabilities: [{ name: "think", sideEffect: "read", budgetCents: 30 }] },
-            { id: "notify", role: "Send a Telegram message summarising new posts", autonomy: "act-with-veto", capabilities: [{ name: "telegram_send", sideEffect: "write-reversible", budgetCents: 2 }] },
-          ],
-          edges: [{ from: "fetch", to: "analyse" }, { from: "analyse", to: "notify" }],
-        });
-        const response = await client.complete({
-          system,
-          messages: [
-            { role: "user", content: exampleQ },
-            { role: "assistant", content: exampleA },
-            { role: "user", content: `Intent: ${intent}` },
-          ],
-          model: this.model, maxTokens: 2048, temperature: 0,
-        });
-        text = response.text;
-      } catch (err) {
-        throw new ModelError(`model call failed: ${(err as Error).message}`);
-      }
+      if (!outcome.ok) throw new ModelError(`model API ${outcome.status}: ${outcome.rawBody}`);
+      const json = (await outcome.resp.json()) as { content?: { type: string; name?: string; input?: unknown }[] };
+      const toolUse = (json.content ?? []).find(c => c.type === "tool_use");
+      if (!toolUse?.input) throw new ModelError("model did not return a tool call");
+      return parseManifestProposal(JSON.stringify(toolUse.input));
     }
 
-    if (!text.trim()) throw new ModelError("model returned no text content");
-    log.info({ model: this.model, preview: text.slice(0, 200) }, "manifest-compiler: raw model output");
-    return parseManifestProposal(text);
-  }
-
-  private buildSystemPrompt(): string {
-    // Build the capabilities section entirely from the registry — no hardcoded names.
-    const capLines = this.cfg.allowedCapabilities.map((c) => {
-      let line = `  "${c.name}" (side-effect: "${c.sideEffect}")`;
-      if (c.description) line += ` — ${c.description}`;
-      if (c.useWhen) line += `\n    USE: ${c.useWhen}`;
-      if (c.notes) line += `\n    NOTE: ${c.notes}`;
-      return line;
-    });
-    const caps = capLines.join("\n");
-
-    const agentSection: string[] = [];
-    if (this.cfg.knownAgents?.length) {
-      agentSection.push(
-        "",
-        "REGISTERED AGENTS — available for subAgent delegation (use their exact ID):",
-        ...this.cfg.knownAgents.map((a) => `  - id: "${a.id}"  name: "${a.name}"  purpose: "${a.intent.slice(0, 120)}"`),
-        "IMPORTANT: Only use an id from the list above in subAgent.manifestId. Never invent an id.",
-      );
+    // Production path — LLMClient handles structured output for each provider.
+    const client = makeLLMClient(clientConfig);
+    try {
+      const response = await client.complete({
+        system,
+        messages: [{ role: "user", content: intent }],
+        model: this.model,
+        maxTokens: 4096,
+        temperature: 0,
+        schema: { name: "build_manifest", description: "Build the agent manifest", schema: manifestSchema },
+      });
+      log.info({ model: this.model, preview: response.text.slice(0, 120) }, "manifest-compiler: structured output received");
+      return parseManifestProposal(response.text);
+    } catch (err) {
+      throw new ModelError(`model call failed: ${(err as Error).message}`);
     }
-
-    return [
-      "You are a manifest compiler for Krelvan. Output ONLY valid JSON. No prose, no code fences, no wrapper keys.",
-      "",
-      "CRITICAL OUTPUT RULES (violating any of these makes the output unusable):",
-      "- Output a single JSON object at the top level. Do NOT wrap it in a 'manifest' key or any other key.",
-      "- 'version' MUST be the integer 1. Not '1', not '1.0' — the JSON number 1.",
-      "- Every node MUST have: id, role, autonomy, capabilities.",
-      "- 'entry' MUST match one of the node ids.",
-      "",
-      "CONCRETE EXAMPLE — a research agent that searches the web then summarises:",
-      '{"version":1,"name":"ai-news-digest","intent":"Find latest AI news and summarise","entry":"search","runBudgetCents":100,"maxNodeVisits":5,',
-      ' "seed":{"query":"latest artificial intelligence news 2025"},',
-      ' "nodes":[',
-      '   {"id":"search","role":"Search for the latest AI news","autonomy":"full","capabilities":[{"name":"web_search","sideEffect":"read","budgetCents":10}]},',
-      '   {"id":"summarise","role":"Summarise the top 3 AI developments from the search results","autonomy":"full","capabilities":[{"name":"think","sideEffect":"read","budgetCents":50}]}',
-      ' ],',
-      ' "edges":[{"from":"search","to":"summarise"}]}',
-      "",
-      "AVAILABLE CAPABILITIES — what each one does, when to use it, and its side-effect class:",
-      caps,
-      ...agentSection,
-      "",
-      "DESIGN GUIDANCE:",
-      "- Read the USE: guidance for each capability above — it tells you exactly when to pick it.",
-      "- Any agent that needs to REASON or analyse: include a node whose capability's USE says 'intelligence' or 'analysis'.",
-      "- Agents that LEARN over time: start with a memory-read capability, end with a memory-write capability.",
-      "- Agents that ADAPT path based on content: use a routing capability instead of static edges.",
-      "- Match the notification channel to what the user asked for — read the USE guidance for each messaging capability.",
-      "- Prefer a user-installed plugin over a built-in when the plugin's description better matches the intent.",
-      "- Typical patterns (use capability names from the list above, not these literals):",
-      "    Monitoring:  [memory-read] → [reasoning] → [conditional] → [notification] → [memory-write]",
-      "    Research:    [web/API fetch] → [reasoning] → [text composition] → [notification]",
-      "    Digest:      [memory-read] → [web/API fetch] → [reasoning] → [composition] → [notification] → [memory-write]",
-      "    API pipeline: [http-read] → [reasoning] → [http-write]",
-      "",
-      "MULTI-AGENT CHAINING — using subAgent to delegate to a registered agent:",
-      "  A capability can delegate to a pre-existing registered agent by adding a 'subAgent' field.",
-      "  The engine spawns a full sub-run of that agent, enforces budget ceiling, and maps outputs back.",
-      "  Use ONLY when the agent's ID appears in the REGISTERED AGENTS list above.",
-      "  subAgent capability shape:",
-      '  { "name": "<slug>", "sideEffect": "read", "budgetCents": <integer>,',
-      '    "subAgent": { "manifestId": "<registered agent id>", "onSubFailure": "return-error",',
-      '                  "outputMapping": { "<parentStateKey>": "<subAgentNodeId.outputKey>" } } }',
-      "  outputMapping note: sub-agent state keys are namespaced 'nodeId.key'.",
-      "  Example: sub-agent node 'summarise' outputting 'result' → key is 'summarise.result'.",
-      "  Map it to a parent key: { \"summary\": \"summarise.result\" }",
-      "",
-      `Keep total runBudgetCents <= ${this.cfg.suggestedRunBudgetCents}. All cents are integers (no decimals).`,
-      "Autonomy rules: use 'full' for capabilities with side-effect 'read'. Use 'act-with-veto' for 'message-human' side-effects so the user can review before sending. Use 'suggest' for irreversible write side-effects.",
-      "The 'role' field on each node is the system prompt shown to 'think' at runtime — make it a precise, specific instruction.",
-      "",
-      "CRITICAL OUTPUT RULES:",
-      "- Output ONLY the JSON object. No explanation, no markdown, no code fences, no wrapper objects.",
-      "- Do NOT wrap the JSON in a 'manifest' key or any other key. The top-level object IS the manifest.",
-      "- 'version' MUST be the integer 1 (not '1', not '1.0', not a string — exactly the number 1).",
-      "- Every node MUST have 'id', 'role', 'autonomy', and 'capabilities' keys.",
-    ].join("\n");
   }
+
 }
 
 export class ModelError extends Error {
