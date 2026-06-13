@@ -50,6 +50,7 @@ export interface AllowedCapability {
   name: string;
   sideEffect: SideEffectClass;
   maxBudgetCents: number;
+  description?: string;
 }
 
 /** A signed, compiled manifest with provenance. */

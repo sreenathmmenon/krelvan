@@ -27,7 +27,7 @@ export interface AnthropicConfig {
   model?: string;
   /** allowed capability NAMES the model may reference (it cannot invent others usefully —
    *  the compiler would reject them anyway, but telling the model keeps proposals valid). */
-  allowedCapabilities: { name: string; sideEffect: string }[];
+  allowedCapabilities: { name: string; sideEffect: string; description?: string }[];
   /** the run-budget ceiling to suggest to the model (compiler enforces the real cap). */
   suggestedRunBudgetCents: number;
   /** injected for testability; defaults to global fetch. */
@@ -145,6 +145,17 @@ export class AnthropicModel implements ModelPort {
   private buildSystemPrompt(): string {
     const caps = this.cfg.allowedCapabilities.map((c) => `  - "${c.name}" (side-effect: "${c.sideEffect}")`).join("\n");
 
+    // User-installed plugins with descriptions — surfaced separately so the model
+    // knows to prefer them over built-ins when they match the intent better.
+    const BUILTIN_NAMES = new Set(["think","recall","remember","llm_route","web_search","compose",
+      "email_send","telegram_send","slack_send","http_get","http_post","notify_webhook","text_transform","delegate","identify"]);
+    const userPluginLines = this.cfg.allowedCapabilities
+      .filter(c => !BUILTIN_NAMES.has(c.name) && c.description)
+      .map(c => `  "${c.name}" — ${c.description ?? ""} (side-effect: "${c.sideEffect}")`);
+    const userPluginsSection: string[] = userPluginLines.length > 0
+      ? ["", "INSTALLED PLUGINS — prefer these over built-ins when they fit the intent:", ...userPluginLines, ""]
+      : [];
+
     const agentSection: string[] = [];
     if (this.cfg.knownAgents?.length) {
       agentSection.push(
@@ -206,6 +217,7 @@ export class AnthropicModel implements ModelPort {
       "",
       "ALL available capabilities and their side-effect classes:",
       caps,
+      ...userPluginsSection,
       ...agentSection,
       "",
       "DESIGN GUIDANCE:",
