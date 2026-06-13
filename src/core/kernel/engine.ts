@@ -41,6 +41,26 @@ import { IncrementalFolder } from "./incremental-fold.js";
 import { NoopTracer, type Tracer } from "../observability/spans.js";
 import { executeSubRun, deriveSubRunId } from "./sub-agent-executor.js";
 
+/**
+ * Recursively converts non-integer numbers to strings so capability outputs
+ * (e.g. stock prices like 227.52) never trigger a CanonicalError when the
+ * engine writes the EffectResult event to the tamper-evident ledger.
+ */
+function sanitizeOutput(v: unknown): unknown {
+  if (typeof v === "number") {
+    return Number.isInteger(v) ? v : String(v);
+  }
+  if (Array.isArray(v)) return v.map(sanitizeOutput);
+  if (v !== null && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      out[k] = sanitizeOutput(val);
+    }
+    return out;
+  }
+  return v;
+}
+
 export interface EngineDeps {
   store: LedgerStore;
   /** authority that signs orchestration events (kernel-authored). */
@@ -337,7 +357,7 @@ export class Engine {
           mergeOutput(nodeOutputs, { error: outcome.reason });
         } else {
           await this.append(
-            { type: "SubRunCompleted", scope: this.scope(nodeId), payload: { idem, subRunId: outcome.subRunId, output: outcome.output, actualCostCents: outcome.actualCostCents } },
+            { type: "SubRunCompleted", scope: this.scope(nodeId), payload: { idem, subRunId: outcome.subRunId, output: sanitizeOutput(outcome.output), actualCostCents: outcome.actualCostCents } },
             this.deps.owner,
           );
           mergeOutput(nodeOutputs, outcome.output);
@@ -399,7 +419,7 @@ export class Engine {
         {
           type: "EffectResult",
           scope: this.scope(nodeId),
-          payload: { idem, costCents: observed.costCents, output: observed.output, pluginClaim: observed.pluginClaim },
+          payload: { idem, costCents: observed.costCents, output: sanitizeOutput(observed.output), pluginClaim: observed.pluginClaim },
           determinism: "captured",
         },
         this.deps.supervisorSigner,

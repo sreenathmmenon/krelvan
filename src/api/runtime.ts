@@ -24,6 +24,7 @@ import type { LedgerStore } from "../core/ledger/store.js";
 import { validateManifest, type Manifest } from "../core/manifest/manifest.js";
 import { canonicalize } from "../core/ledger/canonical.js";
 import type { SignedManifest, AllowedCapability } from "../core/compiler/compiler.js";
+import type { SideEffectClass } from "../core/manifest/manifest.js";
 import { loadYamlCapability } from "../core/extensions/yaml-capability.js";
 import { AnthropicModel } from "../adapters/anthropic-model.js";
 import { McpRegistry, type McpServerConfig } from "../core/mcp/mcp-client.js";
@@ -706,6 +707,30 @@ export class KrelvanRuntime {
    * On success: saves the agent and returns it.
    * On total failure: returns all attempts with their errors so the UI can show what went wrong.
    */
+  /**
+   * Build the allowed-capabilities list for the compiler from the live registry.
+   * Builtins keep their hardcoded budget ceilings; enabled user plugins get a
+   * generous default so the model can freely reference them.
+   */
+  private allowedCapabilities(): AllowedCapability[] {
+    const BUILTIN_BUDGETS: Record<string, number> = {
+      think: 2000, recall: 50, remember: 50, llm_route: 500,
+      web_search: 500, compose: 500, telegram_send: 100, slack_send: 100,
+      email_send: 100, http_get: 200, http_post: 200, text_transform: 50,
+      notify_webhook: 100, delegate: 5000,
+    };
+    const result: AllowedCapability[] = [];
+    for (const cap of this.capabilityRegistry.list()) {
+      if (cap.status === "disabled") continue;
+      result.push({
+        name: cap.name,
+        sideEffect: cap.sideEffect as SideEffectClass,
+        maxBudgetCents: BUILTIN_BUDGETS[cap.name] ?? 500,
+      });
+    }
+    return result;
+  }
+
   async buildAgent(intent: string): Promise<{
     ok: true;
     agent: AgentRecord;
@@ -720,7 +745,7 @@ export class KrelvanRuntime {
     const principal = {
       kind: "owner" as const,
       id: "owner-demo",
-      allowedCapabilities: this.agentRegistry.defaultAllowedCapabilities(),
+      allowedCapabilities: this.allowedCapabilities(),
       maxRunBudgetCents: 10_000,
     };
 
@@ -970,7 +995,7 @@ export class KrelvanRuntime {
     const modelPort = this.hasLlm
       ? new AnthropicModel({
           apiKey: this.llmApiKey ?? "",
-          allowedCapabilities: this.agentRegistry.defaultAllowedCapabilities(),
+          allowedCapabilities: this.allowedCapabilities(),
           suggestedRunBudgetCents: 1000,
           knownAgents: this.agentRegistry.list().map((a) => ({
             id: a.signed.id,
