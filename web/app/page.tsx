@@ -6,10 +6,10 @@ import {
   type AgentRecord, type RunRecord, type BuildResult, type ManifestNode, type ManifestEdge,
 } from "../lib/api";
 
-const EXAMPLES: { text: string; label?: string; hero?: boolean }[] = [
+const EXAMPLES: { text: string; label: string; hero?: boolean }[] = [
   {
-    text: "Investigate why our API error rate spiked in the last hour and recommend whether to roll back",
-    label: "Multi-step incident triage",
+    text: "Investigate why our API error rate spiked in the last hour — correlate with recent deploys, trace the top failing endpoints, and draft an incident summary",
+    label: "Incident triage",
     hero: true,
   },
   {
@@ -17,12 +17,12 @@ const EXAMPLES: { text: string; label?: string; hero?: boolean }[] = [
     label: "Deploy watchdog",
   },
   {
-    text: "Review the last 3 failed customer onboarding sessions, determine whether each was a product gap or user error, and draft a tailored response for each",
-    label: "Onboarding failure analysis",
+    text: "Review the last 3 failed customer onboarding sessions and identify where each dropped off",
+    label: "Onboarding analysis",
   },
   {
-    text: "Investigate why checkout conversion dropped this week — determine if it's a product bug, pricing change, or seasonal variation",
-    label: "Conversion drop investigation",
+    text: "Investigate why checkout conversion dropped this week — compare funnel metrics against last week",
+    label: "Conversion drop",
   },
 ];
 
@@ -661,42 +661,45 @@ export default function Home() {
               }}
             />
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)", marginBottom: "var(--s4)" }}>
-              {/* hero chip */}
-              {EXAMPLES.filter(e => e.hero).map(ex => (
+            {/* suggestion tiles */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "var(--s2)", marginBottom: "var(--s4)" }}>
+              {/* hero tile — full width */}
+              <button
+                type="button"
+                onClick={() => setIntent(EXAMPLES[0].text)}
+                style={{
+                  gridColumn: "1 / -1", textAlign: "left", cursor: "pointer",
+                  background: "var(--brand-tint)", border: "1px solid rgba(14,124,117,.2)",
+                  borderRadius: "var(--r)", padding: "var(--s3) var(--s4)",
+                  display: "flex", flexDirection: "column", gap: 4,
+                  transition: "background 120ms, border-color 120ms",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = "rgba(14,124,117,.1)"; e.currentTarget.style.borderColor = "var(--brand)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "var(--brand-tint)"; e.currentTarget.style.borderColor = "rgba(14,124,117,.2)"; }}
+              >
+                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--brand)", textTransform: "uppercase", letterSpacing: ".07em" }}>{EXAMPLES[0].label}</span>
+                <span style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.55 }}>{EXAMPLES[0].text}</span>
+              </button>
+              {/* 3 regular tiles */}
+              {EXAMPLES.slice(1).map(ex => (
                 <button
-                  key={ex.text}
+                  key={ex.label}
                   type="button"
                   onClick={() => setIntent(ex.text)}
                   style={{
-                    width: "100%", textAlign: "left", padding: "var(--s3) var(--s4)",
-                    background: "var(--brand-tint)", border: "1.5px solid var(--brand)",
-                    borderRadius: "var(--r)", cursor: "pointer",
-                    display: "flex", flexDirection: "column", gap: 2,
-                    transition: "background 120ms",
+                    textAlign: "left", cursor: "pointer",
+                    background: "var(--surface-sunken)", border: "1px solid var(--line)",
+                    borderRadius: "var(--r)", padding: "var(--s3) var(--s3)",
+                    display: "flex", flexDirection: "column", gap: 3,
+                    transition: "background 120ms, border-color 120ms, box-shadow 120ms",
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(14,124,117,.12)")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "var(--brand-tint)")}
+                  onMouseEnter={e => { e.currentTarget.style.background = "var(--surface)"; e.currentTarget.style.borderColor = "var(--line-strong)"; e.currentTarget.style.boxShadow = "var(--shadow-sm)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "var(--surface-sunken)"; e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.boxShadow = "none"; }}
                 >
-                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--brand)", textTransform: "uppercase", letterSpacing: ".06em" }}>{ex.label}</span>
-                  <span style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.5 }}>{ex.text}</span>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: ".07em" }}>{ex.label}</span>
+                  <span style={{ fontSize: 12, color: "var(--ink-soft)", lineHeight: 1.55 }}>{ex.text}</span>
                 </button>
               ))}
-              {/* regular chips */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)" }}>
-                {EXAMPLES.filter(e => !e.hero).map(ex => (
-                  <button
-                    key={ex.text}
-                    type="button"
-                    className="chip"
-                    onClick={() => setIntent(ex.text)}
-                    style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1 }}
-                  >
-                    {ex.label && <span style={{ fontSize: 9, fontWeight: 700, color: "var(--brand)", textTransform: "uppercase", letterSpacing: ".05em" }}>{ex.label}</span>}
-                    <span>{ex.text}</span>
-                  </button>
-                ))}
-              </div>
             </div>
 
             {buildError && (
@@ -713,7 +716,7 @@ export default function Home() {
               </div>
             )}
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "var(--s4)", borderTop: "1px solid var(--line)" }}>
               <div style={{ fontSize: 12, color: "var(--ink-muted)", minHeight: 18 }}>
                 {building && (
                   <span style={{ animation: "fade-in 300ms ease forwards" }}>
@@ -727,7 +730,7 @@ export default function Home() {
                 disabled={!intent.trim() || building}
                 style={{ minWidth: 140 }}
               >
-                {building ? "Building…" : "Build agent"}
+                {building ? "Building…" : "Build agent →"}
               </button>
             </div>
           </form>
