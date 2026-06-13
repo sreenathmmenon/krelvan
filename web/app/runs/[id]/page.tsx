@@ -81,8 +81,11 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     es.addEventListener("done", () => {
       es.close();
       sseRef.current = null;
-      // Final sync to pick up complete projection
-      void getRun(id).then(d => setDetail(d));
+      // Final sync to pick up complete projection, then show output
+      void getRun(id).then(d => {
+        setDetail(d);
+        setTab("output");
+      });
     });
 
     es.onerror = () => {
@@ -107,6 +110,24 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       sseRef.current = null;
     };
   }, [detail?.run.status, connectSSE]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Polling fallback — if run is active and SSE hasn't delivered a done event,
+  // poll every 4s so the UI never stays blank waiting for a result
+  useEffect(() => {
+    if (!detail) return;
+    if (detail.run.status !== "running" && detail.run.status !== "pending") return;
+    const t = setInterval(async () => {
+      try {
+        const d = await getRun(id);
+        setDetail(d);
+        if (d.run.status !== "running" && d.run.status !== "pending") {
+          clearInterval(t);
+          setTab("output");
+        }
+      } catch { /* ignore */ }
+    }, 4000);
+    return () => clearInterval(t);
+  }, [detail?.run.status, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-generate explanation when run completes — no click required
   const autoExplainedRef = useRef(false);

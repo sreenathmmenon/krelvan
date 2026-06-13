@@ -8,21 +8,21 @@ import {
 
 const EXAMPLES: { text: string; label: string; hero?: boolean }[] = [
   {
-    text: "Investigate why our API error rate spiked in the last hour — correlate with recent deploys, trace the top failing endpoints, and draft an incident summary",
-    label: "Incident triage",
+    text: "Search the web for the latest AI news and summarise the top 3 developments in a clear digest",
+    label: "Research digest",
     hero: true,
   },
   {
-    text: "Monitor our deploy pipeline — if error rate exceeds 5% in the first 10 minutes, roll back and page the on-call engineer",
-    label: "Deploy watchdog",
+    text: "Fetch https://api.github.com/repos/vercel/next.js/releases and summarise what changed in the latest release",
+    label: "Release notes",
   },
   {
-    text: "Review the last 3 failed customer onboarding sessions and identify where each dropped off",
-    label: "Onboarding analysis",
+    text: "Research the top 5 use cases for small language models in enterprise and rank them by business impact",
+    label: "Market research",
   },
   {
-    text: "Investigate why checkout conversion dropped this week — compare funnel metrics against last week",
-    label: "Conversion drop",
+    text: "Analyse the pros and cons of PostgreSQL vs MongoDB for a real-time analytics platform",
+    label: "Tech decision",
   },
 ];
 
@@ -602,8 +602,8 @@ export default function Home() {
     try {
       const run = await startRun(agentId);
       await reload();
-      // Go to canvas — the home of the visual graph — with the live run pre-selected
-      router.push(`/canvas/${agentId}?run=${run.runId}`);
+      // Go straight to the run's Output tab — shows results as they arrive
+      router.push(`/runs/${run.runId}`);
     } catch (err) {
       setBuildError((err as Error).message);
       setBuildResult(savedResult);
@@ -629,11 +629,12 @@ export default function Home() {
       <section style={{ background: "var(--canvas)", paddingTop: "var(--s9)", paddingBottom: "var(--s8)" }}>
         <div className="container" style={{ maxWidth: 680, textAlign: "center" }}>
           <p className="micro" style={{ marginBottom: "var(--s4)" }}>Your AI agent workspace</p>
-          <h1 style={{ fontSize: 36, fontWeight: 600, letterSpacing: "-.02em", lineHeight: 1.2, marginBottom: "var(--s4)", color: "var(--ink)" }}>
-            Agents that reason, decide,<br />and show their work
+          <h1 style={{ fontSize: 36, fontWeight: 700, letterSpacing: "-.03em", lineHeight: 1.15, marginBottom: "var(--s4)", color: "var(--ink)" }}>
+            Describe a goal.<br />
+            <span style={{ color: "var(--brand)" }}>Get a working agent.</span>
           </h1>
-          <p className="soft" style={{ fontSize: 16, maxWidth: "48ch", margin: "0 auto var(--s7)", lineHeight: 1.7 }}>
-            Describe an outcome in plain English. Krelvan builds a signed, tamper-evident agent that investigates, branches, and acts.
+          <p className="soft" style={{ fontSize: 16, maxWidth: "44ch", margin: "0 auto var(--s7)", lineHeight: 1.7 }}>
+            Type what you want to know or do. Krelvan builds, runs, and shows you the reasoning — in seconds.
           </p>
 
           <form
@@ -741,18 +742,22 @@ export default function Home() {
       <div style={{ borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)", background: "var(--surface)" }}>
         <div className="container">
           <div style={{ display: "flex", gap: "var(--s8)", padding: "var(--s4) 0", flexWrap: "wrap", alignItems: "center" }}>
-            {[
-              { label: "agents",       value: String(agents.length), live: false },
-              { label: "running now",  value: String(running),       live: running > 0 },
-              { label: "total runs",   value: String(runs.length),   live: false },
-              { label: "total spent",  value: `${totalSpent}¢`,      live: false },
-            ].map(s => (
-              <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
-                {s.live && <span className="status-dot running" />}
-                <span className="mono" style={{ fontSize: 15, fontWeight: 600, color: s.live ? "var(--live)" : "var(--ink)" }}>{s.value}</span>
-                <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>{s.label}</span>
-              </div>
-            ))}
+            {agents.length === 0 && runs.length === 0 && !loading ? (
+              <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>No agents yet — build your first one above ↑</span>
+            ) : (
+              [
+                { label: "agents",       value: String(agents.length), live: false },
+                { label: "running now",  value: String(running),       live: running > 0 },
+                { label: "total runs",   value: String(runs.length),   live: false },
+                { label: "total spent",  value: `${totalSpent}¢`,      live: false },
+              ].map(s => (
+                <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
+                  {s.live && <span className="status-dot running" />}
+                  <span className="mono" style={{ fontSize: 15, fontWeight: 600, color: s.live ? "var(--live)" : "var(--ink)" }}>{s.value}</span>
+                  <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>{s.label}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -793,7 +798,7 @@ export default function Home() {
                     agent={a}
                     agentRuns={agentRuns}
                     summary={cardSummary}
-                    onRun={() => { void startRun(a.id).then(r => { void reload(); router.push(`/canvas/${a.id}?run=${r.runId}`); }); }}
+                    onRun={() => { void startRun(a.id).then(r => { void reload(); router.push(`/runs/${r.runId}`); }); }}
                     onDelete={() => { void reload(); }}
                   />
                   );
