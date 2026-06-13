@@ -27,7 +27,7 @@ export interface AnthropicConfig {
   model?: string;
   /** allowed capability NAMES the model may reference (it cannot invent others usefully —
    *  the compiler would reject them anyway, but telling the model keeps proposals valid). */
-  allowedCapabilities: { name: string; sideEffect: string; description?: string; useWhen?: string; notes?: string }[];
+  allowedCapabilities: { name: string; sideEffect: string; description?: string; useWhen?: string; notes?: string; estimateCents?: number }[];
   /** the run-budget ceiling to suggest to the model (compiler enforces the real cap). */
   suggestedRunBudgetCents: number;
   /** injected for testability; defaults to global fetch. */
@@ -97,7 +97,7 @@ export class AnthropicModel implements ModelPort {
                   properties: {
                     name:         { type: "string", enum: capNames },
                     sideEffect:   { type: "string" },
-                    budgetCents:  { type: "integer" },
+                    budgetCents:  { type: "integer", minimum: 10, description: "Must be >= the capability's base cost. Use at least 50 for unknown plugins." },
                   },
                 },
               },
@@ -120,9 +120,9 @@ export class AnthropicModel implements ModelPort {
       },
     };
 
-    // System prompt: capability descriptions only — no hardcoded names.
+    // System prompt: capability descriptions — model needs estimateCents to bid correctly.
     const capDescriptions = this.cfg.allowedCapabilities.map(c => {
-      let line = `- ${c.name} (${c.sideEffect}): ${c.description ?? c.name}`;
+      let line = `- ${c.name} (${c.sideEffect}, base cost: ${c.estimateCents ?? 5}¢): ${c.description ?? c.name}`;
       if (c.notes) line += `. NOTE: ${c.notes}`;
       return line;
     }).join("\n");
@@ -259,9 +259,9 @@ export function parseManifestProposal(text: string): Manifest {
 
   // Normalize each node's capabilities — fill in missing budgetCents and sideEffect defaults.
   const capDefaultBudget: Record<string, number> = {
-    think: 50, web_search: 10, http_get: 2, http_post: 2, recall: 2, remember: 2,
-    compose: 20, email_send: 5, telegram_send: 2, slack_send: 2, notify_webhook: 2,
-    text_transform: 1, llm_route: 10,
+    think: 50, web_search: 20, http_get: 10, http_post: 10, recall: 5, remember: 5,
+    compose: 20, email_send: 10, telegram_send: 5, slack_send: 5, notify_webhook: 5,
+    text_transform: 5, llm_route: 10,
   };
   const capDefaultSideEffect: Record<string, string> = {
     think: "read", web_search: "read", http_get: "read", recall: "read", llm_route: "read",
@@ -272,9 +272,9 @@ export function parseManifestProposal(text: string): Manifest {
   for (const node of m.nodes as Record<string, unknown>[]) {
     if (!Array.isArray(node["capabilities"])) continue;
     for (const cap of node["capabilities"] as Record<string, unknown>[]) {
-      if (typeof cap["budgetCents"] !== "number" || !Number.isInteger(cap["budgetCents"]) || cap["budgetCents"] < 0) {
+      if (typeof cap["budgetCents"] !== "number" || !Number.isInteger(cap["budgetCents"]) || cap["budgetCents"] < 5) {
         const name = typeof cap["name"] === "string" ? cap["name"] : "";
-        cap["budgetCents"] = capDefaultBudget[name] ?? 10;
+        cap["budgetCents"] = capDefaultBudget[name] ?? 50;
       }
       if (typeof cap["sideEffect"] !== "string" || !cap["sideEffect"]) {
         const name = typeof cap["name"] === "string" ? cap["name"] : "";

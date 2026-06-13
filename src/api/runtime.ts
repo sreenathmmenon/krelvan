@@ -754,6 +754,7 @@ export class KrelvanRuntime {
         name: cap.name,
         sideEffect: cap.sideEffect as SideEffectClass,
         maxBudgetCents: BUILTIN_BUDGETS[cap.name] ?? 500,
+        estimateCents: cap.estimateCents,
         ...(cap.description ? { description: cap.description } : {}),
         ...(cap.useWhen ? { useWhen: cap.useWhen } : {}),
         ...(cap.notes ? { notes: cap.notes } : {}),

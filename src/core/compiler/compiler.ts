@@ -50,6 +50,8 @@ export interface AllowedCapability {
   name: string;
   sideEffect: SideEffectClass;
   maxBudgetCents: number;
+  /** Base cost in cents — used by the model to set a sensible budgetCents in the manifest. */
+  estimateCents?: number;
   /** One-line description of what the capability does. */
   description?: string;
   /** Guidance for the compiler: when should this capability be chosen over others. */
