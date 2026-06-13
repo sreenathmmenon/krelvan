@@ -222,6 +222,10 @@ export interface CapabilityRecord {
   /** "builtin" = hardcoded in runtime; "yaml" / "typescript" = user-installed plugin */
   kind: "builtin" | "yaml" | "typescript";
   description?: string;
+  /** Compiler guidance: when should the compiler choose this capability. */
+  useWhen?: string;
+  /** Compiler guidance: extra notes (e.g. required seed keys, input format). */
+  notes?: string;
   sideEffect: string;
   estimateCents: number;
   installedAt: number;
@@ -291,11 +295,14 @@ export class CapabilityRegistry {
     return { ok: true, capability: record };
   }
 
-  registerBuiltin(plugin: CapabilityPlugin, description?: string): void {
+  registerBuiltin(plugin: CapabilityPlugin, meta: string | { description?: string; useWhen?: string; notes?: string }): void {
+    const m = typeof meta === "string" ? { description: meta } : meta;
     const record: CapabilityRecord = {
       name: plugin.name,
       kind: "builtin",
-      description,
+      description: m.description,
+      useWhen: m.useWhen,
+      notes: m.notes,
       sideEffect: plugin.sideEffect,
       estimateCents: plugin.estimateCents({ nodeId: "", capability: plugin.name, input: {} }),
       installedAt: Date.now(),
@@ -738,6 +745,8 @@ export class KrelvanRuntime {
         sideEffect: cap.sideEffect as SideEffectClass,
         maxBudgetCents: BUILTIN_BUDGETS[cap.name] ?? 500,
         ...(cap.description ? { description: cap.description } : {}),
+        ...(cap.useWhen ? { useWhen: cap.useWhen } : {}),
+        ...(cap.notes ? { notes: cap.notes } : {}),
       });
     }
     return result;
@@ -1025,20 +1034,47 @@ export class KrelvanRuntime {
   }
 
   private registerBuiltinCapabilities(): void {
-    // LLM + memory capabilities — always available, require KRELVAN_ANTHROPIC_KEY at invoke time
-    this.capabilityRegistry.registerBuiltin(thinkCapability, "LLM reasoning node — calls Claude to think and produce a result");
-    this.capabilityRegistry.registerBuiltin(recallCapability, "Read from agent semantic memory across runs");
-    this.capabilityRegistry.registerBuiltin(rememberCapability, "Write episode to agent memory after a run");
-    this.capabilityRegistry.registerBuiltin(identifyCapability, "Write or update agent soul (name, values, standing instructions) — identity-mutation");
-    this.capabilityRegistry.registerBuiltin(llmRouteCapability, "Level 2 adaptive routing — LLM chooses next node at runtime");
-
-    // Demo/builtin plugins — always available
-    this.capabilityRegistry.registerBuiltin(webSearchCapability, "Web search via Brave API or LLM synthesis");
-    this.capabilityRegistry.registerBuiltin(composeCapability, "Compose text via Claude haiku (brief, detailed, or bullet style)");
-    this.capabilityRegistry.registerBuiltin(emailSendCapability, "Send email via Resend API or SMTP");
-    this.capabilityRegistry.registerBuiltin(telegramSendCapability, "Send Telegram message via Bot API");
-    this.capabilityRegistry.registerBuiltin(slackSendCapability, "Send Slack message via Incoming Webhook");
-
+    this.capabilityRegistry.registerBuiltin(thinkCapability, {
+      description: "Calls an LLM to reason, analyse, or make decisions — outputs thought + result.",
+      useWhen: "any node that needs intelligence, analysis, summarisation, decision-making, or extraction from prior results",
+    });
+    this.capabilityRegistry.registerBuiltin(recallCapability, {
+      description: "Reads this agent's semantic memory from past runs.",
+      useWhen: "first node of any agent that should remember context or facts across multiple runs",
+    });
+    this.capabilityRegistry.registerBuiltin(rememberCapability, {
+      description: "Writes facts and an episode diary entry to agent memory.",
+      useWhen: "last node of any agent that should learn or accumulate knowledge over time",
+    });
+    this.capabilityRegistry.registerBuiltin(identifyCapability, {
+      description: "Sets or updates the agent's identity: name, values, and standing instructions.",
+      useWhen: "agents that need a persistent persona or standing rules governing all their runs",
+    });
+    this.capabilityRegistry.registerBuiltin(llmRouteCapability, {
+      description: "LLM examines run state and chooses which node to go to next.",
+      useWhen: "when the next step depends on the content of previous results (e.g. high vs low, found vs not found)",
+    });
+    this.capabilityRegistry.registerBuiltin(webSearchCapability, {
+      description: "Searches the web and returns top results as text.",
+      useWhen: "fetching current news, prices, facts, or any information not available from a known API URL",
+      notes: "always add \"query\": \"<search topic>\" to the manifest seed field so the query is available at run start",
+    });
+    this.capabilityRegistry.registerBuiltin(composeCapability, {
+      description: "Writes text via LLM given a topic and prior context — outputs polished prose or bullets.",
+      useWhen: "drafting messages, summaries, reports, briefings, or any human-readable text output",
+    });
+    this.capabilityRegistry.registerBuiltin(emailSendCapability, {
+      description: "Sends an email via Resend API or SMTP.",
+      useWhen: "notifying a person by email; requires to, subject, body in run state",
+    });
+    this.capabilityRegistry.registerBuiltin(telegramSendCapability, {
+      description: "Sends a Telegram message via Bot API.",
+      useWhen: "real-time notifications or alerts to a Telegram user or group",
+    });
+    this.capabilityRegistry.registerBuiltin(slackSendCapability, {
+      description: "Posts a message to Slack via Incoming Webhook.",
+      useWhen: "team notifications, alerts, or digests to a Slack channel",
+    });
     this.capabilityRegistry.registerBuiltin(
       {
         name: "text_transform",
@@ -1052,12 +1088,23 @@ export class KrelvanRuntime {
           return { output: { text: result }, claimedCostCents: 2 };
         },
       },
-      "Transform text: upper, lower, trim",
+      {
+        description: "Pure text transformation: uppercase, lowercase, or trim whitespace.",
+        useWhen: "simple text normalisation with no LLM needed",
+      },
     );
-
-    this.capabilityRegistry.registerBuiltin(httpGetCapability, "Real HTTP GET — fetches a URL and returns the response body");
-    this.capabilityRegistry.registerBuiltin(httpPostCapability, "Real HTTP POST — sends a request to an external URL");
-    this.capabilityRegistry.registerBuiltin(notifyWebhookCapability, "POST a JSON payload to a webhook URL with optional HMAC signature");
+    this.capabilityRegistry.registerBuiltin(httpGetCapability, {
+      description: "Fetches a URL and returns the response body.",
+      useWhen: "reading from a known API endpoint, RSS feed, or web page with a specific URL",
+    });
+    this.capabilityRegistry.registerBuiltin(httpPostCapability, {
+      description: "Sends an HTTP POST request with a JSON body.",
+      useWhen: "writing to an external API, submitting forms, or triggering webhooks",
+    });
+    this.capabilityRegistry.registerBuiltin(notifyWebhookCapability, {
+      description: "POSTs a JSON event payload to a webhook URL.",
+      useWhen: "notifying external systems (GitHub, Jira, PagerDuty, custom webhooks)",
+    });
   }
 
   /** Called by the scheduler when a schedule fires. Returns the new runId. */

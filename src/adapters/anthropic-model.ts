@@ -27,7 +27,7 @@ export interface AnthropicConfig {
   model?: string;
   /** allowed capability NAMES the model may reference (it cannot invent others usefully —
    *  the compiler would reject them anyway, but telling the model keeps proposals valid). */
-  allowedCapabilities: { name: string; sideEffect: string; description?: string }[];
+  allowedCapabilities: { name: string; sideEffect: string; description?: string; useWhen?: string; notes?: string }[];
   /** the run-budget ceiling to suggest to the model (compiler enforces the real cap). */
   suggestedRunBudgetCents: number;
   /** injected for testability; defaults to global fetch. */
@@ -143,18 +143,15 @@ export class AnthropicModel implements ModelPort {
   }
 
   private buildSystemPrompt(): string {
-    const caps = this.cfg.allowedCapabilities.map((c) => `  - "${c.name}" (side-effect: "${c.sideEffect}")`).join("\n");
-
-    // User-installed plugins with descriptions — surfaced separately so the model
-    // knows to prefer them over built-ins when they match the intent better.
-    const BUILTIN_NAMES = new Set(["think","recall","remember","llm_route","web_search","compose",
-      "email_send","telegram_send","slack_send","http_get","http_post","notify_webhook","text_transform","delegate","identify"]);
-    const userPluginLines = this.cfg.allowedCapabilities
-      .filter(c => !BUILTIN_NAMES.has(c.name) && c.description)
-      .map(c => `  "${c.name}" — ${c.description ?? ""} (side-effect: "${c.sideEffect}")`);
-    const userPluginsSection: string[] = userPluginLines.length > 0
-      ? ["", "INSTALLED PLUGINS — prefer these over built-ins when they fit the intent:", ...userPluginLines, ""]
-      : [];
+    // Build the capabilities section entirely from the registry — no hardcoded names.
+    const capLines = this.cfg.allowedCapabilities.map((c) => {
+      let line = `  "${c.name}" (side-effect: "${c.sideEffect}")`;
+      if (c.description) line += ` — ${c.description}`;
+      if (c.useWhen) line += `\n    USE: ${c.useWhen}`;
+      if (c.notes) line += `\n    NOTE: ${c.notes}`;
+      return line;
+    });
+    const caps = capLines.join("\n");
 
     const agentSection: string[] = [];
     if (this.cfg.knownAgents?.length) {
@@ -184,57 +181,22 @@ export class AnthropicModel implements ModelPort {
       ' ],',
       ' "edges":[{"from":"search","to":"summarise"}]}',
       "",
-      "KEY CAPABILITIES — what each one does and WHEN to use it:",
-      '  "think"          — calls an LLM (Claude) to reason about run state → outputs thought + result + optional next node.',
-      '                     USE: any node that needs intelligence, analysis, summarisation, or decision-making.',
-      '  "recall"         — reads this agent\'s memory from past runs → outputs remembered facts.',
-      '                     USE: first node of any agent that should remember context across runs.',
-      '  "remember"       — writes an episode to agent memory after a run.',
-      '                     USE: last node of any agent that should learn over time.',
-      '  "llm_route"      — LLM chooses the next node from declared candidates based on run state.',
-      '                     USE: when which node to go to next depends on the content of results.',
-      '  "web_search"     — searches the web (Brave API) and returns top results as text.',
-      '                     USE: any agent that needs current information, news, prices, or facts.',
-      '                     IMPORTANT: web_search reads its search query from the "query" key in run state.',
-      '                     ALWAYS include "query": "<what to search for>" in the manifest "seed" field',
-      '                     when using web_search, so the query is available from the start of the run.',
-      '  "compose"        — writes text via Claude haiku given a topic, prompt, and style.',
-      '                     USE: drafting messages, summaries, reports, or any text output.',
-      '  "email_send"     — sends an email (Resend or SMTP). Input: to, subject, body.',
-      '                     USE: whenever the agent should notify a person by email.',
-      '  "telegram_send"  — sends a Telegram message via Bot API. Input: text, optional chat_id.',
-      '                     USE: real-time Telegram notifications or alerts to a user.',
-      '  "slack_send"     — posts to Slack via Incoming Webhook. Input: text, optional blocks.',
-      '                     USE: team notifications, alerts, or summaries to a Slack channel.',
-      '  "http_get"       — fetches a URL and returns the response body. Input: url, optional headers.',
-      '                     USE: reading APIs, RSS feeds, web pages, or any external data source.',
-      '  "http_post"      — sends an HTTP POST. Input: url, body, content_type.',
-      '                     USE: calling external APIs, submitting forms, triggering webhooks.',
-      '  "notify_webhook" — POSTs a JSON payload to a webhook URL with optional HMAC signature.',
-      '                     USE: notifying external systems (GitHub, Jira, PagerDuty, etc.).',
-      '  "text_transform" — transforms text: upper, lower, trim. Input: text, op.',
-      '                     USE: simple text normalization steps.',
-      "",
-      "ALL available capabilities and their side-effect classes:",
+      "AVAILABLE CAPABILITIES — what each one does, when to use it, and its side-effect class:",
       caps,
-      ...userPluginsSection,
       ...agentSection,
       "",
       "DESIGN GUIDANCE:",
-      "- Any agent that needs to REASON or analyse: include a 'think' node — this is what makes it an agent, not just a workflow.",
-      "- Agents that LEARN over time: start with 'recall', end with 'remember'.",
-      "- Agents that ADAPT path based on content: use 'llm_route' instead of static edges.",
-      "- Agents that NOTIFY people: end with 'email_send', 'telegram_send', or 'slack_send' depending on the channel.",
-      "- Agents that FETCH external data: use 'web_search' for general web, 'http_get' for a specific API endpoint.",
-      "  When using web_search: always add the search topic to seed, e.g. \"seed\": { \"query\": \"latest AI news\" }.",
-      "- Agents that TRIGGER external systems: use 'http_post' or 'notify_webhook'.",
-      "- Typical patterns:",
-      "    Monitoring agent:    recall → think → [if alert needed] → telegram_send/email_send → remember",
-      "    Research agent:      web_search → think → compose → email_send",
-      "    Digest agent:        recall → web_search → think → compose → slack_send → remember",
-      "    API agent:           http_get → think → http_post",
-      "    Multi-agent pipeline: delegate-node (subAgent) → think → compose → slack_send",
-      "    Agent-as-validator:   think → validate-node (subAgent, onSubFailure:'return-error') → compose",
+      "- Read the USE: guidance for each capability above — it tells you exactly when to pick it.",
+      "- Any agent that needs to REASON or analyse: include a node whose capability's USE says 'intelligence' or 'analysis'.",
+      "- Agents that LEARN over time: start with a memory-read capability, end with a memory-write capability.",
+      "- Agents that ADAPT path based on content: use a routing capability instead of static edges.",
+      "- Match the notification channel to what the user asked for — read the USE guidance for each messaging capability.",
+      "- Prefer a user-installed plugin over a built-in when the plugin's description better matches the intent.",
+      "- Typical patterns (use capability names from the list above, not these literals):",
+      "    Monitoring:  [memory-read] → [reasoning] → [conditional] → [notification] → [memory-write]",
+      "    Research:    [web/API fetch] → [reasoning] → [text composition] → [notification]",
+      "    Digest:      [memory-read] → [web/API fetch] → [reasoning] → [composition] → [notification] → [memory-write]",
+      "    API pipeline: [http-read] → [reasoning] → [http-write]",
       "",
       "MULTI-AGENT CHAINING — using subAgent to delegate to a registered agent:",
       "  A capability can delegate to a pre-existing registered agent by adding a 'subAgent' field.",
@@ -249,9 +211,7 @@ export class AnthropicModel implements ModelPort {
       "  Map it to a parent key: { \"summary\": \"summarise.result\" }",
       "",
       `Keep total runBudgetCents <= ${this.cfg.suggestedRunBudgetCents}. All cents are integers (no decimals).`,
-      "Autonomy rules: 'full' for read-only nodes (think, recall, web_search, http_get, subAgent).",
-      "Use 'act-with-veto' for message-human nodes (email_send, telegram_send, slack_send) so the user can review before sending.",
-      "Use 'suggest' for irreversible external writes (http_post to production APIs).",
+      "Autonomy rules: use 'full' for capabilities with side-effect 'read'. Use 'act-with-veto' for 'message-human' side-effects so the user can review before sending. Use 'suggest' for irreversible write side-effects.",
       "The 'role' field on each node is the system prompt shown to 'think' at runtime — make it a precise, specific instruction.",
       "",
       "CRITICAL OUTPUT RULES:",

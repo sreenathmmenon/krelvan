@@ -50,7 +50,12 @@ export interface AllowedCapability {
   name: string;
   sideEffect: SideEffectClass;
   maxBudgetCents: number;
+  /** One-line description of what the capability does. */
   description?: string;
+  /** Guidance for the compiler: when should this capability be chosen over others. */
+  useWhen?: string;
+  /** Extra notes injected into the compiler prompt (e.g. required seed keys). */
+  notes?: string;
 }
 
 /** A signed, compiled manifest with provenance. */
