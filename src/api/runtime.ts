@@ -50,11 +50,17 @@ import { TypeScriptPluginLoader } from "../infrastructure/plugins/typescript-plu
 import type { SecretBrokerPort, OwnerId, PluginInstallResult, PluginEnableResult, PluginDisableResult, PluginUninstallResult } from "../core/plugins/ports.js";
 import { parseOwnerId } from "../core/plugins/ports.js";
 import { join, resolve as resolvePath } from "node:path";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, copyFileSync, unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import type { NewEvent } from "../core/ledger/event.js";
 
 const log = getLogger("runtime");
+
+function atomicWrite(dest: string, content: string): void {
+  const tmp = `${dest}.tmp`;
+  writeFileSync(tmp, content, "utf8");
+  renameSync(tmp, dest);
+}
 
 // ── HITL approval record ───────────────────────────────────────────────────────
 
@@ -99,7 +105,7 @@ export class AgentRegistry {
   }
 
   private persist(): void {
-    writeFileSync(this.path, JSON.stringify([...this.agents.values()], null, 2));
+    atomicWrite(this.path, JSON.stringify([...this.agents.values()], null, 2));
   }
 
   save(signed: SignedManifest): AgentRecord {
@@ -185,7 +191,7 @@ export class RunRegistry {
   }
 
   private persist(): void {
-    writeFileSync(this.path, JSON.stringify([...this.runs.values()], null, 2));
+    atomicWrite(this.path, JSON.stringify([...this.runs.values()], null, 2));
   }
 
   create(opts: { agentId: string; runId: string; manifestName: string }): RunRecord {
@@ -403,6 +409,10 @@ export class KrelvanRuntime {
   private supervisor: Supervisor;
   private supervisorSnapshotHandle!: SupervisorSnapshotHandle;
   private lastTs = 0;
+  // In-flight resolve guards: runIds currently being resolved.
+  // Prevents a double-approve race where two concurrent HTTP calls both pass
+  // the status===halted check before either updates the registry.
+  private readonly _resolvingApprovals = new Set<string>();
 
   constructor(config: RuntimeConfig) {
     this.config = config;
@@ -962,20 +972,29 @@ export class KrelvanRuntime {
     const run = this.runRegistry.get(runId);
     if (!run) return { ok: false, error: "run not found" };
     if (run.status !== "halted") return { ok: false, error: `run is ${run.status}, not halted` };
+    // Guard against concurrent resolves — two simultaneous approvals for the same run
+    // would both pass the status check above before either updates the registry.
+    if (this._resolvingApprovals.has(runId)) return { ok: false, error: "approval already being resolved" };
+    this._resolvingApprovals.add(runId);
 
     const agent = this.agentRegistry.get(run.agentId);
     if (!agent) return { ok: false, error: "agent not found for this run" };
 
     // Append AwaitResolved — this unblocks the kernel's halt check
-    const appendResult = await this.store.append(
-      {
-        type: "AwaitResolved",
-        scope: { tenantId: "default", runId, branchId: "main" },
-        payload: { correlationId, decision },
-        author: this.ownerSigner.descriptor.keyId,
-      } satisfies NewEvent<Record<string, unknown>>,
-      { ts: this.now(), signer: this.ownerSigner },
-    );
+    let appendResult: Awaited<ReturnType<typeof this.store.append>>;
+    try {
+      appendResult = await this.store.append(
+        {
+          type: "AwaitResolved",
+          scope: { tenantId: "default", runId, branchId: "main" },
+          payload: { correlationId, decision },
+          author: this.ownerSigner.descriptor.keyId,
+        } satisfies NewEvent<Record<string, unknown>>,
+        { ts: this.now(), signer: this.ownerSigner },
+      );
+    } finally {
+      this._resolvingApprovals.delete(runId);
+    }
     if (!appendResult.ok) {
       return { ok: false, error: `ledger append failed: ${appendResult.error.message}` };
     }

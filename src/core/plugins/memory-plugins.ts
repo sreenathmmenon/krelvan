@@ -26,7 +26,7 @@
  * If the memory file does not exist, recall returns empty (not an error).
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
 import type { SemanticFact, Episode, Soul } from "../memory/memory.js";
@@ -65,7 +65,7 @@ export function loadSoul(agentId: string): Soul | null {
 
 export function saveSoul(agentId: string, soul: Soul): void {
   ensureMemoryDir();
-  writeFileSync(soulPath(agentId), JSON.stringify(soul, null, 2));
+  atomicWrite(soulPath(agentId), JSON.stringify(soul, null, 2));
 }
 
 function loadSemantic(agentId: string): Map<string, SemanticFact> {
@@ -91,14 +91,19 @@ function loadEpisodic(agentId: string): Episode[] {
 
 function saveSemantic(agentId: string, facts: Map<string, SemanticFact>): void {
   ensureMemoryDir();
-  writeFileSync(semanticPath(agentId), JSON.stringify([...facts.values()], null, 2));
+  atomicWrite(semanticPath(agentId), JSON.stringify([...facts.values()], null, 2));
 }
 
 function saveEpisodic(agentId: string, episodes: Episode[]): void {
   ensureMemoryDir();
-  // Keep last 100 episodes to prevent unbounded growth
   const trimmed = episodes.slice(-100);
-  writeFileSync(episodicPath(agentId), JSON.stringify(trimmed, null, 2));
+  atomicWrite(episodicPath(agentId), JSON.stringify(trimmed, null, 2));
+}
+
+function atomicWrite(dest: string, content: string): void {
+  const tmp = `${dest}.tmp`;
+  writeFileSync(tmp, content, "utf8");
+  renameSync(tmp, dest);
 }
 
 // ── recall ────────────────────────────────────────────────────────────────────
