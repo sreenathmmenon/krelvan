@@ -1,0 +1,30 @@
+name: deploy.cloudflare_pages
+description: Trigger a Cloudflare Pages deployment via a Deploy Hook URL.
+sideEffect: write-irreversible
+estimateCents: 0
+
+# Cloudflare Pages Deploy Hooks: Pages project → Settings → Builds & deployments
+# → Deploy hooks → create. POSTing to the unique URL queues a new deployment of
+# the configured branch. The hook URL is the secret.
+http:
+  url: "{{secret:cloudflare-pages-hook}}"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+  body:
+    reason: "{{input.reason}}"
+
+input:
+  reason:
+    type: string
+    description: Optional human-readable reason for the deploy (shown in your own logs).
+
+output:
+  result:
+    type: string
+    description: The deployment id / result returned by Cloudflare.
+
+successCodes:
+  - 200
+  - 201
+  - 202

@@ -32,11 +32,11 @@ export interface CatalogEntry {
   mcp?: { name: string; command?: string; args?: string[]; url?: string; defaultSideEffect?: string };
 }
 
-// The default registry repo (raw index.json). Override with the env var to point at
-// your own fork. Example shape once the repo exists:
-//   https://raw.githubusercontent.com/<owner>/krelvan-registry/main/index.json
+// The default registry repo (raw index.json) is the official krelvan-registry.
+// Override with NEXT_PUBLIC_KRELVAN_REGISTRY_URL to point at your own fork.
 export const REGISTRY_URL =
-  process.env["NEXT_PUBLIC_KRELVAN_REGISTRY_URL"] ?? "";
+  process.env["NEXT_PUBLIC_KRELVAN_REGISTRY_URL"] ??
+  "https://raw.githubusercontent.com/sreenathmmenon/krelvan-registry/main/index.json";
 
 // ── SEED registry — the exact index.json content for the registry repo ──────────
 // Every entry is real and working: YAML wrappers target real keyless public APIs;
@@ -130,6 +130,148 @@ input:
   message:
     type: string
     required: true
+`,
+  },
+
+  // ── Official Deploy capabilities (ship a site/app via a provider deploy hook) ─
+  // Each is a real, working trigger: you create a deploy/build hook in the provider
+  // and store it as the named secret; the agent POSTs to it to ship. sideEffect is
+  // write-irreversible, so a deploy gates on the agent's autonomy (suggest/veto).
+  {
+    name: "deploy.vercel", title: "Deploy to Vercel", oneLiner: "Ship a production deployment on Vercel via a Deploy Hook.",
+    category: "Deploy", sideEffect: "write-irreversible", tier: "official", author: "Krelvan", kind: "yaml",
+    secretRefs: ["vercel-deploy-hook"],
+    sourceUrl: "https://github.com/sreenathmmenon/krelvan-registry",
+    yaml: `name: deploy.vercel
+description: Trigger a production deployment on Vercel via a Deploy Hook URL.
+sideEffect: write-irreversible
+estimateCents: 0
+http:
+  url: "{{secret:vercel-deploy-hook}}"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+  body:
+    ref: "{{input.ref}}"
+input:
+  ref:
+    type: string
+    description: Optional git ref (branch or commit) to deploy.
+successCodes:
+  - 200
+  - 201
+  - 202
+`,
+  },
+  {
+    name: "deploy.netlify", title: "Deploy to Netlify", oneLiner: "Trigger a build and deploy on Netlify via a Build Hook.",
+    category: "Deploy", sideEffect: "write-irreversible", tier: "official", author: "Krelvan", kind: "yaml",
+    secretRefs: ["netlify-build-hook"],
+    sourceUrl: "https://github.com/sreenathmmenon/krelvan-registry",
+    yaml: `name: deploy.netlify
+description: Trigger a build and deploy on Netlify via a Build Hook URL.
+sideEffect: write-irreversible
+estimateCents: 0
+http:
+  url: "{{secret:netlify-build-hook}}"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+  body:
+    trigger_branch: "{{input.branch}}"
+    trigger_title: "{{input.title}}"
+input:
+  branch:
+    type: string
+    description: Optional branch to build.
+  title:
+    type: string
+    description: Optional reason shown in the Netlify deploy log.
+successCodes:
+  - 200
+  - 201
+  - 202
+  - 204
+`,
+  },
+  {
+    name: "deploy.cloudflare_pages", title: "Deploy to Cloudflare Pages", oneLiner: "Queue a Cloudflare Pages deployment via a Deploy Hook.",
+    category: "Deploy", sideEffect: "write-irreversible", tier: "official", author: "Krelvan", kind: "yaml",
+    secretRefs: ["cloudflare-pages-hook"],
+    sourceUrl: "https://github.com/sreenathmmenon/krelvan-registry",
+    yaml: `name: deploy.cloudflare_pages
+description: Trigger a Cloudflare Pages deployment via a Deploy Hook URL.
+sideEffect: write-irreversible
+estimateCents: 0
+http:
+  url: "{{secret:cloudflare-pages-hook}}"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+  body:
+    reason: "{{input.reason}}"
+input:
+  reason:
+    type: string
+    description: Optional human-readable reason for the deploy.
+successCodes:
+  - 200
+  - 201
+  - 202
+`,
+  },
+  {
+    name: "deploy.render", title: "Deploy to Render", oneLiner: "Trigger a deploy on Render via a service Deploy Hook.",
+    category: "Deploy", sideEffect: "write-irreversible", tier: "official", author: "Krelvan", kind: "yaml",
+    secretRefs: ["render-deploy-hook"],
+    sourceUrl: "https://github.com/sreenathmmenon/krelvan-registry",
+    yaml: `name: deploy.render
+description: Trigger a deploy on Render via a service Deploy Hook URL.
+sideEffect: write-irreversible
+estimateCents: 0
+http:
+  url: "{{secret:render-deploy-hook}}"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+  body:
+    ref: "{{input.ref}}"
+input:
+  ref:
+    type: string
+    description: Optional git ref (branch or commit SHA) to deploy.
+successCodes:
+  - 200
+  - 201
+  - 202
+`,
+  },
+  {
+    name: "deploy.railway", title: "Deploy to Railway", oneLiner: "Redeploy a Railway service via the GraphQL API.",
+    category: "Deploy", sideEffect: "write-irreversible", tier: "official", author: "Krelvan", kind: "yaml",
+    secretRefs: ["railway-token"],
+    sourceUrl: "https://github.com/sreenathmmenon/krelvan-registry",
+    yaml: `name: deploy.railway
+description: Trigger a redeploy on Railway via the project GraphQL API.
+sideEffect: write-irreversible
+estimateCents: 0
+http:
+  url: "https://backboard.railway.app/graphql/v2"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+    Authorization: "Bearer {{secret:railway-token}}"
+  body:
+    query: "mutation($id: String!){ serviceInstanceRedeploy(serviceId: $id) }"
+    variables:
+      id: "{{input.serviceId}}"
+input:
+  serviceId:
+    type: string
+    required: true
+    description: The Railway service id to redeploy.
+successCodes:
+  - 200
 `,
   },
 

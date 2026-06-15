@@ -1,0 +1,33 @@
+name: deploy.railway
+description: Trigger a redeploy on Railway via the project GraphQL API.
+sideEffect: write-irreversible
+estimateCents: 0
+
+# Railway exposes a GraphQL API at https://backboard.railway.app/graphql/v2.
+# A scoped API token (Account → Tokens, or a project token) authorizes a
+# serviceInstanceRedeploy mutation. The token is the secret; the service id is
+# an input so one capability covers any service.
+http:
+  url: "https://backboard.railway.app/graphql/v2"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+    Authorization: "Bearer {{secret:railway-token}}"
+  body:
+    query: "mutation($id: String!){ serviceInstanceRedeploy(serviceId: $id) }"
+    variables:
+      id: "{{input.serviceId}}"
+
+input:
+  serviceId:
+    type: string
+    required: true
+    description: The Railway service id to redeploy.
+
+output:
+  data:
+    type: string
+    description: The GraphQL response data.
+
+successCodes:
+  - 200

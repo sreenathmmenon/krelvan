@@ -1,0 +1,35 @@
+name: deploy.netlify
+description: Trigger a build and deploy on Netlify via a Build Hook URL.
+sideEffect: write-irreversible
+estimateCents: 0
+
+# Netlify Build Hooks: Site → Site configuration → Build & deploy → Build hooks
+# → add build hook. POSTing to the resulting URL starts a new build+deploy.
+# The hook URL is the secret.
+http:
+  url: "{{secret:netlify-build-hook}}"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+  body:
+    trigger_branch: "{{input.branch}}"
+    trigger_title: "{{input.title}}"
+
+input:
+  branch:
+    type: string
+    description: Optional branch to build. Defaults to the hook's configured branch.
+  title:
+    type: string
+    description: Optional human-readable reason shown in the Netlify deploy log.
+
+output:
+  status:
+    type: string
+    description: HTTP status of the trigger request.
+
+successCodes:
+  - 200
+  - 201
+  - 202
+  - 204

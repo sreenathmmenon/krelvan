@@ -1,0 +1,30 @@
+name: deploy.render
+description: Trigger a deploy on Render via a service Deploy Hook URL.
+sideEffect: write-irreversible
+estimateCents: 0
+
+# Render Deploy Hooks: Service → Settings → Deploy Hook (a unique URL).
+# A GET or POST to it triggers a new deploy of the service. The hook URL is the
+# secret. Render accepts an optional ?ref= query but we keep the body simple.
+http:
+  url: "{{secret:render-deploy-hook}}"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+  body:
+    ref: "{{input.ref}}"
+
+input:
+  ref:
+    type: string
+    description: Optional git ref (branch or commit SHA) to deploy.
+
+output:
+  status:
+    type: string
+    description: HTTP status of the deploy trigger.
+
+successCodes:
+  - 200
+  - 201
+  - 202

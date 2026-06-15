@@ -1,0 +1,31 @@
+name: deploy.vercel
+description: Trigger a production deployment on Vercel via a Deploy Hook URL.
+sideEffect: write-irreversible
+estimateCents: 0
+
+# Vercel Deploy Hooks: Project → Settings → Git → Deploy Hooks → create one,
+# which gives a unique URL. POSTing to it triggers a new build+deploy of the
+# linked branch. No token in the request — the secret IS the hook URL, so we
+# store the whole URL as a secret and reference it.
+http:
+  url: "{{secret:vercel-deploy-hook}}"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+  body:
+    ref: "{{input.ref}}"
+
+input:
+  ref:
+    type: string
+    description: Optional git ref (branch or commit) to deploy. Defaults to the hook's configured branch.
+
+output:
+  job:
+    type: string
+    description: The deployment job descriptor returned by Vercel.
+
+successCodes:
+  - 200
+  - 201
+  - 202
