@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { getRun, getRunEvents, listApprovals, resolveApproval, explainRun, diagnoseRun, retryRunWithFix, startRun, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type PendingApproval, type RunExplanation, type RunDiagnosis, API_BASE } from "../../../lib/api";
 import { layoutGraph, graphBounds, edgePath } from "../../../lib/layout";
 
@@ -230,7 +231,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   if (!detail) return (
     <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
       <div style={{ marginBottom: "var(--s6)" }}>
-        <a href="/runs" className="small" style={{ color: "var(--ink-muted)" }}>← All runs</a>
+        <Link href="/runs" className="small" style={{ color: "var(--ink-muted)" }}>← All runs</Link>
       </div>
       <div className="state-empty">
         <div style={{ marginBottom: "var(--s3)", color: "var(--ink-muted)" }}><Glyph kind="search" size={32} /></div>
@@ -238,7 +239,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         <p className="small soft" style={{ maxWidth: "40ch", margin: "0 auto", lineHeight: 1.6 }}>
           It may have been deleted, or the link is incorrect. Browse your runs to find what you&apos;re looking for.
         </p>
-        <a href="/runs" className="btn btn-primary" style={{ marginTop: "var(--s2)" }}>Back to all runs →</a>
+        <Link href="/runs" className="btn btn-primary" style={{ marginTop: "var(--s2)" }}>Back to all runs →</Link>
       </div>
     </div>
   );
@@ -298,9 +299,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       {/* header */}
       <div style={{ marginBottom: "var(--s6)" }}>
         <nav aria-label="Breadcrumb" style={{ marginBottom: "var(--s4)", display: "flex", gap: "var(--s4)", alignItems: "center", flexWrap: "wrap" }}>
-          <a href="/runs" className="small" style={{ color: "var(--ink-muted)" }}>← All runs</a>
+          <Link href="/runs" className="small" style={{ color: "var(--ink-muted)" }}>← All runs</Link>
           <span className="small" aria-hidden="true" style={{ color: "var(--line-strong)" }}>·</span>
-          <a href={`/canvas/${run.agentId}?run=${id}`} className="small" style={{ color: "var(--brand)", fontWeight: 500 }}>Open in Canvas ↗</a>
+          <Link href={`/canvas/${run.agentId}?run=${id}`} className="small" style={{ color: "var(--brand)", fontWeight: 500 }}>Open in Canvas ↗</Link>
         </nav>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "var(--s5)" }}>
           <div style={{ minWidth: 0 }}>
@@ -322,7 +323,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             </span>
             {isTerminalStatus && (
               <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center" }}>
-                <a href={`/canvas/${run.agentId}`} className="btn btn-secondary btn-sm">View agent →</a>
+                <Link href={`/canvas/${run.agentId}`} className="btn btn-secondary btn-sm">View agent →</Link>
                 <button
                   className="btn btn-primary btn-sm"
                   disabled={startingRun}
@@ -721,7 +722,7 @@ function OutputPanel({ projection, manifest, run }: {
             a deploy hook or API key for your own account. Add it once and re-run.
           </p>
           <div style={{ display: "flex", gap: "var(--s3)", alignItems: "center" }}>
-            <a href={`/secrets`} className="btn btn-sm btn-primary">Add {missingSecret} →</a>
+            <Link href={`/secrets`} className="btn btn-sm btn-primary">Add {missingSecret} →</Link>
             <span className="small muted">Stored encrypted on your instance.</span>
           </div>
         </div>

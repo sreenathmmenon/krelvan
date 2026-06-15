@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import Link from "next/link";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { listRuns } from "../lib/api";
 import CommandPalette from "./CommandPalette";
@@ -131,18 +132,18 @@ export default function NavClient() {
       <div className="container-wide nav-bar">
         {/* left — wordmark + desktop links */}
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s7)", minWidth: 0 }}>
-          <a href="/" style={{
+          <Link href="/" style={{
             fontWeight: 800, fontSize: 18, color: wordmarkColor,
             letterSpacing: "-.03em", textDecoration: "none", flexShrink: 0,
             transition: "color var(--t-standard) var(--ease)",
           }}>
             Krelvan
-          </a>
+          </Link>
           <nav className="nav-links" aria-label="Main navigation" ref={navLinksRef}>
             {NAV_LINKS.map(link => {
               const active = isActive(link.href);
               return (
-                <a
+                <Link
                   key={link.href}
                   href={link.href}
                   className="nav-link"
@@ -150,14 +151,14 @@ export default function NavClient() {
                   aria-current={active ? "page" : undefined}
                 >
                   {link.label}
-                </a>
+                </Link>
               );
             })}
             <span className="nav-divider" aria-hidden="true" />
             {MORE_LINKS.map(link => {
               const active = isActive(link.href);
               return (
-                <a
+                <Link
                   key={link.href}
                   href={link.href}
                   className="nav-link nav-link--util"
@@ -165,7 +166,7 @@ export default function NavClient() {
                   aria-current={active ? "page" : undefined}
                 >
                   {link.label}
-                </a>
+                </Link>
               );
             })}
             {/* sliding active-indicator — position set in JS, glides via CSS transition */}

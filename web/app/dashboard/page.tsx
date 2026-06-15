@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   listAgents, listRuns, buildAgent, startRun, explainRun, timeAgo,
   type AgentRecord, type RunRecord, type BuildResult,
@@ -485,7 +486,7 @@ export default function Dashboard() {
                 {recentRuns.length > 0 ? (
                   <div className="card" style={{ padding: 0, overflow: "hidden" }}>
                     {recentRuns.map(r => (
-                      <a
+                      <Link
                         key={r.runId}
                         href={`/runs/${r.runId}`}
                         className={`run-row${r.status === "running" ? " is-live" : ""}`}
@@ -508,7 +509,7 @@ export default function Dashboard() {
                             </div>
                           )}
                         </div>
-                      </a>
+                      </Link>
                     ))}
                   </div>
                 ) : (
@@ -521,7 +522,7 @@ export default function Dashboard() {
                 )}
 
                 <div style={{ marginTop: "var(--s3)" }}>
-                  <a href="/runs" className="small" style={{ color: "var(--brand)", fontWeight: 500 }}>All runs →</a>
+                  <Link href="/runs" className="small" style={{ color: "var(--brand)", fontWeight: 500 }}>All runs →</Link>
                 </div>
               </div>
 

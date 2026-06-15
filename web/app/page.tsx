@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   listAgents, listRuns, buildAgent, startRun, explainRun, timeAgo,
   type AgentRecord, type RunRecord, type BuildResult,
@@ -66,7 +67,7 @@ function InstallCommand() {
 function HeroArtifact({ run }: { run: RunRecord | null }) {
   if (run) {
     return (
-      <a
+      <Link
         href={`/runs/${run.runId}`}
         className="dark-device"
         style={{ display: "block", padding: "var(--s5)", textDecoration: "none" }}
@@ -95,7 +96,7 @@ function HeroArtifact({ run }: { run: RunRecord | null }) {
         <div className="dark-teal mono" style={{ marginTop: "var(--s4)", fontSize: 12, fontWeight: 600 }}>
           Open this record →
         </div>
-      </a>
+      </Link>
     );
   }
 
@@ -256,9 +257,9 @@ export default function Landing() {
                   Build an agent
                 </button>
                 {latestCompleted ? (
-                  <a href={`/runs/${latestCompleted.runId}`} className="btn btn-dark-ghost btn-lg">
+                  <Link href={`/runs/${latestCompleted.runId}`} className="btn btn-dark-ghost btn-lg">
                     See a real run
-                  </a>
+                  </Link>
                 ) : (
                   <button className="btn btn-dark-ghost btn-lg" onClick={focusBuilder}>
                     Try an example
@@ -361,7 +362,7 @@ export default function Landing() {
             real-run highlight as proof, with one link into the workspace. */}
         {latestCompleted && (
           <div className="container" style={{ paddingTop: "var(--s4)", paddingBottom: "var(--s9)" }}>
-            <a
+            <Link
               href={`/runs/${latestCompleted.runId}`}
               className="card card-hover ledger-artifact"
               style={{
@@ -378,9 +379,9 @@ export default function Landing() {
                 </div>
               </div>
               <span className="btn btn-secondary">Open this record →</span>
-            </a>
+            </Link>
             <div style={{ textAlign: "center", marginTop: "var(--s4)" }}>
-              <a href="/dashboard" className="small" style={{ color: "var(--brand)" }}>Go to your workspace →</a>
+              <Link href="/dashboard" className="small" style={{ color: "var(--brand)" }}>Go to your workspace →</Link>
             </div>
           </div>
         )}

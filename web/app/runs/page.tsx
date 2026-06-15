@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { listRuns, explainRun, timeAgo, type RunRecord } from "../../lib/api";
 
 type Filter = "all" | "running" | "halted" | "completed" | "failed";
@@ -170,9 +171,9 @@ export default function RunsPage() {
           </p>
         </div>
         {runs.length > 0 && (
-          <a href="/" className="btn btn-primary" style={{ flexShrink: 0 }}>
+          <Link href="/" className="btn btn-primary" style={{ flexShrink: 0 }}>
             Build an agent →
-          </a>
+          </Link>
         )}
       </div>
 
@@ -254,7 +255,7 @@ export default function RunsPage() {
             When you build and run an agent, its signed record shows up here — every step
             and decision, ready to open and replay.
           </p>
-          <a href="/" className="btn btn-primary">Build your first agent →</a>
+          <Link href="/" className="btn btn-primary">Build your first agent →</Link>
         </div>
       )}
 
@@ -301,7 +302,7 @@ export default function RunsPage() {
                         <span className={`status-dot ${STATUS_DOT_CLASS[r.status]}`} aria-hidden="true" />
                       </td>
                       <td>
-                        <a
+                        <Link
                           href={`/runs/${r.runId}`}
                           onClick={e => e.stopPropagation()}
                           style={{ color: "var(--ink)", textDecoration: "none", display: "block", minWidth: 0 }}
@@ -321,7 +322,7 @@ export default function RunsPage() {
                               {r.reason}
                             </span>
                           ) : null}
-                        </a>
+                        </Link>
                       </td>
                       <td>
                         <span className={`badge ${badgeCls}`}>

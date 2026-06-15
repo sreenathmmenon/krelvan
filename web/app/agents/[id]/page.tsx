@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, use, useCallback } from "react";
+import Link from "next/link";
 import {
   getAgent, getAgentRuns, startRun, deleteAgent, listSchedules, createSchedule, toggleSchedule, deleteSchedule,
   timeAgo,
@@ -668,9 +669,9 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
   if (!agent) return (
     <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
       <nav aria-label="Breadcrumb" style={{ marginBottom: "var(--s5)" }}>
-        <a href="/dashboard" className="small" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s1)", color: "var(--ink-muted)", textDecoration: "none" }}>
+        <Link href="/dashboard" className="small" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s1)", color: "var(--ink-muted)", textDecoration: "none" }}>
           <Glyph name="back" size={13} color="currentColor" /> Agents
-        </a>
+        </Link>
       </nav>
       <div className="state-empty" style={{ padding: "var(--s9) var(--s6)" }}>
         <span className="state-glyph" aria-hidden="true"><Glyph name="flag" size={30} color="var(--brand)" /></span>
@@ -678,9 +679,9 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
         <p className="body-lg soft" style={{ maxWidth: "44ch", margin: 0 }}>
           It may have been deleted, or the link is wrong. Head back to your agents to pick another one.
         </p>
-        <a href="/dashboard" className="btn btn-primary btn-sm" style={{ marginTop: "var(--s2)", textDecoration: "none" }}>
+        <Link href="/dashboard" className="btn btn-primary btn-sm" style={{ marginTop: "var(--s2)", textDecoration: "none" }}>
           Back to agents
-        </a>
+        </Link>
       </div>
     </div>
   );
@@ -707,9 +708,9 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
       <div style={{ borderBottom: "1px solid var(--line)", background: "var(--surface)", paddingTop: "var(--s5)", paddingBottom: "var(--s6)" }}>
         <div className="container">
           <nav aria-label="Breadcrumb" style={{ marginBottom: "var(--s4)" }}>
-            <a href="/dashboard" className="small" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s1)", color: "var(--ink-muted)", textDecoration: "none" }}>
+            <Link href="/dashboard" className="small" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s1)", color: "var(--ink-muted)", textDecoration: "none" }}>
               <Glyph name="back" size={13} color="currentColor" /> Agents
-            </a>
+            </Link>
           </nav>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "var(--s5)" }}>
             <div style={{ minWidth: 0 }}>
@@ -743,13 +744,13 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               </div>
             </div>
             <div style={{ display: "flex", gap: "var(--s3)", alignItems: "center", flexWrap: "wrap" }}>
-              <a
+              <Link
                 href={`/canvas/${id}`}
                 className="btn btn-secondary"
                 style={{ textDecoration: "none" }}
               >
                 Canvas
-              </a>
+              </Link>
               <button
                 className={confirmDelete ? "btn btn-danger" : "btn btn-secondary"}
                 onClick={() => void handleDelete()}
@@ -918,7 +919,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                   const runColor = r.status === "completed" ? "var(--ok)" : r.status === "failed" ? "var(--danger)" : r.status === "running" ? "var(--live)" : "var(--paused)";
                   const isLive = r.status === "running";
                   return (
-                    <a key={r.runId} href={`/runs/${r.runId}`} className="table-row-link" style={{
+                    <Link key={r.runId} href={`/runs/${r.runId}`} className="table-row-link" style={{
                       display: "grid", gridTemplateColumns: "auto 1fr auto 16px",
                       gap: "var(--s4)", padding: "var(--s4)",
                       borderTop: i === 0 ? "none" : "1px solid var(--line)",
@@ -937,14 +938,14 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                         <div className="small muted">{timeAgo(r.createdAt)}</div>
                       </div>
                       <span aria-hidden="true" style={{ color: "var(--ink-muted)", fontSize: 14, lineHeight: 1 }}>›</span>
-                    </a>
+                    </Link>
                   );
                 })}
               </div>
             )}
             {runs.length > 0 && (
               <div style={{ marginTop: "var(--s4)", display: "flex", justifyContent: "flex-end" }}>
-                <a href="/runs" className="small" style={{ color: "var(--brand)" }}>See all runs →</a>
+                <Link href="/runs" className="small" style={{ color: "var(--brand)" }}>See all runs →</Link>
               </div>
             )}
           </div>

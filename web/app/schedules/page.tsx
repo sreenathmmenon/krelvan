@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import {
   listSchedules,
   listAgents,
@@ -295,13 +296,13 @@ function ScheduleCard({
         <div className="small muted" style={{ display: "flex", gap: "var(--s5)", flexWrap: "wrap", alignItems: "center" }}>
           <span>
             Agent:{" "}
-            <a href={`/agents/${s.agentId}`} style={{ fontWeight: 500 }}>{s.agentName}</a>
+            <Link href={`/agents/${s.agentId}`} style={{ fontWeight: 500 }}>{s.agentName}</Link>
           </span>
           <span>
             Last run:{" "}
             {s.lastRunAt
               ? (s.lastRunId
-                  ? <a href={`/runs/${s.lastRunId}`} className="mono" style={{ fontWeight: 500 }}>{timeAgo(s.lastRunAt)}</a>
+                  ? <Link href={`/runs/${s.lastRunId}`} className="mono" style={{ fontWeight: 500 }}>{timeAgo(s.lastRunAt)}</Link>
                   : <span className="mono">{timeAgo(s.lastRunAt)}</span>)
               : <span className="mono">never</span>}
           </span>
@@ -409,7 +410,7 @@ function CreateForm({
 
       {noAgents && (
         <div className="state-error" role="alert" style={{ marginBottom: "var(--s5)", background: "var(--info-tint)", color: "var(--info)", borderColor: "transparent" }}>
-          <span>You need an agent before you can schedule one. <a href="/" style={{ color: "var(--info)", fontWeight: 600 }}>Build an agent →</a></span>
+          <span>You need an agent before you can schedule one. <Link href="/" style={{ color: "var(--info)", fontWeight: 600 }}>Build an agent →</Link></span>
         </div>
       )}
 
@@ -545,9 +546,9 @@ function Empty({ hasAgents, onNew }: { hasAgents: boolean; onNew: () => void }) 
           + New schedule
         </button>
       ) : (
-        <a href="/" className="btn btn-primary" style={{ marginTop: "var(--s2)" }}>
+        <Link href="/" className="btn btn-primary" style={{ marginTop: "var(--s2)" }}>
           Build an agent first →
-        </a>
+        </Link>
       )}
     </div>
   );

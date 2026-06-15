@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, use, useRef, useReducer, useMemo } from "react";
+import Link from "next/link";
 import {
   getAgent, getAgentRuns, getRun, getRunEvents, startRun, timeAgo,
   type AgentRecord, type RunRecord, type RunDetail, type LedgerEvent,
@@ -637,7 +638,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
         <p className="small muted" style={{ maxWidth: "34ch", lineHeight: 1.6 }}>
           This agent may have been deleted, or the link is incorrect.
         </p>
-        <a href="/agents" className="btn btn-secondary btn-sm" style={{ marginTop: "var(--s2)" }}>← Back to agents</a>
+        <Link href="/agents" className="btn btn-secondary btn-sm" style={{ marginTop: "var(--s2)" }}>← Back to agents</Link>
       </div>
     </div>
   );
@@ -657,8 +658,8 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
             Open this agent on a desktop to explore it. You can still jump to its run or details below.
           </p>
           <div style={{ display: "flex", gap: "var(--s2)", justifyContent: "center", flexWrap: "wrap" }}>
-            {selectedRunId && <a href={`/runs/${selectedRunId}`} className="btn btn-primary btn-sm">View the run →</a>}
-            <a href={`/agents/${agentId}`} className="btn btn-secondary btn-sm">Agent details</a>
+            {selectedRunId && <Link href={`/runs/${selectedRunId}`} className="btn btn-primary btn-sm">View the run →</Link>}
+            <Link href={`/agents/${agentId}`} className="btn btn-secondary btn-sm">Agent details</Link>
           </div>
         </div>
       </div>
@@ -707,7 +708,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
         zIndex: 20, overflowX: "auto", overflowY: "hidden",
       }}>
         {/* back */}
-        <a href={`/agents/${agentId}`} className="small" style={{ color: "var(--ink-muted)", flexShrink: 0 }}>← Agent</a>
+        <Link href={`/agents/${agentId}`} className="small" style={{ color: "var(--ink-muted)", flexShrink: 0 }}>← Agent</Link>
 
         <div style={{ width: 1, height: 20, background: "var(--line)" }} />
 
@@ -724,7 +725,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
         </div>
 
         {/* tamper-evident ledger badge */}
-        <a
+        <Link
           href={selectedRunId ? `/runs/${selectedRunId}#timeline` : `/agents/${agentId}`}
           title="Every event is HMAC-chained — the ledger cannot be altered without detection"
           className="badge badge-done canvas-ledger-badge"
@@ -733,7 +734,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
           <IconCheck />
           <span className="sr-only">Verified:</span>
           Signed
-        </a>
+        </Link>
 
         {/* run selector */}
         <RunSelectorDropdown
@@ -887,7 +888,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
                 <p className="small muted" style={{ maxWidth: "34ch", lineHeight: 1.6 }}>
                   This agent has no plan to draw on the canvas.
                 </p>
-                <a href={`/agents/${agentId}`} className="btn btn-secondary btn-sm" style={{ marginTop: "var(--s2)" }}>← Back to agent</a>
+                <Link href={`/agents/${agentId}`} className="btn btn-secondary btn-sm" style={{ marginTop: "var(--s2)" }}>← Back to agent</Link>
               </div>
             </div>
           ) : (
