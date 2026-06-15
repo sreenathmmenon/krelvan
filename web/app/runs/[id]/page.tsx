@@ -708,6 +708,25 @@ function OutputPanel({ projection, manifest, run }: {
   }
 
   if (isFailed) {
+    // A missing-secret failure is actionable: point the customer straight to Secrets.
+    const missingSecret = (run.reason ?? "").match(/secret '([^']+)' is not registered/)?.[1];
+    if (missingSecret) {
+      return (
+        <div className="card" style={{ padding: "var(--s5)", borderColor: "var(--amber, #C77D0A)", background: "var(--amber-tint, #FBF3E6)" }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--amber, #C77D0A)", marginBottom: "var(--s2)" }}>
+            Needs a secret to continue
+          </p>
+          <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: "var(--s4)" }}>
+            This run uses a capability that needs your <code className="mono">{missingSecret}</code> — for example
+            a deploy hook or API key for your own account. Add it once and re-run.
+          </p>
+          <div style={{ display: "flex", gap: "var(--s3)", alignItems: "center" }}>
+            <a href={`/secrets`} className="btn btn-sm btn-primary">Add {missingSecret} →</a>
+            <span className="small muted">Stored encrypted on your instance.</span>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="card" style={{ padding: "var(--s5)", borderColor: "var(--danger-ring)", background: "var(--danger-tint)" }}>
         <p style={{ fontSize: 13, fontWeight: 600, color: "var(--danger)", marginBottom: "var(--s2)" }}>Run failed</p>
