@@ -392,21 +392,18 @@ export default function Landing() {
         <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
           <p className="micro" style={{ marginBottom: "var(--s3)" }}>Build on it</p>
           <h2 className="h1" style={{ marginBottom: "var(--s3)", maxWidth: "24ch" }}>
-            The value isn&apos;t features. It&apos;s <span style={{ color: "var(--brand)" }}>eliminated decisions</span>.
+            The hard parts, <span style={{ color: "var(--brand)" }}>already solved</span>.
           </h2>
-          <p className="body-lg soft" style={{ maxWidth: "60ch", marginBottom: "var(--s7)" }}>
-            Memory, approval flows, audit, agent coordination, failure-reasoning — solved.
-            You build the domain logic and the client workflow. Ship agentic solutions in
-            days, not months.
+          <p className="body-lg soft" style={{ maxWidth: "58ch", marginBottom: "var(--s7)" }}>
+            Audit, memory, approvals and failure-reasoning come built in. You build the
+            domain logic and the client workflow — and ship agentic solutions in days.
           </p>
           <div className="build-on-grid">
             {[
+              { k: "Audit by default", v: "Every step signed to a tamper-evident record you can replay." },
               { k: "Memory", v: "Episodic, semantic and trust-aware — right by default." },
-              { k: "Approval flows", v: "Standard human-in-the-loop pause / approve / resume." },
-              { k: "Audit by default", v: "Every step signed to a tamper-evident record." },
-              { k: "Agent coordination", v: "Sub-agent delegation with supervisor co-sign." },
-              { k: "Failure-reasoning", v: "It reasons about why a run failed — and how to fix it." },
-              { k: "Capability ecosystem", v: "Install a connector; it works in any agent." },
+              { k: "Approval flows", v: "Human-in-the-loop pause / approve / resume on risky actions." },
+              { k: "Failure-reasoning", v: "It reasons about why a run failed — and rebuilds a fix." },
             ].map(c => (
               <div key={c.k} className="card" style={{ padding: "var(--s5)" }}>
                 <div className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s2)", display: "flex", alignItems: "center", gap: "var(--s2)" }}>
@@ -430,7 +427,7 @@ export default function Landing() {
           </h2>
           <p className="dark-ink-soft body-lg" style={{ maxWidth: "54ch", margin: "0 auto var(--s6)" }}>
             Download it and run it yourself — for you, your team, or your clients.
-            Your keys, your data, your infrastructure. Use it however you need.
+            Your keys, your data, your infrastructure.
           </p>
           <div style={{ marginBottom: "var(--s6)" }}>
             <InstallCommand />

@@ -30,7 +30,7 @@ export default function SiteFooter() {
           <nav aria-label="Workspace">
             <p className="micro" style={{ marginBottom: "var(--s3)" }}>Workspace</p>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
-              <li><a href="/mcp" className="small" style={{ color: "var(--ink-soft)" }}>MCP servers</a></li>
+              <li><a href="/capabilities#connectors" className="small" style={{ color: "var(--ink-soft)" }}>Connectors</a></li>
               <li><a href="/secrets" className="small" style={{ color: "var(--ink-soft)" }}>Secrets</a></li>
               <li><a href="/approvals" className="small" style={{ color: "var(--ink-soft)" }}>Approvals</a></li>
               <li><a href="/capabilities" className="small" style={{ color: "var(--ink-soft)" }}>Marketplace</a></li>

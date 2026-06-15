@@ -277,7 +277,8 @@ function InstalledTab({ caps, servers, q, autonomy, onChange, flash, onView }: {
         </Section>
       )}
 
-      {/* Connectors (MCP folded in) */}
+      {/* Connectors (MCP folded in) — anchor target for /mcp redirect + nav deep-links */}
+      <div id="connectors" style={{ scrollMarginTop: "var(--s8)" }} />
       <Connectors servers={servers} onChange={onChange} flash={flash} />
 
       <Section title="Built-in" sub={`Shipped with Krelvan — always available · ${builtins.length}`}>

@@ -14,7 +14,7 @@ const NAV_LINKS = [
   { label: "Schedules",    href: "/schedules" },
 ];
 const MORE_LINKS = [
-  { label: "MCP servers",  href: "/mcp" },
+  { label: "Connectors",   href: "/capabilities#connectors" },
   { label: "Secrets",      href: "/secrets" },
   { label: "Approvals",    href: "/approvals" },
 ];
