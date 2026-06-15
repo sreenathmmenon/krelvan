@@ -712,8 +712,8 @@ function OutputPanel({ projection, manifest, run }: {
     const missingSecret = (run.reason ?? "").match(/secret '([^']+)' is not registered/)?.[1];
     if (missingSecret) {
       return (
-        <div className="card" style={{ padding: "var(--s5)", borderColor: "var(--amber, #C77D0A)", background: "var(--amber-tint, #FBF3E6)" }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--amber, #C77D0A)", marginBottom: "var(--s2)" }}>
+        <div className="card ledger-artifact" style={{ padding: "var(--s5)", borderColor: "var(--brand-ring)", background: "var(--brand-tint)" }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--brand)", marginBottom: "var(--s2)" }}>
             Needs a secret to continue
           </p>
           <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: "var(--s4)" }}>

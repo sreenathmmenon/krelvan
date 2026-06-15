@@ -92,7 +92,7 @@ export default function SecretsPage() {
                     style={{
                       padding: "var(--s4) var(--s5)", display: "flex", alignItems: "center",
                       justifyContent: "space-between", gap: "var(--s4)", flexWrap: "wrap",
-                      borderLeft: "3px solid var(--amber, #C77D0A)",
+                      borderLeft: "3px solid var(--line-strong)",
                     }}
                   >
                     <div style={{ minWidth: 0 }}>

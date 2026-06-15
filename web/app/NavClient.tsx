@@ -24,6 +24,7 @@ export default function NavClient() {
   const [runningCount, setRunningCount] = useState(0);
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -130,6 +131,57 @@ export default function NavClient() {
                 </a>
               );
             })}
+            {/* desktop "More" dropdown — surfaces Connectors / Secrets / Approvals
+                without burying them in the mobile hamburger (council P1-4) */}
+            <div
+              className="nav-more"
+              style={{ position: "relative" }}
+              onMouseEnter={() => setMoreOpen(true)}
+              onMouseLeave={() => setMoreOpen(false)}
+            >
+              <button
+                type="button"
+                aria-haspopup="true"
+                aria-expanded={moreOpen}
+                onClick={() => setMoreOpen(o => !o)}
+                style={{
+                  fontSize: 14, fontWeight: 500, color: idleLinkColor,
+                  background: "none", border: "none", cursor: "pointer",
+                  padding: "var(--s2) 0", display: "inline-flex", alignItems: "center", gap: 4,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                More <span aria-hidden="true" style={{ fontSize: 10 }}>▾</span>
+              </button>
+              {moreOpen && (
+                <div
+                  role="menu"
+                  style={{
+                    position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: 180,
+                    background: "var(--surface)", border: "1px solid var(--line)",
+                    borderRadius: "var(--r)", boxShadow: "var(--shadow-md)", padding: "var(--s2)",
+                    zIndex: 50, display: "flex", flexDirection: "column",
+                  }}
+                >
+                  {MORE_LINKS.map(link => (
+                    <a
+                      key={link.href}
+                      href={link.href}
+                      role="menuitem"
+                      onClick={() => setMoreOpen(false)}
+                      style={{
+                        fontSize: 14, color: "var(--ink-soft)", textDecoration: "none",
+                        padding: "var(--s2) var(--s3)", borderRadius: "var(--r-sm)",
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-hover)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                    >
+                      {link.label}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
           </nav>
         </div>
 
