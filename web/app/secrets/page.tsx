@@ -32,6 +32,16 @@ export default function SecretsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Deep-link: /secrets?name=vercel-deploy-hook prefills the form (from a capability
+  // card's "Set secret" link), and scrolls the form into view.
+  useEffect(() => {
+    const name = new URLSearchParams(window.location.search).get("name");
+    if (name) {
+      setPrefillName(name);
+      setTimeout(() => document.getElementById("secret-form")?.scrollIntoView({ behavior: "smooth", block: "center" }), 200);
+    }
+  }, []);
+
   async function handleSave(name: string, value: string) {
     await setSecret(name, value);
     await load();
@@ -223,7 +233,7 @@ function SecretForm({ prefillName, onSave, onError, onClearPrefill }: {
   }
 
   return (
-    <form onSubmit={(e) => void handleSubmit(e)} className="card" style={{ padding: "var(--s6)", boxShadow: "var(--shadow-md)" }}>
+    <form id="secret-form" onSubmit={(e) => void handleSubmit(e)} className="card" style={{ padding: "var(--s6)", boxShadow: "var(--shadow-md)" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "var(--s4)", marginBottom: "var(--s5)" }}>
         <h2 className="h2">Add or update a secret</h2>
         <span className="small muted">Stored encrypted on this instance.</span>

@@ -1718,7 +1718,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
   text-align: left;
   overflow: hidden;
   transition: border-color 150ms var(--ease,ease), box-shadow 150ms var(--ease,ease);

@@ -354,6 +354,13 @@ function CapCard({ cap, autonomy, onChange, flash, onView }: { cap: CapabilityRe
         {cap.kind === "builtin" && <span className="micro" style={{ color: "var(--ink-muted)" }}>always on</span>}
       </div>
       {cap.description && <p className="small" style={{ color: "var(--ink-soft)", margin: 0, lineHeight: 1.55 }}>{cap.description}</p>}
+      {cap.secretRefs && cap.secretRefs.length > 0 && (
+        <div className="small" style={{ color: "var(--ink-muted)" }}>
+          Needs: {cap.secretRefs.map(s => (
+            <a key={s} href={`/secrets?name=${encodeURIComponent(s)}`} className="mono" style={{ color: "var(--brand)" }} title={`Set ${s} in Secrets`}>{s} </a>
+          ))}
+        </div>
+      )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)", alignItems: "center", justifyContent: "space-between" }}>
         <SideEffectBadge effect={cap.sideEffect} gated={gated} />
         <button className="btn btn-ghost btn-sm" onClick={() => onView(cap)} style={{ padding: "0 var(--s2)" }}>View source</button>
@@ -519,7 +526,9 @@ function CatalogCard({ e, installed, onInstalled, flash }: { e: CatalogEntry; in
           : <span className="badge badge-done">free</span>}
       </div>
       {e.secretRefs && e.secretRefs.length > 0 && (
-        <div className="small" style={{ color: "var(--ink-muted)" }}>Needs: {e.secretRefs.map(s => <span key={s} className="mono" style={{ color: "var(--ink-soft)" }}>{s} </span>)}</div>
+        <div className="small" style={{ color: "var(--ink-muted)" }}>Needs: {e.secretRefs.map(s => (
+          <a key={s} href={`/secrets?name=${encodeURIComponent(s)}`} className="mono" style={{ color: "var(--brand)" }} title={`Set ${s} in Secrets`}>{s} </a>
+        ))}</div>
       )}
       <div style={{ marginTop: "auto", paddingTop: "var(--s3)", borderTop: "1px solid var(--line)" }}>
         {installed ? (
