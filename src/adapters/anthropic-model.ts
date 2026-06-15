@@ -125,9 +125,11 @@ export class AnthropicModel implements ModelPort {
       },
     };
 
-    // System prompt: capability descriptions — model needs estimateCents to bid correctly.
+    // System prompt: capability descriptions. The numeric "weight" is only used to
+    // set each node's budgetCents — an internal safety ceiling (deny-by-default /
+    // budget-before-spend), never a price shown to anyone.
     const capDescriptions = this.cfg.allowedCapabilities.map(c => {
-      let line = `- ${c.name} (${c.sideEffect}, base cost: ${c.estimateCents ?? 5}¢): ${c.description ?? c.name}`;
+      let line = `- ${c.name} (${c.sideEffect}, budget weight: ${c.estimateCents ?? 5}): ${c.description ?? c.name}`;
       if (c.notes) line += `. NOTE: ${c.notes}`;
       return line;
     }).join("\n");

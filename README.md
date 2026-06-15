@@ -114,9 +114,12 @@ model. Anyone publishes a capability by opening a PR. Entries are real and insta
 
 - **YAML capabilities** — wrap any HTTP API (no code).
 - **MCP connectors** — connect GitHub, Slack, a filesystem, or any MCP server; every tool it exposes becomes a capability.
+- **Deploy capabilities** — ship a site/app to **Vercel, Netlify, Cloudflare Pages, Render, or Railway** via the provider's deploy hook. These are `write-irreversible`, so an agent pauses for your approval before it ships.
 - **Free + paid** — paid entries carry pricing + a license link; the platform never touches the money.
 
-Point an install at your own fork:
+The default registry is the official one:
+[`sreenathmmenon/krelvan-registry`](https://github.com/sreenathmmenon/krelvan-registry).
+Point an install at your own fork with
 `NEXT_PUBLIC_KRELVAN_REGISTRY_URL=https://raw.githubusercontent.com/<you>/krelvan-registry/main/index.json`
 (see [`registry/`](registry/) for the format and the seed catalog).
 
@@ -175,7 +178,8 @@ npm run demo:live    # (needs KRELVAN_ANTHROPIC_KEY) a real model proposes a wor
 - NL→manifest compiler (capability monotonicity)
 - Memory (multi-plane, provenance, untrusted-inbound gate)
 - **Full web UI** — NL builder, signed-graph canvas, runs, capabilities marketplace, MCP, approvals, schedules
-- **Capabilities marketplace** — Git-registry-backed, view/edit YAML source online, MCP connectors
+- **Capabilities marketplace** — Git-registry-backed (live at [`krelvan-registry`](https://github.com/sreenathmmenon/krelvan-registry)), view/edit YAML source online, MCP connectors
+- **Deploy capabilities** — Vercel / Netlify / Cloudflare Pages / Render / Railway, gated as write-irreversible
 - **Failure-reasoning + auto-retry-with-fix** — diagnose a failed run from the ledger, rebuild a corrected agent, re-run
 - **7 LLM providers** behind one client (Anthropic/OpenAI/Gemini/Groq/Mistral/Ollama/OpenAI-compatible)
 
