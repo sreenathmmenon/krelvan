@@ -199,6 +199,9 @@ export function createApiServer(runtime: KrelvanRuntime) {
     { method: "POST",   pattern: ["api", "capabilities", ":name", "enable"],          handler: (q, r, p) => handleEnableCapability(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "capabilities", ":name", "disable"],         handler: (q, r, p) => handleDisableCapability(q, r, p, runtime) },
     { method: "DELETE", pattern: ["api", "capabilities", ":name"],                    handler: (q, r, p) => handleUninstallCapability(q, r, p, runtime) },
+    { method: "GET",    pattern: ["api", "secrets"],                 handler: (q, r) => handleListSecrets(q, r, runtime) },
+    { method: "PUT",    pattern: ["api", "secrets", ":name"],        handler: (q, r, p) => handleSetSecret(q, r, p, runtime) },
+    { method: "DELETE", pattern: ["api", "secrets", ":name"],        handler: (q, r, p) => handleDeleteSecret(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "mcp"],                     handler: (q, r) => handleListMcp(q, r, runtime) },
     { method: "POST",   pattern: ["api", "mcp"],                     handler: (q, r) => handleConnectMcp(q, r, runtime) },
     { method: "DELETE", pattern: ["api", "mcp", ":name"],            handler: (q, r, p) => handleDisconnectMcp(q, r, p, runtime) },
@@ -933,6 +936,29 @@ async function handleUninstallCapability(_req: IncomingMessage, res: ServerRespo
 async function handleListMcp(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const servers = rt.mcpRegistry.listServers();
   json(res, 200, { servers });
+}
+
+// ── Secrets (customer-managed) ─────────────────────────────────────────────────
+async function handleListSecrets(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  json(res, 200, rt.listSecrets());
+}
+
+async function handleSetSecret(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const name = decodeURIComponent(params["name"] ?? "");
+  const raw = await readBody(req);
+  let body: { value?: string };
+  try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  if (typeof body.value !== "string") { jsonError(res, 400, "value is required"); return; }
+  const result = rt.setSecret(name, body.value);
+  if (!result.ok) { jsonError(res, 400, result.error); return; }
+  json(res, 200, { ok: true, secret: result.meta });
+}
+
+async function handleDeleteSecret(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const name = decodeURIComponent(params["name"] ?? "");
+  const existed = rt.deleteSecret(name);
+  if (!existed) { jsonError(res, 404, `secret '${name}' not found`); return; }
+  json(res, 200, { ok: true });
 }
 
 async function handleConnectMcp(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {

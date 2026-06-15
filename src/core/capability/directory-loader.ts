@@ -43,10 +43,15 @@ export interface DirectoryLoadResult {
  * Scan a directory synchronously for YAML capabilities and MCP configs.
  * JS/TS module paths are returned separately for async loading.
  *
- * Secrets referenced as {{secret:NAME}} are resolved from process.env at call time.
- * Missing secrets do NOT prevent loading — they fail at invoke time with a clear error.
+ * `resolveSecret` is called at INVOKE time (lazily, per run) for each {{secret:NAME}}
+ * reference, so a secret a customer sets after startup is picked up without a reload.
+ * Defaults to reading process.env. Missing secrets do NOT prevent loading — they
+ * fail at invoke time with a clear error.
  */
-export function loadCapabilityDirectory(dir: string): DirectoryLoadResult {
+export function loadCapabilityDirectory(
+  dir: string,
+  resolveSecret: (name: string) => string | undefined = (name) => process.env[name],
+): DirectoryLoadResult {
   const result: DirectoryLoadResult = { capabilities: [], jsModulePaths: [], errors: [], mcpConfigs: [] };
 
   if (!existsSync(dir)) {
@@ -97,7 +102,7 @@ export function loadCapabilityDirectory(dir: string): DirectoryLoadResult {
       const loaded = loadYamlCapability(yaml, (refs) => {
         const secrets: Record<string, string> = {};
         for (const ref of refs) {
-          const val = process.env[ref];
+          const val = resolveSecret(ref);
           if (val !== undefined) secrets[ref] = val;
         }
         return secrets;

@@ -30,6 +30,7 @@ import { AnthropicModel } from "../adapters/anthropic-model.js";
 import { McpRegistry, type McpServerConfig } from "../core/mcp/mcp-client.js";
 import { loadCapabilityDirectory, loadJsCapabilities } from "../core/capability/directory-loader.js";
 import { Scheduler, ScheduleRegistry, validateCron, type ScheduleRecord } from "./scheduler.js";
+import { SecretStore } from "./secret-store.js";
 import { thinkCapability } from "../core/plugins/think.js";
 import { recallCapability, rememberCapability, identifyCapability, loadSoul, saveSoul } from "../core/plugins/memory-plugins.js";
 import { llmRouteCapability } from "../core/plugins/llm-route.js";
@@ -248,10 +249,35 @@ export class CapabilityRegistry {
   private caps = new Map<string, CapabilityRecord>();
   private plugins = new Map<string, CapabilityPlugin>();
   private readonly path: string;
+  // Resolves {{secret:NAME}} at invoke time. Defaults to env; the runtime points it
+  // at the customer's SecretStore so UI-set secrets reach installed YAML capabilities.
+  private resolveSecret: (name: string) => string | undefined = (name) => process.env[name];
 
   constructor(dataDir: string) {
     this.path = join(dataDir, "capabilities.json");
     this.load();
+  }
+
+  /** Point secret resolution at the customer secret store (called by the runtime). */
+  setSecretResolver(fn: (name: string) => string | undefined): void {
+    this.resolveSecret = fn;
+    // re-bind already-loaded YAML plugins so they use the new resolver
+    for (const c of this.caps.values()) {
+      if (c.kind === "yaml" && c.yaml) {
+        void this.reloadYaml(c.name, c.yaml);
+      }
+    }
+  }
+
+  private secretResolverFor() {
+    return (refs: string[]) => {
+      const out: Record<string, string> = {};
+      for (const ref of refs) {
+        const v = this.resolveSecret(ref);
+        if (v !== undefined) out[ref] = v;
+      }
+      return out;
+    };
   }
 
   private load(): void {
@@ -271,7 +297,7 @@ export class CapabilityRegistry {
   }
 
   private async reloadYaml(name: string, yaml: string): Promise<void> {
-    const result = loadYamlCapability(yaml, () => ({}));
+    const result = loadYamlCapability(yaml, this.secretResolverFor());
     if (result.ok) {
       this.plugins.set(name, result.plugin);
     }
@@ -282,7 +308,7 @@ export class CapabilityRegistry {
   }
 
   installFromYaml(name: string, yaml: string): { ok: true; capability: CapabilityRecord } | { ok: false; error: string } {
-    const result = loadYamlCapability(yaml, () => ({}));
+    const result = loadYamlCapability(yaml, this.secretResolverFor());
     if (!result.ok) return { ok: false, error: result.errors.map(e => e.message).join("; ") };
 
     const record: CapabilityRecord = {
@@ -301,7 +327,7 @@ export class CapabilityRegistry {
     return { ok: true, capability: record };
   }
 
-  registerBuiltin(plugin: CapabilityPlugin, meta: string | { description?: string; useWhen?: string; notes?: string }): void {
+  registerBuiltin(plugin: CapabilityPlugin, meta: string | { description?: string; useWhen?: string; notes?: string }, secretRefs?: ReadonlyArray<string>): void {
     const m = typeof meta === "string" ? { description: meta } : meta;
     const record: CapabilityRecord = {
       name: plugin.name,
@@ -312,6 +338,7 @@ export class CapabilityRegistry {
       sideEffect: plugin.sideEffect,
       estimateCents: plugin.estimateCents({ nodeId: "", capability: plugin.name, input: {} }),
       installedAt: Date.now(),
+      ...(secretRefs && secretRefs.length ? { secretRefs: [...secretRefs] } : {}),
     };
     this.caps.set(plugin.name, record);
     this.plugins.set(plugin.name, plugin);
@@ -345,7 +372,7 @@ export class CapabilityRegistry {
     const cap = this.caps.get(name);
     if (!cap) return { ok: false, error: `capability '${name}' not found` };
     if (cap.kind !== "yaml") return { ok: false, error: `only YAML capabilities can be edited here (this is ${cap.kind})` };
-    const result = loadYamlCapability(yaml, () => ({}));
+    const result = loadYamlCapability(yaml, this.secretResolverFor());
     if (!result.ok) return { ok: false, error: result.errors.map(e => e.message).join("; ") };
     const updated: CapabilityRecord = {
       ...cap,
@@ -427,6 +454,7 @@ export class KrelvanRuntime {
   readonly capabilityRegistry: CapabilityRegistry;
   readonly mcpRegistry: McpRegistry;
   readonly scheduleRegistry: ScheduleRegistry;
+  readonly secretStore: SecretStore;
   readonly scheduler: Scheduler;
   readonly compiler: Compiler;
   private readonly ring: HmacKeyring;
@@ -462,6 +490,9 @@ export class KrelvanRuntime {
     this.capabilityRegistry = new CapabilityRegistry(config.dataDir);
     this.mcpRegistry = new McpRegistry();
     this.scheduleRegistry = new ScheduleRegistry(config.dataDir);
+    this.secretStore = new SecretStore(config.dataDir);
+    // installed YAML capabilities resolve {{secret:NAME}} from the customer secret store
+    this.capabilityRegistry.setSecretResolver((name) => this.secretStore.resolve(name));
     this.scheduler = new Scheduler(this.scheduleRegistry, (agentId, scheduleId) =>
       this.startScheduledRun(agentId, scheduleId),
     );
@@ -477,12 +508,14 @@ export class KrelvanRuntime {
     // ── Plugin lifecycle wiring ──────────────────────────────────────────────
     this.pluginRepository = new SqlitePluginRepository(this.store.db);
 
+    const store = this.secretStore;
     const secretBroker: SecretBrokerPort = {
       validateRefs(refs) {
-        const missing = refs.filter(r => process.env[r] === undefined);
+        // a secret is satisfied if it's set in the store OR present as an env var
+        const missing = refs.filter(r => !store.has(r));
         return missing.length === 0 ? { ok: true } : { ok: false, missing };
       },
-      resolve(ref) { return process.env[ref]; },
+      resolve(ref) { return store.resolve(ref); },
     };
 
     const factory = new PluginFactory(new Map<import("../core/plugins/types.js").PluginKind, import("../core/plugins/ports.js").PluginLoaderStrategy>([
@@ -519,12 +552,14 @@ export class KrelvanRuntime {
 
   /** Async initialisation — must be called after constructor before serving requests. */
   async init(): Promise<void> {
+    const store = this.secretStore;
     const secretBroker: SecretBrokerPort = {
       validateRefs(refs) {
-        const missing = refs.filter(r => process.env[r] === undefined);
+        // a secret is satisfied if it's set in the store OR present as an env var
+        const missing = refs.filter(r => !store.has(r));
         return missing.length === 0 ? { ok: true } : { ok: false, missing };
       },
-      resolve(ref) { return process.env[ref]; },
+      resolve(ref) { return store.resolve(ref); },
     };
 
     const factory = new PluginFactory(new Map<import("../core/plugins/types.js").PluginKind, import("../core/plugins/ports.js").PluginLoaderStrategy>([
@@ -684,10 +719,11 @@ export class KrelvanRuntime {
   }
 
   private loadCapabilitiesDir(dir: string): void {
-    const result = loadCapabilityDirectory(dir);
+    // Resolve secrets lazily from the customer's secret store at invoke time.
+    const result = loadCapabilityDirectory(dir, (name) => this.secretStore.resolve(name));
 
-    for (const { plugin, source } of result.capabilities) {
-      this.capabilityRegistry.registerBuiltin(plugin, `Loaded from ${source}`);
+    for (const { plugin, source, secretRefs } of result.capabilities) {
+      this.capabilityRegistry.registerBuiltin(plugin, `Loaded from ${source}`, secretRefs);
     }
 
     for (const { file, error } of result.errors) {
@@ -1068,6 +1104,33 @@ export class KrelvanRuntime {
     this.runRegistry.update(runId, { status: "running" });
     void this.executeRun(runId, agent.signed.manifest, {}, run.agentId);
     return { ok: true };
+  }
+
+  // ── Secrets (customer-managed) ─────────────────────────────────────────────
+  /** Public metadata for all set secrets, plus which are still needed by installed caps. */
+  listSecrets(): { secrets: import("./secret-store.js").SecretMeta[]; required: { name: string; capability: string; set: boolean }[] } {
+    const secrets = this.secretStore.list();
+    // Gather secret refs declared by installed/enabled capabilities.
+    const required: { name: string; capability: string; set: boolean }[] = [];
+    const seen = new Set<string>();
+    for (const cap of this.capabilityRegistry.list()) {
+      const refs = cap.secretRefs ?? [];
+      for (const ref of refs) {
+        const key = `${ref}::${cap.name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        required.push({ name: ref, capability: cap.name, set: this.secretStore.has(ref) });
+      }
+    }
+    return { secrets, required };
+  }
+
+  setSecret(name: string, value: string): { ok: true; meta: import("./secret-store.js").SecretMeta } | { ok: false; error: string } {
+    return this.secretStore.set(name, value);
+  }
+
+  deleteSecret(name: string): boolean {
+    return this.secretStore.delete(name);
   }
 
   now(): number {
