@@ -1433,7 +1433,45 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--s4);
 }
-.nav-links { display: flex; gap: var(--s5); }
+/* Flat nav with a single sliding active-indicator (positioned in JS). */
+.nav-links { position: relative; display: flex; align-items: center; gap: var(--s5); }
+.nav-link {
+  position: relative;
+  font-size: 14px; font-weight: 500;
+  color: var(--ink); text-decoration: none;
+  padding: var(--s2) 0; white-space: nowrap;
+  transition: color var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease);
+}
+.nav-link:hover { color: var(--brand); }
+.nav-link[data-active="true"] { color: var(--brand); font-weight: 600; }
+/* Secondary (utility) links — lighter, slightly smaller, set off by a divider. */
+.nav-link--util { color: var(--ink-soft); font-size: 13.5px; }
+.nav-link--util:hover { color: var(--brand); }
+.nav-divider {
+  width: 1px; height: 18px; background: var(--line-strong);
+  margin: 0 var(--s1); flex-shrink: 0;
+}
+/* The sliding underline. left/width set inline via JS; transition makes it glide. */
+.nav-indicator {
+  position: absolute; bottom: -1px; height: 2px;
+  background: var(--brand); border-radius: 2px;
+  transition: left 220ms var(--ease, cubic-bezier(.4,0,.2,1)), width 220ms var(--ease, cubic-bezier(.4,0,.2,1)), opacity 160ms var(--ease);
+  pointer-events: none;
+}
+/* ⌘K nav button */
+.nav-cmdk {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 var(--s3);
+  background: var(--surface-sunken); border: 1px solid var(--line-strong);
+  border-radius: var(--r); cursor: pointer;
+  color: var(--ink-soft); font-size: 12.5px; font-weight: 500;
+  transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+.nav-cmdk:hover { border-color: var(--brand); color: var(--brand); }
+.nav-cmdk kbd {
+  font-family: var(--font-mono); font-size: 11px; line-height: 1;
+  color: var(--ink-muted); background: none; border: none; padding: 0;
+}
 .nav-burger {
   display: none;
   align-items: center; justify-content: center;
@@ -1472,15 +1510,90 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .nav-mobile__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); }
 .nav-mobile__cta { margin-top: var(--s4); width: 100%; height: 44px; }
 
-/* Breakpoint: collapse to hamburger when the row would get tight. */
-@media (max-width: 860px) {
+/* Breakpoint: collapse to hamburger before the (now longer) row gets tight. */
+@media (max-width: 1024px) {
   .nav-links { display: none; }
   .nav-cta { display: none; }
+  .nav-cmdk { display: none; }
   .nav-running { display: none; }
   .nav-burger { display: inline-flex; }
 }
 @media (prefers-reduced-motion: reduce) {
   .nav-scrim, .nav-mobile { animation: none; }
+  .nav-indicator { transition: none; }
+}
+
+/* ───────────────────────── ⌘K command palette ───────────────────────── */
+.cmdk-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 12vh var(--s4) var(--s4);
+  background: rgba(17,32,31,.40);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  animation: fade-in 120ms var(--ease, ease) both;
+}
+.cmdk-panel {
+  width: 100%; max-width: 560px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  box-shadow: 0 24px 64px -12px rgba(17,32,31,.30), 0 0 0 1px var(--line);
+  overflow: hidden;
+  animation: cmdk-pop 140ms var(--ease, cubic-bezier(.4,0,.2,1)) both;
+}
+@keyframes cmdk-pop { from { opacity: 0; transform: translateY(-8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.cmdk-search {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s4) var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+.cmdk-search__icon { color: var(--ink-muted); flex-shrink: 0; }
+.cmdk-input {
+  flex: 1; min-width: 0;
+  border: none; background: none; outline: none;
+  font-size: 16px; color: var(--ink);
+  font-family: inherit;
+}
+.cmdk-input::placeholder { color: var(--ink-muted); }
+.cmdk-esc {
+  font-family: var(--font-mono); font-size: 11px; color: var(--ink-muted);
+  background: var(--surface-sunken); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 2px 6px;
+}
+.cmdk-list { max-height: 52vh; overflow-y: auto; padding: var(--s2); }
+.cmdk-group { padding: var(--s2) 0; }
+.cmdk-group__label {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-muted); padding: var(--s2) var(--s3) var(--s1);
+}
+.cmdk-item {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s3); padding: var(--s3) var(--s3);
+  background: none; border: none; cursor: pointer; text-align: left;
+  border-radius: var(--r); color: var(--ink);
+}
+.cmdk-item[data-active="true"] { background: var(--brand-tint); }
+.cmdk-item[data-active="true"] .cmdk-item__label { color: var(--brand); font-weight: 600; }
+.cmdk-item__label { font-size: 14px; }
+.cmdk-item__hint { font-size: 11px; color: var(--ink-muted); flex-shrink: 0; }
+.cmdk-empty { padding: var(--s6); text-align: center; color: var(--ink-muted); font-size: 14px; }
+.cmdk-foot {
+  display: flex; gap: var(--s5); align-items: center;
+  padding: var(--s2) var(--s5);
+  border-top: 1px solid var(--line);
+  font-size: 11px; color: var(--ink-muted);
+}
+.cmdk-foot kbd {
+  font-family: var(--font-mono); font-size: 10px;
+  background: var(--surface-sunken); border: 1px solid var(--line);
+  border-radius: 3px; padding: 1px 4px; margin-right: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cmdk-overlay, .cmdk-panel { animation: none; }
+}
+@media (max-width: 560px) {
+  .cmdk-overlay { padding: 8vh var(--s3) var(--s3); align-items: flex-start; }
+  .cmdk-foot { display: none; }
 }
 
 /* ───────────────────────── Capabilities filter bar ───────────────────────── */

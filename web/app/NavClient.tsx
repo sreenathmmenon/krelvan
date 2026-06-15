@@ -1,12 +1,13 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { listRuns } from "../lib/api";
+import CommandPalette from "./CommandPalette";
 
-// Primary nav — kept tight (4 items) for a clean, focused product. MCP and
-// Approvals remain reachable (Capabilities links to MCP; Approvals surfaces in nav
-// only when something is actually waiting on the user).
+// Flat nav: 4 primary links, a divider, then 3 utility links — all visible, one
+// click each (no dropdown). A sliding indicator tracks the active item, and ⌘K
+// opens a command palette to jump anywhere.
 const NAV_LINKS = [
   { label: "Dashboard",    href: "/dashboard" },
   { label: "Runs",         href: "/runs" },
@@ -18,13 +19,46 @@ const MORE_LINKS = [
   { label: "Secrets",      href: "/secrets" },
   { label: "Approvals",    href: "/approvals" },
 ];
+const ALL_LINKS = [...NAV_LINKS, ...MORE_LINKS];
 
 export default function NavClient() {
   const pathname = usePathname();
   const [runningCount, setRunningCount] = useState(0);
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [isMac, setIsMac] = useState(true);
+  const navLinksRef = useRef<HTMLElement>(null);
+  const [indicator, setIndicator] = useState<{ left: number; width: number; show: boolean }>({ left: 0, width: 0, show: false });
+
+  // Detect platform for the ⌘ vs Ctrl hint (purely cosmetic; the shortcut listens
+  // for both meta and ctrl regardless).
+  useEffect(() => {
+    setIsMac(/mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent));
+  }, []);
+
+  // Position the sliding indicator under the active link. Recomputed on route
+  // change and on resize (so it stays correct at every screen width).
+  const positionIndicator = useCallback(() => {
+    const root = navLinksRef.current;
+    if (!root) return;
+    const el = root.querySelector<HTMLElement>('[data-active="true"]');
+    if (!el) { setIndicator(i => ({ ...i, show: false })); return; }
+    const rootBox = root.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    setIndicator({ left: box.left - rootBox.left, width: box.width, show: true });
+  }, []);
+
+  useEffect(() => {
+    positionIndicator();
+    const ro = new ResizeObserver(() => positionIndicator());
+    if (navLinksRef.current) ro.observe(navLinksRef.current);
+    window.addEventListener("resize", positionIndicator);
+    // re-measure after fonts settle
+    const t = setTimeout(positionIndicator, 120);
+    return () => { ro.disconnect(); window.removeEventListener("resize", positionIndicator); clearTimeout(t); };
+  }, [pathname, positionIndicator]);
+
+  function openCommand() { window.dispatchEvent(new Event("krelvan:open-command")); }
 
   useEffect(() => {
     let alive = true;
@@ -80,10 +114,6 @@ export default function NavClient() {
   }
 
   const wordmarkColor = darkMode ? "var(--dark-brand-bright)" : "var(--brand)";
-  // higher-contrast idle links for readability (was --ink-soft / --dark-ink-soft)
-  const idleLinkColor = darkMode ? "var(--dark-ink)" : "var(--ink)";
-  const activeColor   = darkMode ? "var(--dark-ink)" : "var(--brand)";
-  const activeBorder  = darkMode ? "var(--dark-brand-bright)" : "var(--brand)";
   const iconColor     = darkMode ? "var(--dark-ink)" : "var(--ink)";
 
   return (
@@ -108,80 +138,42 @@ export default function NavClient() {
           }}>
             Krelvan
           </a>
-          <nav className="nav-links" aria-label="Main navigation">
+          <nav className="nav-links" aria-label="Main navigation" ref={navLinksRef}>
             {NAV_LINKS.map(link => {
               const active = isActive(link.href);
               return (
                 <a
                   key={link.href}
                   href={link.href}
+                  className="nav-link"
+                  data-active={active}
                   aria-current={active ? "page" : undefined}
-                  style={{
-                    fontSize: 14,
-                    fontWeight: active ? 600 : 500,
-                    color: active ? activeColor : idleLinkColor,
-                    textDecoration: "none",
-                    padding: "var(--s2) 0",
-                    borderBottom: active ? `2px solid ${activeBorder}` : "2px solid transparent",
-                    transition: "color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease)",
-                    whiteSpace: "nowrap",
-                  }}
                 >
                   {link.label}
                 </a>
               );
             })}
-            {/* desktop "More" dropdown — surfaces Connectors / Secrets / Approvals
-                without burying them in the mobile hamburger (council P1-4) */}
-            <div
-              className="nav-more"
-              style={{ position: "relative" }}
-              onMouseEnter={() => setMoreOpen(true)}
-              onMouseLeave={() => setMoreOpen(false)}
-            >
-              <button
-                type="button"
-                aria-haspopup="true"
-                aria-expanded={moreOpen}
-                onClick={() => setMoreOpen(o => !o)}
-                style={{
-                  fontSize: 14, fontWeight: 500, color: idleLinkColor,
-                  background: "none", border: "none", cursor: "pointer",
-                  padding: "var(--s2) 0", display: "inline-flex", alignItems: "center", gap: 4,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                More <span aria-hidden="true" style={{ fontSize: 10 }}>▾</span>
-              </button>
-              {moreOpen && (
-                <div
-                  role="menu"
-                  style={{
-                    position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: 180,
-                    background: "var(--surface)", border: "1px solid var(--line)",
-                    borderRadius: "var(--r)", boxShadow: "var(--shadow-md)", padding: "var(--s2)",
-                    zIndex: 50, display: "flex", flexDirection: "column",
-                  }}
+            <span className="nav-divider" aria-hidden="true" />
+            {MORE_LINKS.map(link => {
+              const active = isActive(link.href);
+              return (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  className="nav-link nav-link--util"
+                  data-active={active}
+                  aria-current={active ? "page" : undefined}
                 >
-                  {MORE_LINKS.map(link => (
-                    <a
-                      key={link.href}
-                      href={link.href}
-                      role="menuitem"
-                      onClick={() => setMoreOpen(false)}
-                      style={{
-                        fontSize: 14, color: "var(--ink-soft)", textDecoration: "none",
-                        padding: "var(--s2) var(--s3)", borderRadius: "var(--r-sm)",
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-hover)")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                    >
-                      {link.label}
-                    </a>
-                  ))}
-                </div>
-              )}
-            </div>
+                  {link.label}
+                </a>
+              );
+            })}
+            {/* sliding active-indicator — position set in JS, glides via CSS transition */}
+            <span
+              className="nav-indicator"
+              aria-hidden="true"
+              style={{ left: indicator.left, width: indicator.width, opacity: indicator.show ? 1 : 0 }}
+            />
           </nav>
         </div>
 
@@ -193,6 +185,18 @@ export default function NavClient() {
               <span className="mono">{runningCount} running</span>
             </span>
           )}
+          <button
+            type="button"
+            className="nav-cmdk"
+            onClick={openCommand}
+            aria-label="Open command palette"
+            title={`Search & jump — ${isMac ? "⌘K" : "Ctrl K"}`}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M7 12.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zM11 11l3.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+            <kbd>{isMac ? "⌘K" : "Ctrl K"}</kbd>
+          </button>
           <a
             href="/dashboard"
             className={`btn btn-sm nav-cta ${darkMode ? "btn-dark-primary" : "btn-primary"}`}
@@ -262,12 +266,18 @@ export default function NavClient() {
                 </a>
               );
             })}
+            <button type="button" className="btn btn-secondary nav-mobile__cta" onClick={() => { setMenuOpen(false); openCommand(); }} style={{ marginTop: "var(--s2)" }}>
+              Search & jump
+            </button>
             <a href="/dashboard" className="btn btn-primary nav-mobile__cta" onClick={focusCompose}>
               Build agent →
             </a>
           </nav>
         </>
       )}
+
+      {/* ⌘K command palette — global, mounted once */}
+      <CommandPalette />
     </header>
   );
 }
