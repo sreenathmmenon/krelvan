@@ -1547,14 +1547,14 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 }
 .cap-sim__btn[data-on="true"] { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
 .cap-spectrum__band { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--s3); }
-.cap-spectrum__zone { border-radius: var(--r); padding: var(--s3); border: 1px solid var(--line); }
+.cap-spectrum__zone { border-radius: var(--r); padding: var(--s3); border: 1px solid var(--line); border-left: 2px solid var(--brand); }
 .cap-spectrum__zone--0 { background: var(--surface-sunken); }
-.cap-spectrum__zone--1 { background: var(--info-tint); }
-.cap-spectrum__zone--2 { background: var(--danger-tint); }
+.cap-spectrum__zone--1 { background: var(--surface-sunken); }
+.cap-spectrum__zone--2 { background: var(--surface-sunken); }
 .cap-spectrum__zlabel { display: block; margin-bottom: var(--s2); color: var(--ink-soft); }
 .cap-spectrum__chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .cap-spectrum__chip {
-  font-family: var(--font-mono); font-size: 10.5px; padding: 2px var(--s2);
+  font-family: var(--font-mono); font-size: 13px; padding: 2px var(--s2);
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-pill); color: var(--ink-soft);
 }
 .cap-spectrum__chip[data-gated="true"] { border-color: var(--brand-ring); color: var(--brand); box-shadow: 0 0 0 1px var(--brand-ring); }

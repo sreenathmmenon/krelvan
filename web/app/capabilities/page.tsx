@@ -220,10 +220,13 @@ function Stat({ value, label, mono }: { value: string; label: string; mono?: boo
 
 // ── Spectrum band + live approval simulator ──────────────────────────────────
 function Spectrum({ caps, autonomy, setAutonomy }: { caps: CapabilityRecord[]; autonomy: Autonomy; setAutonomy: (a: Autonomy) => void }) {
+  const [showAll, setShowAll] = useState(false);
   // bucket caps by tier 0/1/2
   const buckets: Record<0 | 1 | 2, CapabilityRecord[]> = { 0: [], 1: [], 2: [] };
   for (const c of caps) buckets[sideEffectMeta(c.sideEffect).tier].push(c);
   const gatedCount = caps.filter(c => needsApproval(autonomy, c.sideEffect)).length;
+  const PER_ZONE = 8;
+  const hiddenCount = caps.length - ([0, 1, 2] as const).reduce<number>((n, t) => n + Math.min(buckets[t].length, PER_ZONE), 0);
 
   return (
     <div className="cap-spectrum">
@@ -243,19 +246,31 @@ function Spectrum({ caps, autonomy, setAutonomy }: { caps: CapabilityRecord[]; a
         </div>
       </div>
       <div className="cap-spectrum__band">
-        {([0, 1, 2] as const).map(tier => (
+        {([0, 1, 2] as const).map(tier => {
+          const all = buckets[tier];
+          const shown = showAll ? all : all.slice(0, PER_ZONE);
+          return (
           <div key={tier} className={`cap-spectrum__zone cap-spectrum__zone--${tier}`}>
             <span className="micro cap-spectrum__zlabel">{tier === 0 ? "Reads" : tier === 1 ? "Acts (reversible)" : "High-impact"}</span>
             <div className="cap-spectrum__chips">
-              {buckets[tier].map(c => {
+              {shown.map(c => {
                 const gated = needsApproval(autonomy, c.sideEffect);
                 return <span key={c.name} className="cap-spectrum__chip" data-gated={gated} title={`${c.name} — ${sideEffectMeta(c.sideEffect).label}${gated ? " · pauses for approval" : ""}`}>{c.name}</span>;
               })}
-              {buckets[tier].length === 0 && <span className="small muted">—</span>}
+              {all.length === 0 && <span className="small muted">—</span>}
+              {!showAll && all.length > PER_ZONE && <span className="cap-spectrum__chip" style={{ borderStyle: "dashed" }}>+{all.length - PER_ZONE}</span>}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
+      {(showAll || hiddenCount > 0) && (
+        <div style={{ marginTop: "var(--s4)" }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowAll(s => !s)}>
+            {showAll ? "Show fewer" : `Show all ${caps.length} capabilities`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -281,10 +296,31 @@ function InstalledTab({ caps, servers, q, autonomy, onChange, flash, onView }: {
       <div id="connectors" style={{ scrollMarginTop: "var(--s8)" }} />
       <Connectors servers={servers} onChange={onChange} flash={flash} />
 
-      <Section title="Built-in" sub={`Shipped with Krelvan — always available · ${builtins.length}`}>
-        <div className="cap-grid">{builtins.map(c => <CapCard key={c.name} cap={c} autonomy={autonomy} onChange={onChange} flash={flash} onView={onView} />)}</div>
-      </Section>
+      <BuiltinSection builtins={builtins} autonomy={autonomy} onChange={onChange} flash={flash} onView={onView} />
     </div>
+  );
+}
+
+// Built-in capabilities can be 20+. Show the first 8; the long tail is behind a
+// toggle so the page doesn't read as an endless wall (council P0-5).
+function BuiltinSection({ builtins, autonomy, onChange, flash, onView }: {
+  builtins: CapabilityRecord[]; autonomy: Autonomy; onChange: () => Promise<void>; flash: (m: string) => void; onView: (c: CapabilityRecord) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const FIRST = 8;
+  const shown = showAll ? builtins : builtins.slice(0, FIRST);
+  const hidden = builtins.length - shown.length;
+  return (
+    <Section title="Built-in" sub={`Shipped with Krelvan — always available · ${builtins.length}`}>
+      <div className="cap-grid">{shown.map(c => <CapCard key={c.name} cap={c} autonomy={autonomy} onChange={onChange} flash={flash} onView={onView} />)}</div>
+      {(hidden > 0 || showAll) && builtins.length > FIRST && (
+        <div style={{ marginTop: "var(--s4)", textAlign: "center" }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => setShowAll(v => !v)}>
+            {showAll ? "Show fewer" : `Show all ${builtins.length} built-in capabilities →`}
+          </button>
+        </div>
+      )}
+    </Section>
   );
 }
 
@@ -423,7 +459,7 @@ function Connectors({ servers, onChange, flash }: { servers: McpServerRecord[]; 
               </div>
               <div className="small muted"><span className="mono">{s.tools.length}</span> tools exposed</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                {s.tools.slice(0, 6).map(t => <span key={t} className="mono" style={{ fontSize: 10.5, padding: "2px var(--s2)", background: "var(--surface-sunken)", color: "var(--ink-soft)", borderRadius: "var(--r-pill)" }}>{t}</span>)}
+                {s.tools.slice(0, 6).map(t => <span key={t} className="mono" style={{ fontSize: 13, padding: "2px var(--s2)", background: "var(--surface-sunken)", color: "var(--ink-soft)", borderRadius: "var(--r-pill)" }}>{t}</span>)}
                 {s.tools.length > 6 && <span className="small muted">+{s.tools.length - 6}</span>}
               </div>
               <div style={{ marginTop: "auto", paddingTop: "var(--s3)", borderTop: "1px solid var(--line)" }}>
