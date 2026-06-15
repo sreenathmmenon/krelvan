@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  listAgents, listRuns, buildAgent, startRun, explainRun, timeAgo,
+  listAgents, listRuns, buildAgent, startRun, explainRun, timeAgo, getCached,
   type AgentRecord, type RunRecord, type BuildResult,
 } from "../../lib/api";
 import {
@@ -99,9 +99,10 @@ export default function Dashboard() {
   const [buildStage, setBuildStage] = useState(0);
   const [buildError, setBuildError] = useState<string | null>(null);
   const [buildResult, setBuildResult] = useState<BuildResult | null>(null);
-  const [agents, setAgents] = useState<AgentRecord[]>([]);
-  const [runs, setRuns] = useState<RunRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedAgents = getCached<AgentRecord[]>("agents");
+  const [agents, setAgents] = useState<AgentRecord[]>(cachedAgents ?? []);
+  const [runs, setRuns] = useState<RunRecord[]>(getCached<RunRecord[]>("runs") ?? []);
+  const [loading, setLoading] = useState(!cachedAgents);
   const [composeFocused, setComposeFocused] = useState(false);
   // runId → summary text (null = generating, string = done, key absent = not started)
   const [summaries, setSummaries] = useState<Record<string, string | null>>({});

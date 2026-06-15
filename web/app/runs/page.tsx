@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { listRuns, explainRun, timeAgo, type RunRecord } from "../../lib/api";
+import { listRuns, explainRun, timeAgo, getCached, type RunRecord } from "../../lib/api";
 
 type Filter = "all" | "running" | "halted" | "completed" | "failed";
 
@@ -96,8 +96,11 @@ function RunIdCell({ runId }: { runId: string }) {
 }
 
 export default function RunsPage() {
-  const [runs, setRuns] = useState<RunRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seed from the session cache so a revisit paints instantly (no spinner flash);
+  // the effect still refetches in the background to stay fresh.
+  const cachedRuns = getCached<RunRecord[]>("runs");
+  const [runs, setRuns] = useState<RunRecord[]>(cachedRuns ?? []);
+  const [loading, setLoading] = useState(!cachedRuns);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   // runId → first-line summary (null = fetching, absent = not started)

@@ -132,8 +132,20 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// ── In-memory list cache (stale-while-revalidate) ───────────────────────────────
+// Holds the last successful result for GET-list endpoints so a page can render its
+// previous data INSTANTLY on revisit (no spinner flash) while it refreshes in the
+// background. Lives only for the browser session; cleared implicitly on reload.
+const listCache = new Map<string, unknown>();
+
+/** Synchronously read the last cached value for a key (undefined if never fetched). */
+export function getCached<T>(key: string): T | undefined {
+  return listCache.get(key) as T | undefined;
+}
+
 export async function listAgents(): Promise<AgentRecord[]> {
   const data = await apiFetch<{ agents: AgentRecord[] }>("/api/agents");
+  listCache.set("agents", data.agents);
   return data.agents;
 }
 
@@ -172,6 +184,7 @@ export async function explainBuild(agentId: string): Promise<{ rationale: string
 
 export async function listRuns(): Promise<RunRecord[]> {
   const data = await apiFetch<{ runs: RunRecord[] }>("/api/runs");
+  listCache.set("runs", data.runs);
   return data.runs;
 }
 
@@ -233,6 +246,7 @@ export async function retryRunWithFix(runId: string, fixStrategy?: string): Prom
 
 export async function listCapabilities(): Promise<CapabilityRecord[]> {
   const data = await apiFetch<{ capabilities: CapabilityRecord[] }>("/api/capabilities");
+  listCache.set("capabilities", data.capabilities);
   return data.capabilities;
 }
 
@@ -366,6 +380,7 @@ export async function resolveApproval(
 
 export async function listSchedules(): Promise<ScheduleRecord[]> {
   const data = await apiFetch<{ schedules: ScheduleRecord[] }>("/api/schedules");
+  listCache.set("schedules", data.schedules);
   return data.schedules;
 }
 

@@ -9,6 +9,7 @@ import {
   toggleSchedule,
   deleteSchedule,
   timeAgo,
+  getCached,
   type ScheduleRecord,
   type AgentRecord,
 } from "../../lib/api";
@@ -69,9 +70,10 @@ function describeCron(spec: string): string | null {
 }
 
 export default function SchedulesPage() {
-  const [schedules, setSchedules] = useState<ScheduleRecord[]>([]);
-  const [agents, setAgents] = useState<AgentRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedSchedules = getCached<ScheduleRecord[]>("schedules");
+  const [schedules, setSchedules] = useState<ScheduleRecord[]>(cachedSchedules ?? []);
+  const [agents, setAgents] = useState<AgentRecord[]>(getCached<AgentRecord[]>("agents") ?? []);
+  const [loading, setLoading] = useState(!cachedSchedules);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
 
