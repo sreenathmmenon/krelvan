@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import NavClient from "./NavClient";
+import SiteFooter from "./SiteFooter";
 
 export const metadata: Metadata = {
   title: "Krelvan — own your agents",
@@ -13,6 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <NavClient />
         <main>{children}</main>
+        <SiteFooter />
       </body>
     </html>
   );

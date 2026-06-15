@@ -1,4 +1,4 @@
-# Genesis — Complete Feature Inventory
+# Krelvan — Complete Feature Inventory
 
 *Ground truth derived from reading every source file. No assumptions.*
 
@@ -377,7 +377,7 @@
 
 ## Test Coverage
 
-**82 tests passing** across:
+**167/170 tests passing** across:
 - Ledger invariants (I1-I8), canonicalization, concurrent appends, key rotation
 - Manifest validation, expression evaluator
 - Kernel decision tree

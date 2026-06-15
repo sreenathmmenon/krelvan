@@ -202,6 +202,35 @@ export async function explainRun(runId: string): Promise<RunExplanation> {
   return apiFetch<RunExplanation>(`/api/runs/${encodeURIComponent(runId)}/explain`);
 }
 
+export interface RunDiagnosis {
+  diagnosis: {
+    rootCause: string;
+    failingStep: string;
+    contributingFactors: string[];
+    fixStrategy: string;
+    retryWorthwhile: boolean;
+    retryNote: string;
+  };
+  failReason: string;
+  eventCount: number;
+  generatedAt: number;
+  runId: string;
+}
+
+/** Failure-reasoning: structured diagnosis of a failed/halted run, grounded in the ledger. */
+export async function diagnoseRun(runId: string): Promise<RunDiagnosis> {
+  return apiFetch<RunDiagnosis>(`/api/runs/${encodeURIComponent(runId)}/diagnose`);
+}
+
+export interface RetryResult { run: RunRecord; agent: AgentRecord; fixStrategy: string; basedOnRun: string; }
+/** Auto-retry-with-fix: rebuild a corrected agent from the diagnosis and run it. */
+export async function retryRunWithFix(runId: string, fixStrategy?: string): Promise<RetryResult> {
+  return apiFetch<RetryResult>(`/api/runs/${encodeURIComponent(runId)}/retry`, {
+    method: "POST",
+    body: JSON.stringify(fixStrategy ? { fixStrategy } : {}),
+  });
+}
+
 export async function listCapabilities(): Promise<CapabilityRecord[]> {
   const data = await apiFetch<{ capabilities: CapabilityRecord[] }>("/api/capabilities");
   return data.capabilities;
@@ -243,6 +272,18 @@ export async function disableCapability(name: string, reason?: string): Promise<
 
 export async function uninstallCapability(name: string): Promise<void> {
   await apiFetch(`/api/capabilities/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+export interface CapabilitySource { kind: string; editable: boolean; content: string; }
+export async function getCapabilitySource(name: string): Promise<CapabilitySource> {
+  return apiFetch<CapabilitySource>(`/api/capabilities/${encodeURIComponent(name)}/source`);
+}
+export async function updateCapabilityYaml(name: string, yaml: string): Promise<CapabilityRecord> {
+  const data = await apiFetch<{ capability: CapabilityRecord }>(`/api/capabilities/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    body: JSON.stringify({ yaml }),
+  });
+  return data.capability;
 }
 
 export interface McpServerRecord {

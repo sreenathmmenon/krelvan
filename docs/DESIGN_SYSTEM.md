@@ -1,4 +1,4 @@
-# Genesis — Design System
+# Krelvan — Design System
 
 *The visual foundation, defined before any UI is built. Light, clean, spacious,
 high-clarity — calibrated to sarvam.ai's ACTUAL palette (colors extracted from
@@ -64,14 +64,14 @@ a single confident GREEN accent, plus restrained semantic colors.
 
 > **Approach: learn, don't clone.** We do NOT copy sarvam's exact values or layout
 > (that would be derivative, and risks IP). We extracted the *principles* from their
-> real computed styles and chose Genesis's OWN tokens that embody those principles
+> real computed styles and chose Krelvan's OWN tokens that embody those principles
 > but are distinct. The lessons we adopted:
 > 1. Cool near-white base; near-black ink; almost no saturation in the base.
 > 2. Big, **light-weight** headings (weight ~300–400, not bold) = airy, premium.
 > 3. Color appears only as **soft gradient glows/washes**, never loud flat blocks.
 > 4. One dark color for solid UI (buttons/nav); accents are gentle, indigo-leaning.
 > 5. Modest radius (~8–14px), generous whitespace, hairline borders.
-> Genesis's own choices below differ in the specifics (our accent, our gradient mix,
+> Krelvan's own choices below differ in the specifics (our accent, our gradient mix,
 > our heading font) while keeping that calm, premium feel.
 
 ### Primary UI color — our deep ink (for solid buttons / chrome)
@@ -154,7 +154,7 @@ A single, modern sans for UI + a mono for the ledger/code. No more than two fami
 - **One `display` per page.** Headings step down in order — never skip h1→h3 for size.
 - **Body line length capped at ~70ch** (a `max-width` on text columns) — prevents the
   wall-of-text cramming.
-- Numerals: use `font-variant-numeric: tabular-nums` for cost meters and tables so
+- Numerals: use `font-variant-numeric: tabular-nums` for numeric tables so
   digits align.
 - Color, not just size, signals hierarchy: titles `--ink`, support `--ink-soft`,
   captions `--ink-muted`.

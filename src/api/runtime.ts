@@ -326,6 +326,40 @@ export class CapabilityRegistry {
     return { ok: true };
   }
 
+  /** Return a capability's source for viewing. YAML caps expose their YAML text;
+   *  built-ins and TS plugins are not editable here (source lives on disk / in core). */
+  getSource(name: string): { ok: true; kind: string; editable: boolean; content: string } | { ok: false; error: string } {
+    const cap = this.caps.get(name);
+    if (!cap) return { ok: false, error: `capability '${name}' not found` };
+    if (cap.kind === "yaml" && cap.yaml) {
+      return { ok: true, kind: "yaml", editable: true, content: cap.yaml };
+    }
+    if (cap.kind === "builtin") {
+      return { ok: true, kind: "builtin", editable: false, content: `# "${name}" is a built-in capability.\n# ${cap.description ?? ""}\n# Built-ins ship with Krelvan and are not edited here.` };
+    }
+    return { ok: true, kind: cap.kind, editable: false, content: `# "${name}" is a ${cap.kind} plugin.\n# TypeScript plugins are viewed/edited as files; not editable in-browser.` };
+  }
+
+  /** Update a YAML capability's source in place: validate → swap plugin → persist. */
+  updateYaml(name: string, yaml: string): { ok: true; capability: CapabilityRecord } | { ok: false; error: string } {
+    const cap = this.caps.get(name);
+    if (!cap) return { ok: false, error: `capability '${name}' not found` };
+    if (cap.kind !== "yaml") return { ok: false, error: `only YAML capabilities can be edited here (this is ${cap.kind})` };
+    const result = loadYamlCapability(yaml, () => ({}));
+    if (!result.ok) return { ok: false, error: result.errors.map(e => e.message).join("; ") };
+    const updated: CapabilityRecord = {
+      ...cap,
+      sideEffect: result.plugin.sideEffect,
+      estimateCents: result.plugin.estimateCents({ nodeId: "", capability: name, input: {} }),
+      yaml,
+    };
+    this.caps.set(name, updated);
+    this.plugins.set(name, result.plugin);
+    this.persist();
+    log.info({ name }, "updated yaml capability");
+    return { ok: true, capability: updated };
+  }
+
   /** Merge a live plugin from the lifecycle service into the in-memory map. */
   registerPlugin(plugin: CapabilityPlugin, record: { kind: "yaml" | "typescript"; status: "installed" | "enabled" | "disabled"; version: string; sourceHash: string; secretRefs: ReadonlyArray<string>; installedAt: number; description?: string }): void {
     const cap: CapabilityRecord = {
@@ -582,6 +616,20 @@ export class KrelvanRuntime {
     return result;
   }
 
+  /** View a capability's source (YAML caps return editable YAML). */
+  getCapabilitySource(name: string) {
+    return this.capabilityRegistry.getSource(name);
+  }
+
+  /** Edit a YAML capability's source online: validate → swap → refresh supervisor. */
+  updateYamlCapability(name: string, yaml: string): { ok: true; capability: CapabilityRecord } | { ok: false; error: string } {
+    const result = this.capabilityRegistry.updateYaml(name, yaml);
+    if (!result.ok) return result;
+    const allPlugins = new Map(this.capabilityRegistry["plugins"] as Map<string, CapabilityPlugin>);
+    this.supervisorSnapshotHandle.replaceSnapshot(allPlugins);
+    return result;
+  }
+
   async enablePlugin(name: string): Promise<PluginEnableResult> {
     const owner = parseOwnerId("owner-demo");
     const result = await this.pluginLifecycle.enable(name, owner);
@@ -791,7 +839,9 @@ export class KrelvanRuntime {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       log.info({ attempt, maxAttempts, intent: intent.slice(0, 80) }, "builder: compiling");
 
-      const result = await compiler.compile(augmentedIntent, principal, this.now());
+      // Pass the original `intent` as cleanIntent so retry feedback in augmentedIntent
+      // never ends up stored as the user-facing manifest intent.
+      const result = await compiler.compile(augmentedIntent, principal, this.now(), intent);
 
       if (result.ok) {
         const agent = this.agentRegistry.save(result.signed);
@@ -1116,6 +1166,12 @@ export class KrelvanRuntime {
     this.capabilityRegistry.registerBuiltin(httpGetCapability, {
       description: "Fetches a URL and returns the response body.",
       useWhen: "reading from a known API endpoint, RSS feed, or web page with a specific URL",
+      notes:
+        "Prefer ONE endpoint that returns the COMPLETE data you need in a single response. " +
+        "Do NOT design 'fetch a list of IDs, then fetch each item' flows — run state holds only scalar values, " +
+        "so a node cannot fan out over an array of URLs. Pick an API that returns full records directly. " +
+        "Example: for Hacker News top stories use https://hn.algolia.com/api/v1/search?tags=front_page (returns titles, " +
+        "points, authors and URLs in one call), NOT the firebaseio topstories endpoint (which returns only IDs).",
     });
     this.capabilityRegistry.registerBuiltin(httpPostCapability, {
       description: "Sends an HTTP POST request with a JSON body.",

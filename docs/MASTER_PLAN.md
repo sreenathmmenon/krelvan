@@ -1,4 +1,7 @@
-# Genesis — Master Plan & Journey
+# Krelvan — Master Plan & Journey
+
+*(Krelvan was previously called "Genesis"; the original Python proof-of-concept it grew
+from still lives at `../genesis` and is referenced below as part of the journey.)*
 
 *The single document that captures everything: what we're building and why, the full
 arc of how we got here, the current architecture, where we stand right now (honestly),
@@ -77,7 +80,7 @@ system as-is), and STACK_COUNCIL_VERDICT.
 
 ### The one principle
 > **The ledger IS the runtime.** Execution is a projection of an append-only,
-> content-addressed, signed event log. The canvas, cost meter, audit timeline, and
+> content-addressed, signed event log. The canvas, audit timeline, and
 > memory are all pure *reads* (folds) of that one log. So "what you see is exactly
 > what executed" is a structural guarantee, not a hope. Replay, resume, and undo come
 > for free; nothing can drift out of sync with reality.
@@ -137,7 +140,7 @@ journey documented in its `docs/`. Still runs. This is the proof-of-concept and 
 source of all the strategy docs.
 
 ### `genesis-new` (the future core) — built bottom-up, TypeScript
-**Verified state: 82/82 tests pass, typecheck clean, 0 runtime dependencies.**
+**Verified state: 167/170 tests pass (3 are live-model API tests that need a key), typecheck clean, 0 runtime dependencies in core.**
 Built and proven (each by passing tests + runnable demos):
 
 | Subsystem | What it does | Status |
@@ -179,7 +182,7 @@ store adapter.
 
 **Immediate next: the web UI.** Built against `docs/DESIGN_SYSTEM.md`. The visible
 "wow": the canvas where the graph you watch being drawn is the graph that executes,
-the live ledger-folded trace, the cost meter (exact cents), the autonomy/approval
+the live ledger-folded trace, the signed audit timeline, the autonomy/approval
 controls, and time-travel/counterfactual replay. Light, clean, spacious, sarvam-
 calibrated.
 
@@ -207,7 +210,7 @@ called done; keep zero IP risk; keep "no bluffing."
 1. A `globals.css` / tokens file materializing `DESIGN_SYSTEM.md` (colors, type,
    spacing) — the contract every component uses.
 2. The shell (light, spacious layout) + the **run trace view** (the ledger folded
-   into a live, verifiable timeline + cost meter) — this is the most direct
+   into a live, verifiable timeline) — this is the most direct
    expression of "the ledger is the runtime."
 3. The **canvas** (graph = the executing manifest, auto-laid-out so nodes never
    overlap) + the **approval/autonomy** controls.
@@ -221,7 +224,7 @@ overlaps, mostly near-white+ink, detail one click away).
 
 ## 7. The one-line summary
 
-> Genesis: describe an outcome, get a real agent you OWN — where a signed event ledger
+> Krelvan: describe an outcome, get a real agent you OWN — where a signed event ledger
 > IS the runtime, the manifest is the portable program, the LLM is a swappable
 > compiler-and-plugin, every action is verifiable and reversible, and it can never
 > spend your money by accident. Built clean-sheet in TypeScript, proven bottom-up

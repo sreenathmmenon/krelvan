@@ -3,8 +3,16 @@ node_modules/
 *.db
 *.db-shm
 *.db-wal
-/data/*.db*
+/data/
 dist/
 .DS_Store
 web/.next/
 web/node_modules/
+
+# build cache
+web/tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# local dev scripts (workflow orchestration, screenshot helpers) — not product code
+*.workflow.js
+.shot.mjs

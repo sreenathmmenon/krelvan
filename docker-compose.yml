@@ -1,0 +1,35 @@
+# Krelvan — self-host with one command:
+#
+#   docker compose up --build
+#
+# Web UI   -> http://localhost:3100
+# API      -> http://localhost:3201/api/health
+#
+# SQLite ledger + registries persist in the named volume `krelvan-data`.
+# LLM features are optional: drop a .env next to this file (see .env.example) or
+# pass the vars inline. The UI boots with no secrets.
+
+services:
+  krelvan:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: krelvan:latest
+    ports:
+      - "3201:3201"   # API
+      - "3100:3100"   # web UI
+    environment:
+      PORT: "3201"
+      KRELVAN_WEB_PORT: "3100"
+      KRELVAN_DATA_DIR: /data
+      # Optional LLM config — uncomment / supply via an .env file:
+      # KRELVAN_LLM_PROVIDER: ${KRELVAN_LLM_PROVIDER:-}
+      # KRELVAN_LLM_API_KEY: ${KRELVAN_LLM_API_KEY:-}
+      # KRELVAN_ANTHROPIC_KEY: ${KRELVAN_ANTHROPIC_KEY:-}
+      # KRELVAN_LLM_MODEL: ${KRELVAN_LLM_MODEL:-}
+    volumes:
+      - krelvan-data:/data
+    restart: unless-stopped
+
+volumes:
+  krelvan-data:

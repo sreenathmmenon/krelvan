@@ -1,7 +1,7 @@
-# Genesis — Extension Model
+# Krelvan — Extension Model
 
 *How developers, companies, and enterprises build their own capabilities and plug
-them into Genesis.*
+them into Krelvan.*
 
 *Read ARCHITECTURE.md first for the full system context.*
 
@@ -9,12 +9,12 @@ them into Genesis.*
 
 ## The idea in one paragraph
 
-Genesis is built to be owned, not rented. That means the integrations — the tools
+Krelvan is built to be owned, not rented. That means the integrations — the tools
 your agents use to reach the real world — must be ownable too. A company's internal
 API, an enterprise's proprietary data system, a developer's custom tool: none of
-them should require touching Genesis core, waiting for a maintainer, or giving data
+them should require touching Krelvan core, waiting for a maintainer, or giving data
 to a third party. You implement one interface, register it, and your capability has
-the full backing of the Genesis trust model — budget enforcement, audit trail,
+the full backing of the Krelvan trust model — budget enforcement, audit trail,
 approval gates, secret isolation — automatically.
 
 ---
@@ -64,7 +64,7 @@ interface CapabilityPlugin {
 ```
 
 Four members. That is the entire contract. Budget enforcement, approval gating,
-audit logging, secret isolation, and crash-safe replay are all handled by Genesis
+audit logging, secret isolation, and crash-safe replay are all handled by Krelvan
 automatically — you do not implement any of that.
 
 ### Side-effect classes
@@ -153,7 +153,7 @@ const result = await CrmLookupPlugin.invoke({
 assert.equal(result.claimedCostCents, 0);
 ```
 
-No Genesis runtime needed for unit tests.
+No Krelvan runtime needed for unit tests.
 
 ---
 
@@ -162,7 +162,7 @@ No Genesis runtime needed for unit tests.
 ### When to use this
 
 Use a YAML file when your capability is an HTTP call to an existing API. No
-TypeScript required. Drop the file in your `capabilities/` directory and Genesis
+TypeScript required. Drop the file in your `capabilities/` directory and Krelvan
 picks it up at startup.
 
 This covers the majority of real-world integrations — most things agents need to
@@ -284,7 +284,7 @@ capabilities/my-api.yaml: 3 validation errors
   responseField: must be a simple dot-path — letters, digits, underscores, dots only (EXT-03)
 ```
 
-Genesis refuses to start if any capability file fails validation. The error is
+Krelvan refuses to start if any capability file fails validation. The error is
 loud — it names the file and every field — so there is no ambiguity about what
 needs to be fixed.
 
@@ -310,7 +310,7 @@ invocation, responseField extraction, error cases. All passing (`npm test`).
 ## Path C — JSON manifest template (for workflow designers)
 
 A template is a `SignedManifest` JSON file — a pre-built agent workflow someone
-has already run and wants to share. No code. Import it into any Genesis install.
+has already run and wants to share. No code. Import it into any Krelvan install.
 
 ```json
 {
@@ -470,7 +470,7 @@ genesis-capability-github
 genesis-channel-discord
 ```
 
-Declare it in `package.json` so Genesis can auto-discover it:
+Declare it in `package.json` so Krelvan can auto-discover it:
 
 ```json
 {

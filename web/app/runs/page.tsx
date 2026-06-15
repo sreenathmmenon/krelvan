@@ -4,33 +4,68 @@ import { listRuns, explainRun, timeAgo, type RunRecord } from "../../lib/api";
 
 type Filter = "all" | "running" | "halted" | "completed" | "failed";
 
-function CostCell({ run }: { run: RunRecord }) {
-  if (run.status === "running") {
-    return (
-      <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
-        <span className="status-dot running" style={{ width: 6, height: 6 }} />
-        <span className="mono" style={{ fontSize: 11, color: "var(--live)" }}>live</span>
-      </span>
-    );
-  }
-  if (run.status === "failed" && (run.spentCents == null || run.spentCents === 0)) {
-    return (
-      <span
-        className="mono"
-        title="Run failed before incurring cost"
-        style={{ fontSize: 13, textAlign: "right", color: "var(--ink-muted)", cursor: "help", display: "block" }}
-      >
-        —
-      </span>
-    );
-  }
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "running", label: "Running" },
+  { key: "halted", label: "Paused" },
+  { key: "completed", label: "Completed" },
+  { key: "failed", label: "Failed" },
+];
+
+const STATUS_BADGE_CLASS: Partial<Record<RunRecord["status"], string>> = {
+  completed: "badge-done",
+  running: "badge-running",
+  failed: "badge-failed",
+  halted: "badge-paused",
+};
+
+const STATUS_DOT_CLASS: Record<RunRecord["status"], string> = {
+  completed: "done",
+  running: "running",
+  failed: "failed",
+  halted: "paused",
+  pending: "paused",
+};
+
+const STATUS_LABEL: Record<RunRecord["status"], string> = {
+  completed: "completed",
+  running: "running",
+  failed: "failed",
+  halted: "paused",
+  pending: "pending",
+};
+
+// Teal geometric glyph for empty states — a "signed record / stacked ledger"
+// mark in the homepage CapGlyph style. Replaces the ✦ emoji.
+function LedgerGlyph({ size = 40 }: { size?: number }) {
   return (
-    <span className="mono" style={{ fontSize: 13, textAlign: "right", display: "block" }}>
-      {run.spentCents != null ? `${run.spentCents}¢` : "0¢"}
-    </span>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="none"
+      aria-hidden="true"
+      style={{ display: "block" }}
+    >
+      <rect x="6" y="4" width="20" height="24" rx="2.5" stroke="var(--brand)" strokeWidth="1.6" />
+      <path d="M10.5 11h11M10.5 16h11M10.5 21h7" stroke="var(--brand)" strokeWidth="1.6" strokeLinecap="round" opacity="0.55" />
+      <circle cx="24" cy="24" r="6" fill="var(--surface)" stroke="var(--brand)" strokeWidth="1.6" />
+      <path d="M21.4 24l1.8 1.8 3.4-3.6" stroke="var(--brand)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
   );
 }
 
+// Right-pointing chevron — row affordance. Replaces the › glyph.
+function RowChevron() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ display: "block" }}>
+      <path d="M6 3.5L10.5 8L6 12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+
+// Copyable run id — first 16 chars, "Copied!" feedback on success.
 function RunIdCell({ runId }: { runId: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -46,13 +81,12 @@ function RunIdCell({ runId }: { runId: string }) {
   return (
     <button
       onClick={handleCopy}
-      title={runId}
+      title={`Copy run id · ${runId}`}
+      className="btn btn-ghost btn-sm mono"
       style={{
-        display: "block", width: "100%", textAlign: "right",
-        background: "none", border: "none", cursor: "pointer", padding: 0,
-        fontFamily: "var(--font-mono)", fontSize: 11,
+        height: 26, padding: "0 var(--s2)",
         color: copied ? "var(--ok)" : "var(--ink-muted)",
-        transition: "color 150ms",
+        fontSize: 11.5,
       }}
     >
       {copied ? "Copied!" : runId.slice(0, 16)}
@@ -63,6 +97,7 @@ function RunIdCell({ runId }: { runId: string }) {
 export default function RunsPage() {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   // runId → first-line summary (null = fetching, absent = not started)
   const [summaries, setSummaries] = useState<Record<string, string | null>>({});
@@ -71,8 +106,12 @@ export default function RunsPage() {
   const load = useCallback(async () => {
     try {
       setRuns(await listRuns());
-    } catch { /* ignore */ }
-    finally { setLoading(false); }
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message || "Could not reach the Krelvan API.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -103,7 +142,7 @@ export default function RunsPage() {
 
   const filtered = filter === "all" ? runs : runs.filter(r => r.status === filter);
 
-  const counts = {
+  const counts: Record<Filter, number> = {
     all: runs.length,
     running: runs.filter(r => r.status === "running").length,
     halted: runs.filter(r => r.status === "halted").length,
@@ -111,104 +150,200 @@ export default function RunsPage() {
     failed: runs.filter(r => r.status === "failed").length,
   };
 
+  const runningNow = counts.running;
+
   return (
-    <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
-      <div style={{ marginBottom: "var(--s5)" }}>
-        <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Runs</h1>
-        <p className="soft" style={{ fontSize: 14, margin: 0 }}>
-          Every run is a signed, verifiable record of exactly what your agent did.
-        </p>
-      </div>
-
-      {/* filter pills */}
-      <div style={{ display: "flex", gap: "var(--s2)", marginBottom: "var(--s5)", flexWrap: "wrap" }}>
-        {(["all", "running", "halted", "completed", "failed"] as Filter[]).map(f => {
-          const active = filter === f;
-          return (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className="chip"
-              style={{
-                background: active ? "var(--brand-tint)" : undefined,
-                color: active ? "var(--brand)" : undefined,
-                borderColor: active ? "var(--brand)" : undefined,
-              }}
-            >
-              {f}{counts[f] > 0 && f !== "all" ? ` · ${counts[f]}` : f === "all" ? ` · ${counts.all}` : ""}
-            </button>
-          );
-        })}
-      </div>
-
-      {loading && <p className="soft small">Loading…</p>}
-
-      {!loading && filtered.length === 0 && (
-        <div style={{ padding: "var(--s7)", textAlign: "center", border: "1.5px dashed var(--line-strong)", borderRadius: "var(--r)", color: "var(--ink-muted)" }}>
-          <p style={{ fontSize: 14 }}>
-            {runs.length === 0
-              ? <>No runs yet. Build an agent on the <a href="/">home page</a> to get started.</>
-              : `No ${filter} runs.`}
+    <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s9)" }}>
+      {/* ── page header: title · description · primary action ── */}
+      <div
+        style={{
+          display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+          gap: "var(--s5)", flexWrap: "wrap", marginBottom: "var(--s6)",
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <p className="micro" style={{ marginBottom: "var(--s2)" }}>Audit trail</p>
+          <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Runs</h1>
+          <p className="soft body-lg" style={{ margin: 0, maxWidth: "56ch" }}>
+            Every run is a signed, replayable record of exactly what your agent did —
+            each step and decision, in order.
           </p>
+        </div>
+        {runs.length > 0 && (
+          <a href="/" className="btn btn-primary" style={{ flexShrink: 0 }}>
+            Build an agent →
+          </a>
+        )}
+      </div>
+
+      {/* ── summary strip: only when runs exist ── */}
+      {runs.length > 0 && (
+        <div className="stat-strip" style={{ marginBottom: "var(--s6)" }}>
+          {[
+            { label: "total runs", value: String(runs.length), live: false },
+            { label: "running now", value: String(runningNow), live: runningNow > 0 },
+            { label: "completed", value: String(counts.completed), live: false },
+            { label: "failed", value: String(counts.failed ?? 0), live: false },
+          ].map(s => (
+            <div key={s.label} className={`stat-cell${s.live ? " is-live" : ""}`}>
+              <span className="stat-value">{s.value}</span>
+              <span className="stat-label">{s.label}</span>
+            </div>
+          ))}
         </div>
       )}
 
+      {/* ── filter: segmented control ── */}
+      {runs.length > 0 && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--s4)", flexWrap: "wrap", marginBottom: "var(--s5)" }}>
+          <div className="segmented" role="group" aria-label="Filter runs by status">
+            {FILTERS.map(f => {
+              const active = filter === f.key;
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  className={active ? "is-active" : ""}
+                  aria-pressed={active}
+                  onClick={() => setFilter(f.key)}
+                >
+                  {f.label}
+                  {counts[f.key] > 0 && (
+                    <span className="mono" style={{ color: active ? "var(--brand)" : "var(--ink-muted)", fontSize: 11 }}>
+                      {counts[f.key]}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <span className="small muted">
+            Showing <span className="mono">{filtered.length}</span> of <span className="mono">{runs.length}</span>
+          </span>
+        </div>
+      )}
+
+      {/* ── error state ── */}
+      {error && (
+        <div role="alert" className="state-error" style={{ marginBottom: "var(--s5)", justifyContent: "space-between" }}>
+          <span>{error} Retrying automatically…</span>
+          <button
+            onClick={() => void load()}
+            className="btn btn-sm"
+            style={{ background: "transparent", color: "var(--danger)", border: "1px solid var(--danger-ring)", flexShrink: 0 }}
+          >
+            Retry now
+          </button>
+        </div>
+      )}
+
+      {/* ── loading state (first load only) ── */}
+      {loading && runs.length === 0 && !error && (
+        <div className="state-loading">
+          <span className="spinner" aria-hidden="true" />
+          <span>Loading runs…</span>
+        </div>
+      )}
+
+      {/* ── empty: no runs at all ── */}
+      {!loading && !error && runs.length === 0 && (
+        <div className="state-empty" style={{ padding: "var(--s9) var(--s6)" }}>
+          <div style={{ marginBottom: "var(--s4)" }}><LedgerGlyph size={44} /></div>
+          <h3 className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s2)" }}>No runs yet</h3>
+          <p className="body-lg soft" style={{ maxWidth: "40ch", margin: "0 auto var(--s6)" }}>
+            When you build and run an agent, its signed record shows up here — every step
+            and decision, ready to open and replay.
+          </p>
+          <a href="/" className="btn btn-primary">Build your first agent →</a>
+        </div>
+      )}
+
+      {/* ── empty: this filter has no runs (but others do) ── */}
+      {!loading && !error && runs.length > 0 && filtered.length === 0 && (
+        <div className="state-empty">
+          <div style={{ marginBottom: "var(--s2)", opacity: 0.7 }}><LedgerGlyph size={32} /></div>
+          <h3 className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s1)" }}>
+            No {FILTERS.find(f => f.key === filter)?.label.toLowerCase()} runs
+          </h3>
+          <p className="small">Try a different filter, or build a new agent.</p>
+          <button className="btn btn-secondary btn-sm" style={{ marginTop: "var(--s2)" }} onClick={() => setFilter("all")}>
+            Show all runs
+          </button>
+        </div>
+      )}
+
+      {/* ── runs table ── */}
       {filtered.length > 0 && (
         <div className="card" style={{ overflow: "hidden", padding: 0 }}>
-          {/* header */}
-          <div style={{
-            display: "grid", gridTemplateColumns: "1fr 110px 80px 100px 120px 48px",
-            gap: "var(--s4)", padding: "var(--s3) var(--s5)",
-            background: "var(--surface-sunken)",
-          }}>
-            {["Agent", "Status", "Cost ↓", "Run ID", "When", ""].map((h, i) => (
-              <span key={i} className="micro" style={{ textAlign: i >= 2 && i <= 4 ? "right" : "left" }}>{h}</span>
-            ))}
+          <div className="runs-table-scroll" style={{ overflowX: "auto" }}>
+            <table className="table zebra runs-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 28, paddingRight: 0 }}><span className="sr-only">Status</span></th>
+                  <th>Agent</th>
+                  <th style={{ width: 120 }}>Status</th>
+                  <th className="col-runid" style={{ width: 150 }}>Run ID</th>
+                  <th className="num" style={{ width: 110 }}>When</th>
+                  <th className="col-chevron" style={{ width: 32 }} aria-hidden="true"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(r => {
+                  const badgeCls = STATUS_BADGE_CLASS[r.status] ?? "badge-neutral";
+                  const summary = summaries[r.runId];
+                  return (
+                    <tr
+                      key={r.runId}
+                      className="is-clickable"
+                      onClick={() => { window.location.href = `/runs/${r.runId}`; }}
+                    >
+                      <td style={{ paddingRight: 0 }}>
+                        <span className={`status-dot ${STATUS_DOT_CLASS[r.status]}`} aria-hidden="true" />
+                      </td>
+                      <td>
+                        <a
+                          href={`/runs/${r.runId}`}
+                          onClick={e => e.stopPropagation()}
+                          style={{ color: "var(--ink)", textDecoration: "none", display: "block", minWidth: 0 }}
+                        >
+                          <span className="h3" style={{ display: "block" }}>{r.manifestName}</span>
+                          {summary ? (
+                            <span className="small muted text-truncate" style={{ display: "block", marginTop: 2, maxWidth: "52ch" }}>
+                              {summary}
+                            </span>
+                          ) : summary === null ? (
+                            <span className="small" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)", marginTop: 2, color: "var(--ink-muted)" }}>
+                              <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} aria-hidden="true" />
+                              Summarizing…
+                            </span>
+                          ) : r.reason ? (
+                            <span className="small muted text-truncate" style={{ display: "block", marginTop: 2, maxWidth: "52ch" }}>
+                              {r.reason}
+                            </span>
+                          ) : null}
+                        </a>
+                      </td>
+                      <td>
+                        <span className={`badge ${badgeCls}`}>
+                          {r.status === "running" && <span className="dot" />}
+                          {STATUS_LABEL[r.status]}
+                        </span>
+                      </td>
+                      <td className="col-runid"><RunIdCell runId={r.runId} /></td>
+                      <td className="num">
+                        <span className="muted" style={{ fontSize: 12 }}>{timeAgo(r.createdAt)}</span>
+                      </td>
+                      <td className="col-chevron" aria-hidden="true" style={{ color: "var(--ink-muted)" }}>
+                        <span style={{ display: "inline-flex", justifyContent: "flex-end", width: "100%" }}>
+                          <RowChevron />
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-
-          {filtered.map((r, i) => {
-            const badgeCls = r.status === "completed" ? "badge-done"
-              : r.status === "running" ? "badge-running"
-              : r.status === "failed" ? "badge-failed"
-              : r.status === "halted" ? "badge-paused"
-              : "badge-neutral";
-            const summary = summaries[r.runId];
-            return (
-              <a
-                key={r.runId}
-                href={`/runs/${r.runId}`}
-                style={{
-                  display: "grid", gridTemplateColumns: "1fr 110px 80px 100px 120px 48px",
-                  gap: "var(--s4)", alignItems: "center",
-                  padding: "var(--s4) var(--s5)",
-                  borderTop: i === 0 ? "none" : "1px solid var(--line)",
-                  color: "var(--ink)", textDecoration: "none",
-                  transition: "background 100ms",
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-hover)")}
-                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{r.manifestName}</div>
-                  {summary ? (
-                    <div className="small muted" style={{ marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summary}</div>
-                  ) : summary === null ? (
-                    <div className="small" style={{ marginTop: 2, color: "var(--ink-muted)", fontStyle: "italic" }}>Generating summary…</div>
-                  ) : r.reason ? (
-                    <div className="small muted" style={{ marginTop: 2 }}>{r.reason}</div>
-                  ) : null}
-                </div>
-                <span className={`badge ${badgeCls}`} style={{ width: "fit-content" }}>
-                  {r.status === "running" && <span className="dot" />}
-                  {r.status}
-                </span>
-                <CostCell run={r} />
-                <RunIdCell runId={r.runId} />
-                <span className="small muted" style={{ textAlign: "right" }}>{timeAgo(r.createdAt)}</span>
-                <span style={{ color: "var(--brand)", textAlign: "right", fontSize: 16 }}>›</span>
-              </a>
-            );
-          })}
         </div>
       )}
     </div>

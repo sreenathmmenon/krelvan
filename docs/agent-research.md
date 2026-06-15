@@ -60,7 +60,7 @@ Sources: Anthropic, OpenAI, a16z, Sequoia, Andrew Ng, financial companies, acade
 
 ---
 
-## Real Agent Patterns (what Genesis should build)
+## Real Agent Patterns (what Krelvan should build)
 
 These are NOT: search → compose → send (pre-agent era, IFTTT-style).
 
@@ -92,4 +92,4 @@ An agent that only produces text is a chatbot. An agent that:
 
 ...is a real agent.
 
-Genesis's architecture (manifest graph + signed ledger + capability system + memory) is the right substrate for all of these.
+Krelvan's architecture (manifest graph + signed ledger + capability system + memory) is the right substrate for all of these.

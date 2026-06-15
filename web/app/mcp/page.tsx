@@ -5,9 +5,12 @@ import {
   type McpServerRecord, type McpServerConfig,
 } from "../../lib/api";
 
-const EXAMPLES: { label: string; config: Partial<McpServerConfig> }[] = [
+// Preset MCP servers — one click fills the connect form. Power-user page, but the
+// common cases (GitHub, Slack, …) shouldn't require remembering the npx incantation.
+const EXAMPLES: { label: string; hint: string; config: Partial<McpServerConfig> }[] = [
   {
     label: "GitHub",
+    hint: "issues · PRs · repos",
     config: {
       name: "github",
       command: "npx",
@@ -17,6 +20,7 @@ const EXAMPLES: { label: string; config: Partial<McpServerConfig> }[] = [
   },
   {
     label: "Filesystem",
+    hint: "read · write local files",
     config: {
       name: "filesystem",
       command: "npx",
@@ -25,6 +29,7 @@ const EXAMPLES: { label: string; config: Partial<McpServerConfig> }[] = [
   },
   {
     label: "Slack",
+    hint: "channels · messages",
     config: {
       name: "slack",
       command: "npx",
@@ -34,12 +39,100 @@ const EXAMPLES: { label: string; config: Partial<McpServerConfig> }[] = [
   },
   {
     label: "HTTP server",
+    hint: "any remote endpoint",
     config: {
       name: "my-mcp-server",
       url: "http://localhost:8080",
     },
   },
 ];
+
+// One row per server in the connected list. Status, transport, and tool chips are
+// all rendered with care — these are the capabilities an agent can reach for, so the
+// page should read as "here is exactly what your agents can now do".
+function ServerCard({ server, onDisconnect }: {
+  server: McpServerRecord;
+  onDisconnect: (name: string) => Promise<void>;
+}) {
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Transport is inferred from the record shape on the wire isn't exposed, so we read
+  // it off connection health: a connected server with tools is reachable; otherwise
+  // it errored on connect. (No new data path — derived from the record we already have.)
+  const ok = server.connected;
+  const toolCount = server.tools.length;
+
+  async function disconnect() {
+    setBusy(true); setError(null);
+    try { await onDisconnect(server.name); }
+    catch (e) { setError((e as Error).message); setBusy(false); setConfirm(false); }
+  }
+
+  return (
+    <div className="card card-hover" style={{ padding: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
+      {/* header — name + status (left), actions (right) */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s3)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", minWidth: 0 }}>
+          <span
+            className={`status-dot ${ok ? "done" : "failed"}`}
+            style={{ marginTop: 5, flexShrink: 0 }}
+            aria-hidden="true"
+          />
+          <div style={{ minWidth: 0 }}>
+            <div className="h3 mono text-truncate" style={{ color: "var(--ink)" }}>{server.name}</div>
+            <div className="small muted">
+              <span className="mono">{toolCount}</span> tool{toolCount !== 1 ? "s" : ""} available
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexShrink: 0 }}>
+          <span className={`badge ${ok ? "badge-done" : "badge-failed"}`}>
+            {ok ? "connected" : "error"}
+          </span>
+        </div>
+      </div>
+
+      {/* tools — the actual capabilities this server exposes, as chips */}
+      {toolCount > 0 ? (
+        <div>
+          <p className="micro" style={{ marginBottom: "var(--s2)" }}>Capabilities</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)" }}>
+            {server.tools.map(t => (
+              <span key={t} className="badge badge-neutral mono">{t}</span>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="small" style={{ color: "var(--ink-muted)", margin: 0 }}>
+          {ok ? "Connected, but this server exposes no tools." : "Could not reach this server — check its command, URL, or credentials."}
+        </p>
+      )}
+
+      {error && (
+        <div className="state-error" style={{ padding: "var(--s2) var(--s3)" }}>{error}</div>
+      )}
+
+      {/* footer — disconnect with inline confirm */}
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: "auto", paddingTop: "var(--s3)", borderTop: "1px solid var(--line)", gap: "var(--s2)" }}>
+        {!confirm ? (
+          <button className="btn btn-danger btn-sm" onClick={() => setConfirm(true)}>Disconnect</button>
+        ) : (
+          <>
+            <span className="small" style={{ color: "var(--danger)", fontWeight: 500, marginRight: "var(--s1)" }}>
+              Disconnect <span className="mono">{server.name}</span>?
+            </span>
+            <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setConfirm(false)}>Cancel</button>
+            <button className="btn btn-danger btn-sm" disabled={busy} onClick={() => void disconnect()}>
+              {busy ? "Disconnecting…" : "Yes, disconnect"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function McpPage() {
   const [servers, setServers] = useState<McpServerRecord[]>([]);
@@ -130,48 +223,71 @@ export default function McpPage() {
   }
 
   async function disconnect(serverName: string) {
-    try {
-      await disconnectMcpServer(serverName);
-      await reload();
-    } catch (err) {
-      alert((err as Error).message);
-    }
+    await disconnectMcpServer(serverName);
+    await reload();
   }
+
+  const connectedCount = servers.filter(s => s.connected).length;
+  const totalTools = servers.reduce((n, s) => n + s.tools.length, 0);
+  const isEmpty = servers.length === 0;
 
   return (
     <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "var(--s6)" }}>
-        <div>
-          <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>MCP Servers</h1>
-          <p className="soft" style={{ fontSize: 14, margin: 0 }}>
-            Connect any MCP server — every tool it exposes becomes a capability your agents can use.
+      {/* ── page header ─────────────────────────────────────────────────────── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s4)", marginBottom: "var(--s6)", flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0 }}>
+          <p className="micro" style={{ marginBottom: "var(--s3)" }}>Connected tools</p>
+          <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Tool servers</h1>
+          <p className="body-lg soft" style={{ margin: 0, maxWidth: "56ch" }}>
+            Connect any MCP server — GitHub, Slack, your own API. Every tool it exposes
+            becomes a capability your agents can use, with the same approval gates and audit trail.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => { setShowConnect(!showConnect); setConnectError(null); setConnectedTools(null); }}>
+        <button
+          className="btn btn-primary"
+          onClick={() => { setShowConnect(!showConnect); setConnectError(null); setConnectedTools(null); }}
+        >
           {showConnect ? "Cancel" : "+ Connect server"}
         </button>
       </div>
 
-      {/* connect panel */}
-      {showConnect && (
-        <div className="card" style={{ padding: "var(--s5)", marginBottom: "var(--s6)" }}>
-          <h2 className="h3" style={{ marginBottom: "var(--s3)" }}>Connect MCP Server</h2>
+      {/* ── summary strip ───────────────────────────────────────────────────── */}
+      {!loading && !isEmpty && (
+        <div className="stat-strip" style={{ marginBottom: "var(--s7)" }}>
+          {[
+            { label: "servers",        value: String(servers.length) },
+            { label: "connected",      value: String(connectedCount) },
+            { label: "tools exposed",  value: String(totalTools) },
+          ].map(s => (
+            <div key={s.label} className="stat-cell">
+              <span className="stat-value">{s.value}</span>
+              <span className="stat-label">{s.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
-          {/* quick examples */}
-          <div style={{ marginBottom: "var(--s4)" }}>
-            <p className="micro" style={{ marginBottom: "var(--s2)" }}>Quick start:</p>
+      {/* ── connect panel ───────────────────────────────────────────────────── */}
+      {showConnect && (
+        <div className="card" style={{ padding: "var(--s5)", marginBottom: "var(--s7)", maxWidth: 620 }}>
+          <h2 className="h3" style={{ marginBottom: "var(--s1)" }}>Connect a tool server</h2>
+          <p className="small soft" style={{ margin: "0 0 var(--s4)", lineHeight: 1.6 }}>
+            Krelvan starts the server, reads the tools it exposes, and registers each as a
+            capability. Pick a preset to fill the form, or configure your own.
+          </p>
+
+          {/* quick presets */}
+          <div style={{ marginBottom: "var(--s5)" }}>
+            <p className="micro" style={{ marginBottom: "var(--s2)" }}>Quick start</p>
             <div style={{ display: "flex", gap: "var(--s2)", flexWrap: "wrap" }}>
               {EXAMPLES.map(ex => (
                 <button
                   key={ex.label}
                   type="button"
+                  className="chip"
                   onClick={() => applyExample(ex.config)}
-                  style={{
-                    fontSize: 12, padding: "3px 10px",
-                    border: "1px solid var(--line)", borderRadius: "var(--r-pill)",
-                    background: "var(--surface-sunken)", cursor: "pointer", color: "var(--ink-soft)",
-                  }}
+                  title={ex.hint}
                 >
                   {ex.label}
                 </button>
@@ -179,178 +295,179 @@ export default function McpPage() {
             </div>
           </div>
 
-          <form onSubmit={connect}>
-            {/* name */}
-            <div style={{ marginBottom: "var(--s4)" }}>
-              <label className="micro" style={{ display: "block", marginBottom: "var(--s2)" }}>Server name</label>
-              <input
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="e.g. github, stripe, my-internal-api"
-                style={{ width: "100%", padding: "var(--s2) var(--s3)", border: "1px solid var(--line)", borderRadius: "var(--r)", fontSize: 13, color: "var(--ink)", background: "var(--surface)" }}
-              />
-            </div>
-
-            {/* transport toggle */}
-            <div style={{ marginBottom: "var(--s4)", display: "flex", gap: "var(--s2)" }}>
-              {(["stdio", "http"] as const).map(t => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setTransport(t)}
-                  style={{
-                    padding: "var(--s2) var(--s4)", border: "1.5px solid",
-                    borderColor: transport === t ? "var(--brand)" : "var(--line)",
-                    borderRadius: "var(--r)", background: transport === t ? "var(--brand-tint)" : "none",
-                    color: transport === t ? "var(--brand)" : "var(--ink-muted)",
-                    fontSize: 13, fontWeight: 500, cursor: "pointer",
-                  }}
-                >
-                  {t === "stdio" ? "Local process (stdio)" : "Remote HTTP server"}
-                </button>
-              ))}
-            </div>
-
-            {transport === "stdio" ? (
-              <>
-                <div style={{ marginBottom: "var(--s4)" }}>
-                  <label className="micro" style={{ display: "block", marginBottom: "var(--s2)" }}>Command</label>
-                  <input
-                    value={command}
-                    onChange={e => setCommand(e.target.value)}
-                    placeholder="e.g. npx or /usr/local/bin/my-mcp-server"
-                    style={{ width: "100%", padding: "var(--s2) var(--s3)", border: "1px solid var(--line)", borderRadius: "var(--r)", fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--ink)", background: "var(--surface)" }}
-                  />
-                </div>
-                <div style={{ marginBottom: "var(--s4)" }}>
-                  <label className="micro" style={{ display: "block", marginBottom: "var(--s2)" }}>Arguments (space-separated)</label>
-                  <input
-                    value={args}
-                    onChange={e => setArgs(e.target.value)}
-                    placeholder="-y @modelcontextprotocol/server-github"
-                    style={{ width: "100%", padding: "var(--s2) var(--s3)", border: "1px solid var(--line)", borderRadius: "var(--r)", fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--ink)", background: "var(--surface)" }}
-                  />
-                </div>
-                <div style={{ marginBottom: "var(--s4)" }}>
-                  <label className="micro" style={{ display: "block", marginBottom: "var(--s2)" }}>Environment variables (KEY=VALUE, one per line)</label>
-                  <textarea
-                    value={envPairs}
-                    onChange={e => setEnvPairs(e.target.value)}
-                    placeholder={"GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx\nANOTHER_KEY=value"}
-                    rows={4}
-                    style={{ width: "100%", padding: "var(--s3)", border: "1px solid var(--line)", borderRadius: "var(--r)", fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--ink)", background: "var(--surface-sunken)", resize: "vertical" }}
-                  />
-                </div>
-              </>
-            ) : (
-              <div style={{ marginBottom: "var(--s4)" }}>
-                <label className="micro" style={{ display: "block", marginBottom: "var(--s2)" }}>Server URL</label>
+          <form onSubmit={(e) => void connect(e)}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
+              {/* name */}
+              <div>
+                <label className="label">Server name<span className="req">*</span></label>
                 <input
-                  value={url}
-                  onChange={e => setUrl(e.target.value)}
-                  placeholder="http://localhost:8080"
-                  style={{ width: "100%", padding: "var(--s2) var(--s3)", border: "1px solid var(--line)", borderRadius: "var(--r)", fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--ink)", background: "var(--surface)" }}
+                  className="input"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="e.g. github, stripe, my-internal-api"
                 />
               </div>
-            )}
 
-            <div style={{ marginBottom: "var(--s4)", maxWidth: 200 }}>
-              <label className="micro" style={{ display: "block", marginBottom: "var(--s2)" }}>Cost estimate (¢ per call)</label>
-              <input
-                type="number"
-                value={estimateCents}
-                onChange={e => setEstimateCents(e.target.value)}
-                min={0}
-                style={{ width: "100%", padding: "var(--s2) var(--s3)", border: "1px solid var(--line)", borderRadius: "var(--r)", fontSize: 13, color: "var(--ink)", background: "var(--surface)" }}
-              />
-            </div>
-
-            {connectError && (
-              <div style={{ marginBottom: "var(--s4)", padding: "var(--s3) var(--s4)", background: "var(--danger-tint)", borderRadius: "var(--r)", fontSize: 13, color: "var(--danger)" }}>
-                {connectError}
+              {/* transport toggle */}
+              <div>
+                <label className="label">Transport</label>
+                <div className="segmented">
+                  {(["stdio", "http"] as const).map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      aria-pressed={transport === t}
+                      onClick={() => setTransport(t)}
+                    >
+                      {t === "stdio" ? "Local process" : "Remote HTTP"}
+                    </button>
+                  ))}
+                </div>
+                <p className="small" style={{ color: "var(--ink-muted)", marginTop: "var(--s2)", lineHeight: 1.5 }}>
+                  {transport === "stdio"
+                    ? "Krelvan launches the server as a local process and talks to it over stdio."
+                    : "Krelvan connects to an MCP server already running at a URL."}
+                </p>
               </div>
-            )}
 
-            <div style={{ display: "flex", gap: "var(--s3)", justifyContent: "flex-end" }}>
-              <button type="button" className="btn btn-ghost" onClick={() => setShowConnect(false)}>Cancel</button>
-              <button type="submit" className="btn btn-primary" disabled={!name.trim() || connecting}>
-                {connecting ? "Connecting…" : "Connect"}
-              </button>
+              {transport === "stdio" ? (
+                <>
+                  <div>
+                    <label className="label">Command</label>
+                    <input
+                      className="input input-mono"
+                      value={command}
+                      onChange={e => setCommand(e.target.value)}
+                      placeholder="npx"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Arguments</label>
+                    <input
+                      className="input input-mono"
+                      value={args}
+                      onChange={e => setArgs(e.target.value)}
+                      placeholder="-y @modelcontextprotocol/server-github"
+                    />
+                    <p className="small" style={{ color: "var(--ink-muted)", marginTop: "var(--s2)" }}>Space-separated.</p>
+                  </div>
+                  <div>
+                    <label className="label">Environment variables</label>
+                    <textarea
+                      className="input input-mono"
+                      value={envPairs}
+                      onChange={e => setEnvPairs(e.target.value)}
+                      placeholder={"GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx\nANOTHER_KEY=value"}
+                      rows={4}
+                    />
+                    <p className="small" style={{ color: "var(--ink-muted)", marginTop: "var(--s2)" }}>
+                      One <span className="mono">KEY=VALUE</span> per line. Stays on your machine.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="label">Server URL</label>
+                  <input
+                    className="input input-mono"
+                    value={url}
+                    onChange={e => setUrl(e.target.value)}
+                    placeholder="http://localhost:8080"
+                  />
+                </div>
+              )}
+
+
+              {connectError && (
+                <div className="state-error">{connectError}</div>
+              )}
+
+              <div style={{ display: "flex", gap: "var(--s3)", justifyContent: "flex-end", paddingTop: "var(--s2)", borderTop: "1px solid var(--line)" }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setShowConnect(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={!name.trim() || connecting}>
+                  {connecting ? "Connecting…" : "Connect server"}
+                </button>
+              </div>
             </div>
           </form>
         </div>
       )}
 
-      {/* success toast */}
+      {/* ── success banner — tools now available ────────────────────────────── */}
       {connectedTools && (
-        <div style={{ marginBottom: "var(--s5)", padding: "var(--s4)", background: "var(--ok-tint)", borderRadius: "var(--r)", border: "1px solid var(--ok)" }}>
-          <p style={{ fontWeight: 600, color: "var(--ok)", marginBottom: "var(--s2)", fontSize: 13 }}>
-            Connected — {connectedTools.length} tool{connectedTools.length !== 1 ? "s" : ""} available
+        <div
+          role="status"
+          className="card"
+          style={{
+            marginBottom: "var(--s7)", padding: "var(--s5)",
+            background: "var(--brand-tint)", borderColor: "var(--brand-ring)",
+            display: "flex", flexDirection: "column", gap: "var(--s3)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
+            <span
+              aria-hidden="true"
+              style={{
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                width: 22, height: 22, borderRadius: "var(--r-pill)",
+                background: "var(--brand)", color: "var(--brand-ink)", fontSize: 13, fontWeight: 700, flexShrink: 0,
+              }}
+            >✓</span>
+            <span className="h3" style={{ color: "var(--brand)" }}>
+              Connected — <span className="mono">{connectedTools.length}</span> tool{connectedTools.length !== 1 ? "s" : ""} now available
+            </span>
+          </div>
+          {connectedTools.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)" }}>
+              {connectedTools.map(t => (
+                <span key={t} className="badge badge-done mono">{t}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── loading ─────────────────────────────────────────────────────────── */}
+      {loading && (
+        <div className="state-loading">
+          <span className="spinner" aria-hidden="true" />
+          <span>Loading tool servers…</span>
+        </div>
+      )}
+
+      {/* ── empty ───────────────────────────────────────────────────────────── */}
+      {!loading && isEmpty && !showConnect && (
+        <div className="state-empty" style={{ padding: "var(--s9) var(--s6)" }}>
+          <div aria-hidden="true" style={{ fontSize: 32, marginBottom: "var(--s4)", opacity: 0.5 }}>⇄</div>
+          <p className="h3" style={{ marginBottom: "var(--s2)", color: "var(--ink)" }}>No tool servers connected</p>
+          <p className="body-lg soft" style={{ maxWidth: "44ch", margin: "0 auto var(--s5)" }}>
+            Connect GitHub, Slack, a filesystem, or any service with an MCP server. Every
+            tool it exposes becomes a capability your agents can use instantly.
           </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)" }}>
-            {connectedTools.map(t => (
-              <span key={t} style={{ fontSize: 11, padding: "2px 8px", background: "white", borderRadius: "var(--r-pill)", border: "1px solid var(--ok)", fontFamily: "var(--font-mono)" }}>
-                {t}
-              </span>
+          <button className="btn btn-primary" onClick={() => { setShowConnect(true); setConnectError(null); setConnectedTools(null); }}>
+            Connect your first server
+          </button>
+          <div style={{ display: "flex", gap: "var(--s2)", flexWrap: "wrap", justifyContent: "center", marginTop: "var(--s6)" }}>
+            {EXAMPLES.map(ex => (
+              <button
+                key={ex.label}
+                type="button"
+                className="chip"
+                onClick={() => { setShowConnect(true); setConnectError(null); setConnectedTools(null); applyExample(ex.config); }}
+                title={ex.hint}
+              >
+                {ex.label}
+              </button>
             ))}
           </div>
         </div>
       )}
 
-      {loading && <p className="soft small">Loading…</p>}
-
-      {/* servers list */}
-      {!loading && servers.length === 0 && !showConnect && (
-        <div style={{ padding: "var(--s7)", textAlign: "center", border: "1.5px dashed var(--line-strong)", borderRadius: "var(--r)", color: "var(--ink-muted)" }}>
-          <p style={{ fontSize: 14, marginBottom: "var(--s3)" }}>No MCP servers connected.</p>
-          <p style={{ fontSize: 13 }}>
-            Connect GitHub, Slack, Stripe, Notion, or any service with an MCP server.
-            Every tool becomes a capability your agents can use instantly.
-          </p>
-        </div>
-      )}
-
-      {servers.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
+      {/* ── connected servers ───────────────────────────────────────────────── */}
+      {!loading && !isEmpty && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "var(--s5)" }}>
           {servers.map(server => (
-            <div key={server.name} className="card" style={{ padding: "var(--s5)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "var(--s4)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)" }}>
-                  <div style={{
-                    width: 10, height: 10, borderRadius: "50%",
-                    background: server.connected ? "var(--ok)" : "var(--ink-muted)",
-                    flexShrink: 0,
-                  }} />
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{server.name}</div>
-                    <div className="small muted">{server.tools.length} tool{server.tools.length !== 1 ? "s" : ""}</div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => void disconnect(server.name)}
-                  style={{ fontSize: 12, padding: "3px 10px", border: "1px solid var(--line)", borderRadius: "var(--r)", background: "none", cursor: "pointer", color: "var(--danger)" }}
-                >
-                  Disconnect
-                </button>
-              </div>
-
-              {server.tools.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)" }}>
-                  {server.tools.map(t => (
-                    <span key={t} style={{
-                      fontSize: 11, padding: "2px 8px",
-                      background: "var(--surface-sunken)",
-                      borderRadius: "var(--r-pill)",
-                      fontFamily: "var(--font-mono)",
-                      color: "var(--brand)",
-                      border: "1px solid var(--line)",
-                    }}>
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
+            <ServerCard key={server.name} server={server} onDisconnect={disconnect} />
           ))}
         </div>
       )}

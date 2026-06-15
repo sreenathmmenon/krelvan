@@ -1,0 +1,796 @@
+"use client";
+/**
+ * Shared builder + graph-preview helpers used by both the landing page (/) and the
+ * dashboard (/dashboard). The NL builder behavior (buildAgent, BuildPreviewModal,
+ * EXAMPLES, the mini graphs and the agent card) lives here so both surfaces reuse
+ * the exact same data/API logic instead of duplicating it.
+ */
+import { useState, useEffect, useRef } from "react";
+import {
+  deleteAgent, explainBuild, timeAgo,
+  type AgentRecord, type RunRecord, type BuildResult, type ManifestNode, type ManifestEdge,
+} from "../lib/api";
+
+export const EXAMPLES: { text: string; label: string; hero?: boolean }[] = [
+  {
+    text: "Search the web for the latest AI news and summarise the top 3 developments in a clear digest",
+    label: "Research digest",
+    hero: true,
+  },
+  {
+    text: "Fetch https://api.github.com/repos/vercel/next.js/releases and summarise what changed in the latest release",
+    label: "Release notes",
+  },
+  {
+    text: "Research the top 5 use cases for small language models in enterprise and rank them by business impact",
+    label: "Market research",
+  },
+  {
+    text: "Analyse the pros and cons of PostgreSQL vs MongoDB for a real-time analytics platform",
+    label: "Tech decision",
+  },
+];
+
+export const BUILD_STAGES = ["Proposing graph…", "Validating…", "Finalising agent…"];
+
+// ── Mini graph preview ────────────────────────────────────────────────────────
+
+interface MiniNodePos { x: number; y: number; }
+
+const MNW = 56;
+const MNH = 30;
+const MHG = 32;
+const MVG = 20;
+
+function miniLayout(nodes: ManifestNode[], edges: ManifestEdge[], entry: string): Map<string, MiniNodePos> {
+  const layer = new Map<string, number>();
+  const visited = new Set<string>();
+
+  function visit(id: string, depth: number) {
+    if (!visited.has(id) || (layer.get(id) ?? 0) < depth) {
+      layer.set(id, depth);
+      visited.add(id);
+      for (const e of edges) if (e.from === id) visit(e.to, depth + 1);
+    }
+  }
+  visit(entry, 0);
+  for (const n of nodes) if (!layer.has(n.id)) layer.set(n.id, 0);
+
+  const byLayer = new Map<number, string[]>();
+  for (const n of nodes) {
+    const l = layer.get(n.id)!;
+    if (!byLayer.has(l)) byLayer.set(l, []);
+    byLayer.get(l)!.push(n.id);
+  }
+
+  const positions = new Map<string, MiniNodePos>();
+  const maxLayer = Math.max(0, ...[...layer.values()]);
+  for (let l = 0; l <= maxLayer; l++) {
+    const col = byLayer.get(l) ?? [];
+    col.forEach((id, rowIdx) => {
+      positions.set(id, { x: l * (MNW + MHG), y: rowIdx * (MNH + MVG) });
+    });
+  }
+  return positions;
+}
+
+export function MiniGraph({ nodes, edges, entry, variant = "light", maxHeight = 70 }: { nodes: ManifestNode[]; edges: ManifestEdge[]; entry: string; variant?: "light" | "dark"; maxHeight?: number }) {
+  if (nodes.length === 0) return null;
+  const positions = miniLayout(nodes, edges, entry);
+
+  let maxX = 0, maxY = 0;
+  for (const p of positions.values()) {
+    maxX = Math.max(maxX, p.x + MNW);
+    maxY = Math.max(maxY, p.y + MNH);
+  }
+  const vw = maxX + MHG;
+  const vh = Math.max(maxY + MVG, 50);
+  const dark = variant === "dark";
+  const nodeFill = dark ? "var(--dark-node-fill, #14201F)" : "var(--surface)";
+  const lineColor = dark ? "var(--dark-line, #2A3331)" : "var(--line-strong)";
+  const entryStroke = dark ? "var(--dark-brand-bright, #1AA39A)" : "var(--brand)";
+  const arrowId = dark ? "mg-arrow-dark" : "mg-arrow";
+
+  return (
+    <div style={{ position: "relative" }}>
+      <svg
+        viewBox={`0 0 ${vw} ${vh}`}
+        width="100%"
+        style={{ display: "block", maxHeight, overflow: "visible" }}
+        aria-hidden
+      >
+        <defs>
+          <marker id={arrowId} markerWidth="5" markerHeight="5" refX="4" refY="2" orient="auto">
+            <path d="M0,0 L0,4 L5,2 z" fill={lineColor} />
+          </marker>
+        </defs>
+        {edges.map((e, i) => {
+          const fp = positions.get(e.from);
+          const tp = positions.get(e.to);
+          if (!fp || !tp) return null;
+          const x1 = fp.x + MNW, y1 = fp.y + MNH / 2;
+          const x2 = tp.x, y2 = tp.y + MNH / 2;
+          const cx = (x1 + x2) / 2;
+          return (
+            <path key={i} d={`M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`}
+              fill="none" stroke={lineColor} strokeWidth={1.4}
+              markerEnd={`url(#${arrowId})`} />
+          );
+        })}
+        {nodes.map(n => {
+          const p = positions.get(n.id);
+          if (!p) return null;
+          const isEntry = n.id === entry;
+          const caps = n.capabilities;
+          const dotColor = caps.some(c => c.name === "think") ? (dark ? "var(--dark-brand-bright, #1AA39A)" : "var(--brand)")
+            : caps.some(c => c.name === "remember" || c.name === "recall") ? "var(--ok)"
+            : (dark ? "var(--dark-ink-muted, #8C928E)" : "var(--ink-muted)");
+          return (
+            <g key={n.id} transform={`translate(${p.x},${p.y})`}>
+              <rect width={MNW} height={MNH} rx={8}
+                fill={nodeFill}
+                stroke={isEntry ? entryStroke : lineColor}
+                strokeWidth={isEntry ? 2 : 1.4}
+              />
+              {isEntry && <rect width={MNW} height={3} rx={1.5} fill={entryStroke} />}
+              <circle cx={MNW / 2} cy={MNH / 2} r={4.5} fill={dotColor} opacity={dark ? 0.95 : 0.7} />
+            </g>
+          );
+        })}
+      </svg>
+      {/* node count overlay */}
+      <div className="mono" style={{
+        position: "absolute", bottom: "var(--s1)", right: "var(--s1)",
+        fontSize: 11, color: dark ? "var(--dark-ink-muted, #8C928E)" : "var(--ink-muted)",
+        background: dark ? "rgba(255,255,255,0.06)" : "var(--surface-sunken)",
+        padding: "var(--s1)", borderRadius: "var(--r-sm)",
+      }}>
+        {nodes.length} node{nodes.length !== 1 ? "s" : ""}
+      </div>
+    </div>
+  );
+}
+
+// ── Build preview modal ───────────────────────────────────────────────────────
+
+const MFN_W = 140;
+const MFN_H = 64;
+const MFH_G = 64;
+const MFV_G = 44;
+
+// ── Capability glyphs (teal geometric SVG — no emoji; matches the hero glyph
+// style on page.tsx). Each glyph is authored on a 16×16 grid; drawn centered on
+// (cx, cy) at scale via a translate to (cx-8, cy-8). Stroke uses --brand; falls
+// back to a neutral square for unknown capabilities. ──────────────────────────
+function capGlyphPaths(name: string): React.ReactNode {
+  switch (name) {
+    case "think": // brain/reason — concentric ring + spark
+      return (
+        <>
+          <circle cx="8" cy="8" r="5.2" stroke="var(--brand)" strokeWidth="1.3" fill="none" />
+          <circle cx="8" cy="8" r="1.7" fill="var(--brand)" />
+        </>
+      );
+    case "recall": // book outline
+      return (
+        <>
+          <path d="M2.5 3.2h4.2c.7 0 1.3.6 1.3 1.3v8.3c0-.7-.6-1.3-1.3-1.3H2.5V3.2z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <path d="M13.5 3.2H9.3c-.7 0-1.3.6-1.3 1.3v8.3c0-.7.6-1.3 1.3-1.3h4.2V3.2z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+        </>
+      );
+    case "remember": // disk/save
+      return (
+        <>
+          <path d="M3 3h7.5L13 5.5V13H3V3z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <rect x="5.5" y="3" width="5" height="3" stroke="var(--brand)" strokeWidth="1.1" fill="none" />
+          <rect x="5" y="8.5" width="6" height="3.5" stroke="var(--brand)" strokeWidth="1.1" fill="none" />
+        </>
+      );
+    case "llm_route": // branch/route — split arrows
+      return (
+        <>
+          <path d="M3 8h3.5M9.5 4.5L12.5 4.5M9.5 11.5L12.5 11.5M6.5 8c1.2 0 1.6-3.5 3-3.5M6.5 8c1.2 0 1.6 3.5 3 3.5" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+          <path d="M11 3l1.8 1.5L11 6M11 10l1.8 1.5L11 13" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      );
+    case "web_search": // magnifying glass
+      return (
+        <>
+          <circle cx="7" cy="7" r="4" stroke="var(--brand)" strokeWidth="1.3" fill="none" />
+          <path d="M10 10l3.2 3.2" stroke="var(--brand)" strokeWidth="1.4" strokeLinecap="round" />
+        </>
+      );
+    case "compose": // pen/write
+      return (
+        <>
+          <path d="M3 13l1-3 6.5-6.5 2 2L6 12l-3 1z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <path d="M10 4.5l1.5-1.5 2 2L12 6.5" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+        </>
+      );
+    case "http_get":
+    case "http_post": // globe
+      return (
+        <>
+          <circle cx="8" cy="8" r="5.2" stroke="var(--brand)" strokeWidth="1.2" fill="none" />
+          <path d="M2.8 8h10.4M8 2.8c1.6 1.4 2.4 3.3 2.4 5.2S9.6 12.8 8 13.2C6.4 12.8 5.6 10.9 5.6 8S6.4 4.2 8 2.8z" stroke="var(--brand)" strokeWidth="1.1" fill="none" />
+        </>
+      );
+    case "telegram_send":
+    case "email_send": // envelope / send
+      return (
+        <>
+          <rect x="2.5" y="4" width="11" height="8" rx="1" stroke="var(--brand)" strokeWidth="1.2" fill="none" />
+          <path d="M3 4.8l5 4 5-4" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      );
+    case "slack_send": // chat bubble
+      return (
+        <>
+          <path d="M3 4.5h10v6H7l-3 2.5v-2.5H3v-6z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+        </>
+      );
+    case "notify_webhook": // bell
+      return (
+        <>
+          <path d="M8 2.6c2 0 3.3 1.5 3.3 3.4v2.4l1.2 1.8H3.5l1.2-1.8V6c0-1.9 1.3-3.4 3.3-3.4z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <path d="M6.6 12.2c.2.8.8 1.2 1.4 1.2s1.2-.4 1.4-1.2" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+        </>
+      );
+    default: // unknown capability — neutral gear-ish square
+      return (
+        <>
+          <rect x="3.5" y="3.5" width="9" height="9" rx="2" stroke="var(--brand)" strokeWidth="1.2" fill="none" />
+          <circle cx="8" cy="8" r="1.6" fill="var(--brand)" />
+        </>
+      );
+  }
+}
+
+function CapGlyph({ name, cx, cy }: { name: string; cx: number; cy: number }) {
+  return (
+    <g transform={`translate(${cx - 8},${cy - 8})`} opacity={0.85}>
+      {capGlyphPaths(name)}
+    </g>
+  );
+}
+
+function FullMiniGraph({ nodes, edges, entry }: { nodes: ManifestNode[]; edges: ManifestEdge[]; entry: string }) {
+  const positions = miniLayout(nodes.map(n => ({ ...n })), edges, entry);
+
+  let maxX = 0, maxY = 0;
+  for (const p of positions.values()) {
+    maxX = Math.max(maxX, p.x * (MFN_W / MNW) + MFN_W);
+    maxY = Math.max(maxY, p.y * (MFN_H / MNH) + MFN_H);
+  }
+
+  const scaledPositions = new Map<string, MiniNodePos>();
+  for (const [id, p] of positions.entries()) {
+    scaledPositions.set(id, {
+      x: p.x * (MFN_W + MFH_G) / (MNW + MHG),
+      y: p.y * (MFN_H + MFV_G) / (MNH + MVG),
+    });
+  }
+
+  const vw = maxX + MFH_G;
+  const vh = Math.max(maxY + MFV_G, 100);
+
+  return (
+    <svg viewBox={`0 0 ${vw} ${vh}`} width="100%" style={{ display: "block", maxHeight: 220 }} aria-hidden>
+      <defs>
+        <marker id="fp-arrow" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L7,3 z" fill="var(--ink-muted)" />
+        </marker>
+      </defs>
+      {edges.map((e, i) => {
+        const fp = scaledPositions.get(e.from);
+        const tp = scaledPositions.get(e.to);
+        if (!fp || !tp) return null;
+        const x1 = fp.x + MFN_W, y1 = fp.y + MFN_H / 2;
+        const x2 = tp.x, y2 = tp.y + MFN_H / 2;
+        const cx = (x1 + x2) / 2;
+        return (
+          <path key={i} d={`M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`}
+            fill="none" stroke="var(--line-strong)" strokeWidth={1.5}
+            markerEnd="url(#fp-arrow)" />
+        );
+      })}
+      {nodes.map(n => {
+        const p = scaledPositions.get(n.id);
+        if (!p) return null;
+        const isEntry = n.id === entry;
+        // up to two leading capability glyphs, centered in the node body
+        const glyphCaps = n.capabilities.slice(0, 2);
+        const glyphGap = 22;
+        const glyphStartX = MFN_W / 2 - ((glyphCaps.length - 1) * glyphGap) / 2;
+        return (
+          <g key={n.id} transform={`translate(${p.x},${p.y})`}>
+            <rect width={MFN_W} height={MFN_H} rx={8}
+              fill="var(--surface)"
+              stroke={isEntry ? "var(--brand)" : "var(--line-strong)"}
+              strokeWidth={isEntry ? 2 : 1.5}
+            />
+            {isEntry && <rect width={MFN_W} height={4} rx={2} fill="var(--brand)" />}
+            <text x={MFN_W / 2} y={22} textAnchor="middle" fontSize={11} fontWeight={600} fill="var(--ink)" fontFamily="var(--font-sans)">
+              {n.id.length > 14 ? n.id.slice(0, 13) + "…" : n.id}
+            </text>
+            {glyphCaps.length > 0 ? (
+              glyphCaps.map((c, gi) => (
+                <CapGlyph key={c.name} name={c.name} cx={glyphStartX + gi * glyphGap} cy={36} />
+              ))
+            ) : (
+              <circle cx={MFN_W / 2} cy={36} r={3} stroke="var(--ink-muted)" strokeWidth={1.2} fill="none" />
+            )}
+            <text x={MFN_W / 2} y={54} textAnchor="middle" fontSize={8.5} fill="var(--brand)" fontFamily="var(--font-mono)">
+              {n.capabilities.map(c => c.name).join(" · ")}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+export function BuildPreviewModal({ result, onRun, onDiscard }: { result: BuildResult; onRun: () => void; onDiscard: () => void }) {
+  const { agent, graph, attempts, warnings } = result;
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const [rationale, setRationale] = useState<string | null>(null);
+  const [rationaleLoading, setRationaleLoading] = useState(true);
+
+  useEffect(() => {
+    setRationaleLoading(true);
+    void explainBuild(agent.id)
+      .then(r => setRationale(r.rationale))
+      .catch(() => setRationale(null))
+      .finally(() => setRationaleLoading(false));
+  }, [agent.id]);
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onDiscard();
+      if (e.key === "Tab") {
+        const focusable = Array.from(
+          document.getElementById("build-preview-dialog")?.querySelectorAll<HTMLElement>(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          ) ?? []
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0]!;
+        const last = focusable[focusable.length - 1]!;
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onDiscard]);
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(17,32,31,.42)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center", padding: "var(--s6)",
+      }}
+      onClick={e => { if (e.target === e.currentTarget) onDiscard(); }}
+    >
+      <div
+        id="build-preview-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="build-preview-title"
+        className="card"
+        style={{ maxWidth: 680, width: "100%", padding: "var(--s6)", animation: "fade-in 150ms ease forwards" }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "var(--s5)" }}>
+          <div>
+            <h2 id="build-preview-title" className="h2" style={{ marginBottom: "var(--s1)" }}>
+              Agent compiled — review before running
+            </h2>
+            <p className="soft small">
+              {agent.signed.manifest.name} · <span className="mono">{graph.nodes.length}</span> node{graph.nodes.length !== 1 ? "s" : ""} · <span className="mono">{graph.edges.length}</span> edge{graph.edges.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+          <button
+            ref={closeButtonRef}
+            onClick={onDiscard}
+            aria-label="Close"
+            className="btn btn-ghost btn-sm"
+            style={{
+              color: "var(--ink-muted)", fontSize: 20, lineHeight: 1,
+              width: 30, padding: 0, flexShrink: 0,
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        {attempts > 1 && (
+          <div className="small" style={{ marginBottom: "var(--s4)", padding: "var(--s3) var(--s4)", background: "var(--info-tint)", borderRadius: "var(--r)", color: "var(--info)" }}>
+            Self-corrected: succeeded on attempt <span className="mono">{attempts}</span> of <span className="mono">3</span>
+          </div>
+        )}
+
+        {warnings.map((w, i) => (
+          <div key={i} className="small" style={{ marginBottom: "var(--s3)", padding: "var(--s3) var(--s4)", background: "var(--brand-tint)", borderRadius: "var(--r)", color: "var(--brand)" }}>
+            {w}
+          </div>
+        ))}
+
+        <div
+          style={{
+            background: "linear-gradient(180deg, var(--surface) 0%, var(--graph-bg) 100%)",
+            border: "1px solid var(--line)", borderRadius: "var(--r)",
+            padding: "var(--s4)", marginBottom: "var(--s4)", overflow: "auto",
+            boxShadow: "var(--shadow-sm)",
+          }}
+        >
+          <div className="micro" style={{ marginBottom: "var(--s3)" }}>Compiled graph</div>
+          <FullMiniGraph nodes={graph.nodes} edges={graph.edges} entry={graph.entry} />
+        </div>
+
+        {/* architect's rationale — why this graph */}
+        <div style={{
+          marginBottom: "var(--s5)", padding: "var(--s4)",
+          background: "var(--brand-tint)", borderRadius: "var(--r)",
+          border: "1px solid var(--line)",
+          minHeight: 52, display: "flex", alignItems: "flex-start", gap: "var(--s3)",
+        }}>
+          <span aria-hidden="true" style={{ fontSize: 16, flexShrink: 0 }}>✦</span>
+          {rationaleLoading ? (
+            <span className="small" style={{ color: "var(--brand)", fontStyle: "italic" }}>Understanding the design…</span>
+          ) : rationale ? (
+            <p className="small" style={{ color: "var(--ink)", lineHeight: 1.65, margin: 0 }}>{rationale}</p>
+          ) : null}
+        </div>
+
+        {/* divider + lifted node-details panel — clear hierarchy below the graph */}
+        <div className="divider" style={{ margin: "var(--s5) 0" }} />
+        <div
+          style={{
+            marginBottom: "var(--s5)", padding: "var(--s4)",
+            background: "var(--surface)", border: "1px solid var(--line)",
+            borderRadius: "var(--r)", boxShadow: "var(--shadow-sm)",
+          }}
+        >
+          <div className="micro" style={{ marginBottom: "var(--s3)" }}>
+            Node details · <span className="mono">{graph.nodes.length}</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
+          {graph.nodes.map(n => (
+            <div key={n.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "var(--s2) var(--s3)", background: "var(--surface-sunken)", borderRadius: "var(--r)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", minWidth: 0 }}>
+                <span className="small" style={{ fontWeight: 600, color: "var(--ink)", flexShrink: 0 }}>{n.id}</span>
+                {n.id === graph.entry && <span className="micro" style={{ padding: "var(--s1)", background: "var(--brand-tint)", color: "var(--brand)", borderRadius: "var(--r-pill)", flexShrink: 0 }}>entry</span>}
+                <span className="small" style={{ color: "var(--ink-soft)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.role.slice(0, 60)}{n.role.length > 60 ? "…" : ""}</span>
+              </div>
+              <div style={{ display: "flex", gap: "var(--s1)", flexWrap: "wrap", flexShrink: 0, marginLeft: "var(--s3)" }}>
+                {n.capabilities.map(c => (
+                  <span key={c.name} className="mono" style={{ fontSize: 11, padding: "var(--s1)", background: "var(--brand-tint)", color: "var(--brand)", borderRadius: "var(--r-pill)" }}>{c.name}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: "var(--s3)", justifyContent: "flex-end", alignItems: "center" }}>
+          <button className="btn btn-secondary" onClick={onDiscard}>Discard</button>
+          <button className="btn btn-primary btn-lg" onClick={onRun}>
+            Run now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Agent card ────────────────────────────────────────────────────────────────
+
+export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
+  agent: AgentRecord;
+  agentRuns: RunRecord[];
+  onRun: () => void;
+  onDelete: () => void;
+  summary?: string | null;
+}) {
+  const lastRun = agentRuns[0];
+  const runningCount = agentRuns.filter(r => r.status === "running").length;
+  const status = runningCount > 0 ? "running" : lastRun?.status ?? "idle";
+  const nodes = agent.signed.manifest.nodes ?? [];
+  const edges = agent.signed.manifest.edges ?? [];
+  const [confirmRun, setConfirmRun] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleRunClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirmRun) {
+      setConfirmRun(true);
+      confirmTimerRef.current = setTimeout(() => setConfirmRun(false), 3000);
+    } else {
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+      setConfirmRun(false);
+      onRun();
+    }
+  }
+
+  function handleDeleteClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      deleteTimerRef.current = setTimeout(() => setConfirmDelete(false), 3000);
+    } else {
+      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+      setConfirmDelete(false);
+      setDeleting(true);
+      deleteAgent(agent.id).then(onDelete).catch(() => setDeleting(false));
+    }
+  }
+
+  useEffect(() => () => {
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+  }, []);
+
+  return (
+    <a href={`/agents/${agent.id}`} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+      <div
+        className="card card-hover"
+        style={{ padding: "var(--s5)", minHeight: 200, display: "flex", flexDirection: "column", gap: "var(--s4)", cursor: "pointer" }}
+      >
+        {/* header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s2)" }}>
+          <span className="h3 text-truncate" style={{ color: "var(--ink)", flex: 1 }}>
+            {agent.signed.manifest.name}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexShrink: 0 }}>
+            <a
+              href={`/canvas/${agent.id}`}
+              onClick={e => e.stopPropagation()}
+              title="Open canvas"
+              style={{ fontSize: 11, color: "var(--brand)", fontWeight: 600, padding: "var(--s1) var(--s2)", background: "var(--brand-tint)", borderRadius: "var(--r-pill)", textDecoration: "none", lineHeight: 1.6 }}
+            >
+              Canvas ↗
+            </a>
+            <span className={`badge badge-${status === "completed" ? "done" : status === "running" ? "running" : "neutral"}`}>
+              {status === "running" && <span className="dot" />}{status}
+            </span>
+          </div>
+        </div>
+
+        {/* mini graph */}
+        {nodes.length > 0 && (
+          <div style={{
+            background: "var(--graph-bg)", borderRadius: "var(--r)",
+            border: "1px solid var(--line)", padding: "var(--s3)",
+            overflow: "hidden", maxHeight: 90,
+          }}>
+            <MiniGraph nodes={nodes} edges={edges} entry={agent.signed.manifest.entry} />
+          </div>
+        )}
+
+        {/* summary or intent */}
+        {summary ? (
+          <div style={{ flex: 1 }}>
+            <p className="small" style={{ lineHeight: 1.5, color: "var(--ink-soft)", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>
+              {summary}
+            </p>
+            {lastRun && (
+              <a
+                href={`/runs/${lastRun.runId}?tab=explain`}
+                onClick={e => e.stopPropagation()}
+                style={{ fontSize: 11, color: "var(--brand)", fontWeight: 500, display: "inline-block", marginTop: "var(--s1)" }}
+              >
+                View reasoning trace →
+              </a>
+            )}
+          </div>
+        ) : (
+          <p className="small soft" style={{ lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", flex: 1 }}>
+            {summary === null ? (
+              <span style={{ color: "var(--ink-muted)", fontStyle: "italic" }}>Generating summary…</span>
+            ) : agent.signed.provenance.intent}
+          </p>
+        )}
+
+        {/* footer */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            {lastRun && <div className="small muted">last run {timeAgo(lastRun.createdAt)}</div>}
+          </div>
+          <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center" }}>
+            <button
+              onClick={handleDeleteClick}
+              disabled={deleting || status === "running"}
+              className="btn btn-sm btn-danger"
+              style={{ minWidth: 60 }}
+            >
+              {deleting ? "…" : confirmDelete ? "Sure?" : "Delete"}
+            </button>
+            <button
+              onClick={handleRunClick}
+              className="btn btn-sm btn-primary"
+              style={{ minWidth: 72 }}
+            >
+              {confirmRun ? "Confirm?" : "Run now"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </a>
+  );
+}
+
+// ── Hero artifact: a REAL run (signed · cost), or a labelled live example ────────
+// Shared by the homepage hero and the dashboard hero so both render the SAME proof
+// anchor: "this is what you get after you describe a goal." A real completed run
+// links to its signed record; until one exists we show the pre-built example graph,
+// clearly framed as a "live example" — never fabricated proof fields.
+const EXAMPLE_NODES: ManifestNode[] = [
+  { id: "entry", role: "intake", autonomy: "auto", capabilities: [{ name: "web_search", sideEffect: "read", budgetCents: 1 }] },
+  { id: "reason", role: "reason over findings", autonomy: "auto", capabilities: [{ name: "think", sideEffect: "none", budgetCents: 3 }] },
+  { id: "compose", role: "write the digest", autonomy: "auto", capabilities: [{ name: "compose", sideEffect: "none", budgetCents: 2 }] },
+];
+const EXAMPLE_EDGES: ManifestEdge[] = [
+  { from: "entry", to: "reason" },
+  { from: "reason", to: "compose" },
+];
+
+// ── Animated hero: a self-running "agent runs → ledger signs it" loop ─────────
+// Pure SVG + CSS keyframes (defined in globals.css, .heroanim-*), no GIF/image, no
+// libs. Nodes light in sequence; as each executes, its ledger row writes in; a
+// "VERIFIED" seal lands; then we rotate to the NEXT agentic use case and replay.
+// Use cases are real agentic patterns (deep research, autonomous code review,
+// incident triage) — not pre-agentic trigger/connector automation.
+// Honoured by the global prefers-reduced-motion block (shows the final frame).
+interface HeroScene {
+  label: string;
+  nodes: [string, string, string];
+  rows: { hash: string; action: string }[];
+}
+const HERO_SCENES: HeroScene[] = [
+  {
+    label: "deep research",
+    nodes: ["search", "reason", "compose"],
+    rows: [
+      { hash: "e7a2c", action: "agent.build" },
+      { hash: "9f31d", action: "node.search" },
+      { hash: "4b08a", action: "node.reason" },
+      { hash: "c1e6f", action: "node.compose" },
+      { hash: "2da90", action: "event.sign" },
+    ],
+  },
+  {
+    label: "PR review",
+    nodes: ["fetch", "analyze", "flag"],
+    rows: [
+      { hash: "a14d8", action: "agent.build" },
+      { hash: "6b2c0", action: "node.fetch_pr" },
+      { hash: "f90e3", action: "node.analyze" },
+      { hash: "3c7a1", action: "node.flag_risk" },
+      { hash: "88b4e", action: "event.sign" },
+    ],
+  },
+  {
+    label: "incident triage",
+    nodes: ["alert", "correlate", "diagnose"],
+    rows: [
+      { hash: "d52f9", action: "agent.build" },
+      { hash: "11ace", action: "node.read_alert" },
+      { hash: "7e0b6", action: "node.correlate" },
+      { hash: "c44d2", action: "node.diagnose" },
+      { hash: "9a18f", action: "event.sign" },
+    ],
+  },
+];
+
+export function HeroAnimation() {
+  const [scene, setScene] = useState(0);
+  useEffect(() => {
+    // each scene plays its full ~6s cycle, then we rotate.
+    const t = setInterval(() => setScene(s => (s + 1) % HERO_SCENES.length), 6000);
+    return () => clearInterval(t);
+  }, []);
+  const s = HERO_SCENES[scene]!;
+  return (
+    <div className="dark-device heroanim" aria-label="An agent running while each step is signed to a ledger" role="img">
+      <div className="heroanim__eyebrow">
+        <span className="heroanim__live"><span className="heroanim__live-dot" />LIVE</span>
+        <span className="micro">{s.label}</span>
+      </div>
+
+      {/* graph: 3 nodes, edges flow, nodes light in sequence. key on scene to replay. */}
+      <div className="heroanim__graph" key={scene}>
+        <svg viewBox="0 0 320 72" width="100%" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <defs>
+            <marker id="ha-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L6,3 z" fill="var(--dark-line, #2A3331)" />
+            </marker>
+          </defs>
+          <path className="heroanim__edge heroanim__edge--1" d="M86 36 C112 36, 112 36, 132 36" fill="none" stroke="var(--dark-line,#2A3331)" strokeWidth="2" markerEnd="url(#ha-arrow)" />
+          <path className="heroanim__edge heroanim__edge--2" d="M226 36 C252 36, 252 36, 272 36" fill="none" stroke="var(--dark-line,#2A3331)" strokeWidth="2" markerEnd="url(#ha-arrow)" />
+          {[
+            { x: 16,  label: s.nodes[0], cls: "1" },
+            { x: 132, label: s.nodes[1], cls: "2" },
+            { x: 248, label: s.nodes[2], cls: "3" },
+          ].map(n => (
+            <g key={n.cls} className={`heroanim__node heroanim__node--${n.cls}`} transform={`translate(${n.x},16)`}>
+              <rect width="72" height="40" rx="9" fill="var(--dark-node-fill,#14201F)" stroke="var(--dark-line,#2A3331)" strokeWidth="1.4" />
+              <rect className="heroanim__node-bar" width="72" height="3" rx="1.5" fill="var(--dark-brand-bright,#1AA39A)" />
+              <circle className="heroanim__node-dot" cx="36" cy="18" r="4.5" fill="var(--dark-brand-bright,#1AA39A)" />
+              <text x="36" y="32" textAnchor="middle" fontSize="8" fontFamily="var(--font-mono)" fill="var(--dark-ink-soft,#C8C4BC)">{n.label}</text>
+            </g>
+          ))}
+        </svg>
+      </div>
+
+      {/* signed ledger — rows write in as the graph executes */}
+      <div className="heroanim__ledger" key={`l${scene}`}>
+        {s.rows.map((r, i) => (
+          <div key={r.hash} className={`heroanim__row heroanim__row--${i}`}>
+            <span className="heroanim__check" aria-hidden="true">✓</span>
+            <span className="heroanim__hash">{r.hash}</span>
+            <span className="heroanim__sep">::</span>
+            <span className="heroanim__action">{r.action}</span>
+            <span className="heroanim__cost">signed</span>
+          </div>
+        ))}
+      </div>
+
+      {/* the payoff seal */}
+      <div className="heroanim__seal" key={`s${scene}`}>
+        <span className="heroanim__seal-mark" aria-hidden="true">✓</span>
+        <span className="heroanim__seal-text">VERIFIED</span>
+        <span className="heroanim__seal-sub">run signed · replayable</span>
+      </div>
+    </div>
+  );
+}
+
+export function HeroArtifact({ run }: { run: RunRecord | null }) {
+  if (run) {
+    return (
+      <a
+        href={`/runs/${run.runId}`}
+        className="dark-device"
+        style={{ display: "block", padding: "var(--s5)", textDecoration: "none" }}
+        aria-label={`Open the signed record for ${run.manifestName}`}
+      >
+        <div className="micro" style={{ marginBottom: "var(--s3)" }}>A real run · {timeAgo(run.createdAt)}</div>
+        <div className="dark-surface-2" style={{ borderRadius: "var(--r)", padding: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
+          <div className="dark-ink" style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-0.01em" }}>{run.manifestName}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap" }}>
+            <span className="dark-verify-seal__mark" aria-hidden="true">✓</span>
+            <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>signed</span>
+            <span className="dark-ink-muted" aria-hidden="true">·</span>
+            <span className="dark-ink-soft mono" style={{ fontSize: 13 }}>{run.status === "completed" ? "finished" : run.status}</span>
+          </div>
+          <div className="dark-ink-muted small">Every step is recorded and can be replayed.</div>
+        </div>
+        <div className="dark-teal mono" style={{ marginTop: "var(--s4)", fontSize: 12, fontWeight: 600 }}>Open this record →</div>
+      </a>
+    );
+  }
+  return (
+    <div className="dark-device" style={{ padding: "var(--s5)" }}>
+      <div className="micro" style={{ marginBottom: "var(--s3)" }}>Live example · research digest</div>
+      <div className="dark-surface-2" style={{ borderRadius: "var(--r)", padding: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
+        <div style={{ background: "var(--dark-node-fill)", borderRadius: "var(--r)", padding: "var(--s5)", border: "1px solid var(--dark-line)" }}>
+          <MiniGraph nodes={EXAMPLE_NODES} edges={EXAMPLE_EDGES} entry="entry" variant="dark" maxHeight={120} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap" }}>
+          <span className="dark-verify-seal__mark" aria-hidden="true">✓</span>
+          <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>signed</span>
+          <span className="dark-ink-muted" aria-hidden="true">·</span>
+          <span className="dark-ink-soft mono" style={{ fontSize: 13 }}>3 steps</span>
+        </div>
+        <div className="dark-ink-muted small">Build your own below — your real runs show up here.</div>
+      </div>
+    </div>
+  );
+}

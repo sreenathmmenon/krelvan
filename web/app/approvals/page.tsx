@@ -3,11 +3,123 @@
 import { useState, useEffect, useCallback } from "react";
 import { listApprovals, resolveApproval, timeAgo, type PendingApproval } from "../../lib/api";
 
-const CAP_ICON: Record<string, string> = {
-  think: "🧠", recall: "📚", remember: "💾", llm_route: "🔀",
-  web_search: "🔍", compose: "✍️", telegram_send: "📨", email_send: "📧",
-  slack_send: "💬", http_post: "📤", http_get: "🌐", text_transform: "🔤",
-  notify_webhook: "🔔",
+// ── Teal geometric capability glyphs ────────────────────────────────────────
+// Authored on a 16×16 grid, stroked in --brand, matching the homepage / _builder
+// CapGlyph house style. No emoji anywhere in the UI — every capability gets a
+// calm vector mark with a graceful neutral fallback for unknown ids.
+function capGlyphPaths(name: string): React.ReactNode {
+  switch (name) {
+    case "think": // concentric ring + core — reasoning
+      return (
+        <>
+          <circle cx="8" cy="8" r="5.2" stroke="var(--brand)" strokeWidth="1.3" fill="none" />
+          <circle cx="8" cy="8" r="1.7" fill="var(--brand)" />
+        </>
+      );
+    case "recall": // open book
+      return (
+        <>
+          <path d="M2.5 3.2h4.2c.7 0 1.3.6 1.3 1.3v8.3c0-.7-.6-1.3-1.3-1.3H2.5V3.2z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <path d="M13.5 3.2H9.3c-.7 0-1.3.6-1.3 1.3v8.3c0-.7.6-1.3 1.3-1.3h4.2V3.2z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+        </>
+      );
+    case "remember": // disk / save
+      return (
+        <>
+          <path d="M3 3h7.5L13 5.5V13H3V3z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <rect x="5.5" y="3" width="5" height="3" stroke="var(--brand)" strokeWidth="1.1" fill="none" />
+          <rect x="5" y="8.5" width="6" height="3.5" stroke="var(--brand)" strokeWidth="1.1" fill="none" />
+        </>
+      );
+    case "llm_route": // branch / route
+      return (
+        <>
+          <path d="M3 8h3.5M9.5 4.5L12.5 4.5M9.5 11.5L12.5 11.5M6.5 8c1.2 0 1.6-3.5 3-3.5M6.5 8c1.2 0 1.6 3.5 3 3.5" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+          <path d="M11 3l1.8 1.5L11 6M11 10l1.8 1.5L11 13" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      );
+    case "web_search": // magnifying glass
+      return (
+        <>
+          <circle cx="7" cy="7" r="4" stroke="var(--brand)" strokeWidth="1.3" fill="none" />
+          <path d="M10 10l3.2 3.2" stroke="var(--brand)" strokeWidth="1.4" strokeLinecap="round" />
+        </>
+      );
+    case "compose":
+    case "text_transform": // pen / write
+      return (
+        <>
+          <path d="M3 13l1-3 6.5-6.5 2 2L6 12l-3 1z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <path d="M10 4.5l1.5-1.5 2 2L12 6.5" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+        </>
+      );
+    case "http_get":
+    case "http_post": // globe
+      return (
+        <>
+          <circle cx="8" cy="8" r="5.2" stroke="var(--brand)" strokeWidth="1.2" fill="none" />
+          <path d="M2.8 8h10.4M8 2.8c1.6 1.4 2.4 3.3 2.4 5.2S9.6 12.8 8 13.2C6.4 12.8 5.6 10.9 5.6 8S6.4 4.2 8 2.8z" stroke="var(--brand)" strokeWidth="1.1" fill="none" />
+        </>
+      );
+    case "telegram_send":
+    case "email_send": // envelope / send
+      return (
+        <>
+          <rect x="2.5" y="4" width="11" height="8" rx="1" stroke="var(--brand)" strokeWidth="1.2" fill="none" />
+          <path d="M3 4.8l5 4 5-4" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      );
+    case "slack_send": // chat bubble
+      return (
+        <>
+          <path d="M3 4.5h10v6H7l-3 2.5v-2.5H3v-6z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+        </>
+      );
+    case "notify_webhook": // bell
+      return (
+        <>
+          <path d="M8 2.6c2 0 3.3 1.5 3.3 3.4v2.4l1.2 1.8H3.5l1.2-1.8V6c0-1.9 1.3-3.4 3.3-3.4z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <path d="M6.6 12.2c.2.8.8 1.2 1.4 1.2s1.2-.4 1.4-1.2" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+        </>
+      );
+    default: // unknown capability — neutral rounded square + core
+      return (
+        <>
+          <rect x="3.5" y="3.5" width="9" height="9" rx="2" stroke="var(--brand)" strokeWidth="1.2" fill="none" />
+          <circle cx="8" cy="8" r="1.6" fill="var(--brand)" />
+        </>
+      );
+  }
+}
+
+// Boxed capability glyph for an approval card header — a teal-tinted tile that
+// reads as a quiet system mark, never decorative.
+function CapGlyph({ name }: { name: string }) {
+  return (
+    <span className="cap-glyph" aria-hidden="true">
+      <svg viewBox="0 0 16 16" width="18" height="18" fill="none">
+        {capGlyphPaths(name)}
+      </svg>
+    </span>
+  );
+}
+
+// Human-readable capability label so the card header reads in plain language
+// rather than the raw internal id (telegram_send → "Send a Telegram message").
+const CAP_LABEL: Record<string, string> = {
+  think: "Reason over context",
+  recall: "Recall from memory",
+  remember: "Write to memory",
+  llm_route: "Route a decision",
+  web_search: "Search the web",
+  compose: "Compose text",
+  telegram_send: "Send a Telegram message",
+  email_send: "Send an email",
+  slack_send: "Post to Slack",
+  http_post: "Send an HTTP request",
+  http_get: "Fetch over HTTP",
+  text_transform: "Transform text",
+  notify_webhook: "Send a webhook",
 };
 
 const CAP_RISK: Record<string, { level: "low" | "medium" | "high"; label: string }> = {
@@ -25,18 +137,24 @@ const CAP_RISK: Record<string, { level: "low" | "medium" | "high"; label: string
   http_get:       { level: "low",    label: "External HTTP read" },
 };
 
-function RiskBadge({ capability }: { capability: string }) {
-  const risk = CAP_RISK[capability] ?? { level: "medium", label: "External action" };
-  const colors = {
-    low:    { bg: "var(--ok-tint)",      fg: "var(--ok)" },
-    medium: { bg: "var(--live-tint)",    fg: "var(--live)" },
-    high:   { bg: "var(--danger-tint)",  fg: "var(--danger)" },
-  }[risk.level];
-  return (
-    <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: "var(--r-pill)", fontWeight: 600, background: colors.bg, color: colors.fg }}>
-      {risk.level.toUpperCase()} RISK
-    </span>
-  );
+// Risk level → badge variant. Amber (--live) is reserved for live/energy only,
+// so a static risk descriptor never uses it: low=done(ok), medium=info, high=failed(danger).
+const RISK_BADGE_CLASS: Record<"low" | "medium" | "high", string> = {
+  low:    "badge badge-done",
+  medium: "badge badge-info",
+  high:   "badge badge-failed",
+};
+
+// Left accent + accent ink per risk level — gives each card a calm, legible
+// severity read at a glance without ever borrowing amber (live-only).
+const RISK_ACCENT: Record<"low" | "medium" | "high", string> = {
+  low:    "var(--ok)",
+  medium: "var(--info)",
+  high:   "var(--danger)",
+};
+
+function riskFor(capability: string): { level: "low" | "medium" | "high"; label: string } {
+  return CAP_RISK[capability] ?? { level: "medium", label: "External action" };
 }
 
 function ApprovalCard({
@@ -47,9 +165,9 @@ function ApprovalCard({
   onResolve: (correlationId: string, runId: string, decision: "approve" | "deny") => Promise<void>;
 }) {
   const [resolving, setResolving] = useState<"approve" | "deny" | null>(null);
-  const icon = CAP_ICON[approval.capability] ?? "⚙️";
-  const risk = CAP_RISK[approval.capability] ?? { level: "medium", label: "External action" };
-  const isHigh = risk.level === "high";
+  const label = CAP_LABEL[approval.capability] ?? approval.capability;
+  const risk = riskFor(approval.capability);
+  const accent = RISK_ACCENT[risk.level];
 
   async function handle(decision: "approve" | "deny") {
     setResolving(decision);
@@ -63,58 +181,77 @@ function ApprovalCard({
   return (
     <div className="card" style={{
       padding: "var(--s5)",
-      borderLeft: `3px solid ${isHigh ? "var(--danger)" : "var(--live)"}`,
-      animation: "fade-in 200ms ease forwards",
+      borderLeft: `3px solid ${accent}`,
+      animation: "fade-in 200ms var(--ease) forwards",
     }}>
       {/* header row */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "var(--s4)", gap: "var(--s4)" }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--s3)", minWidth: 0 }}>
-          <span style={{ fontSize: 28, lineHeight: 1, flexShrink: 0 }}>{icon}</span>
+          <CapGlyph name={approval.capability} />
           <div style={{ minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap", marginBottom: "var(--s1)" }}>
-              <span style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>{approval.capability}</span>
-              <RiskBadge capability={approval.capability} />
+              <span className="h3" style={{ color: "var(--ink)" }}>{label}</span>
+              <span className={RISK_BADGE_CLASS[risk.level]}>
+                <span className="dot" aria-hidden="true" />
+                {risk.level.toUpperCase()} RISK
+              </span>
             </div>
-            <div style={{ fontSize: 12, color: "var(--ink-soft)" }}>
+            <div className="small soft">
               <span style={{ fontWeight: 500, color: "var(--brand)" }}>{approval.agentName}</span>
-              <span style={{ color: "var(--ink-muted)" }}> › </span>
-              <span>node: <strong>{approval.nodeId}</strong></span>
+              <span style={{ color: "var(--ink-muted)" }}> · </span>
+              <span className="mono">{approval.nodeId}</span>
             </div>
-            <div style={{ fontSize: 11, color: "var(--ink-muted)", marginTop: 2 }}>{risk.label}</div>
+            <div className="small" style={{ marginTop: "var(--s1)", color: "var(--ink-soft)" }}>{risk.label}</div>
           </div>
         </div>
-        <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "var(--s1)", flexShrink: 0 }}>
+          <span className="approval-waiting" title="This run is paused, waiting on your decision">
+            <span className="approval-waiting__dot" aria-hidden="true" />
+            waiting
+          </span>
           <div className="small muted">{timeAgo(approval.requestedAt)}</div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-muted)", marginTop: 2 }}>{approval.runId.slice(0, 24)}</div>
+          <div className="mono micro" style={{ textTransform: "none", letterSpacing: 0, color: "var(--ink-muted)" }}>{approval.capability}</div>
         </div>
       </div>
 
-      {/* correlation ID row */}
-      <div style={{ background: "var(--surface-sunken)", borderRadius: "var(--r)", padding: "var(--s2) var(--s3)", marginBottom: "var(--s4)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span className="micro">Correlation ID</span>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-soft)" }}>{approval.correlationId}</span>
+      {/* correlation ID row — the stable handle that links this gate to its run */}
+      <div style={{ background: "var(--surface-sunken)", borderRadius: "var(--r)", padding: "var(--s2) var(--s3)", marginBottom: "var(--s4)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--s3)" }}>
+        <span className="micro" style={{ flexShrink: 0 }}>Correlation ID</span>
+        <span className="mono small text-truncate" style={{ color: "var(--ink-soft)", minWidth: 0 }}>{approval.correlationId}</span>
       </div>
 
       {/* action buttons */}
-      <div style={{ display: "flex", gap: "var(--s3)", justifyContent: "flex-end" }}>
-        <a href={`/runs/${approval.runId}`} className="btn btn-secondary btn-sm" style={{ fontSize: 12 }}>
+      <div className="approval-actions" style={{ display: "flex", gap: "var(--s3)", justifyContent: "flex-end", alignItems: "center" }}>
+        <a href={`/runs/${approval.runId}`} className="btn btn-ghost btn-sm approval-view" style={{ marginRight: "auto" }}>
           View run →
         </a>
         <button
-          className="btn btn-sm"
-          style={{ background: "var(--danger-tint)", color: "var(--danger)", border: "none", fontWeight: 600, opacity: resolving ? .6 : 1 }}
+          className="btn btn-sm btn-danger approval-resolve"
           disabled={resolving !== null}
           onClick={() => void handle("deny")}
         >
-          {resolving === "deny" ? "Denying…" : "✗ Deny"}
+          {resolving === "deny" ? "Denying…" : (
+            <>
+              <svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none">
+                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+              Deny
+            </>
+          )}
         </button>
         <button
-          className="btn btn-primary btn-sm"
-          style={{ fontWeight: 600, opacity: resolving ? .6 : 1 }}
+          className="btn btn-sm btn-primary"
           disabled={resolving !== null}
           onClick={() => void handle("approve")}
         >
-          {resolving === "approve" ? "Approving…" : "✓ Approve"}
+          {resolving === "approve" ? "Approving…" : (
+            <>
+              <svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none">
+                <path d="M3.5 8.5l3 3 6-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Approve
+            </>
+          )}
         </button>
       </div>
     </div>
@@ -124,6 +261,7 @@ function ApprovalCard({
 export default function ApprovalsPage() {
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
@@ -131,7 +269,10 @@ export default function ApprovalsPage() {
     try {
       const a = await listApprovals();
       setApprovals(a);
-    } catch { /* API unreachable */ }
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message || "Could not reach the Krelvan API.");
+    }
     finally { setLoading(false); }
   }, []);
 
@@ -159,67 +300,93 @@ export default function ApprovalsPage() {
   }
 
   const visible = approvals.filter(a => !resolvedIds.has(a.correlationId));
+  const highCount = visible.filter(a => riskFor(a.capability).level === "high").length;
 
   return (
     <div style={{ minHeight: "100vh" }}>
 
       {/* toast */}
       {toast && (
-        <div style={{
-          position: "fixed", top: "var(--s6)", right: "var(--s6)", zIndex: 2000,
-          padding: "var(--s3) var(--s5)", borderRadius: "var(--r)",
-          background: toast.ok ? "var(--ok)" : "var(--danger)", color: "white",
-          fontSize: 13, fontWeight: 600, boxShadow: "var(--shadow-md)",
-          animation: "fade-in 150ms ease forwards",
-        }}>
+        <div role="status" className={`toast small${toast.ok ? "" : " toast-error"}`}>
           {toast.msg}
         </div>
       )}
 
       {/* header */}
-      <div style={{ borderBottom: "1px solid var(--line)", background: "var(--surface)", padding: "var(--s6) 0" }}>
+      <div style={{ borderBottom: "1px solid var(--line)", background: "var(--surface)", padding: "var(--s7) 0" }}>
         <div className="container">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-.02em", marginBottom: "var(--s1)" }}>
-                Approvals
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s5)", flexWrap: "wrap" }}>
+            <div style={{ minWidth: 0 }}>
+              <p className="micro" style={{ marginBottom: "var(--s3)" }}>Human-in-the-loop</p>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", marginBottom: "var(--s2)", flexWrap: "wrap" }}>
+                <h1 className="h1" style={{ margin: 0 }}>Approvals</h1>
                 {visible.length > 0 && (
-                  <span style={{ marginLeft: "var(--s3)", fontSize: 13, fontWeight: 600, padding: "2px 10px", borderRadius: "var(--r-pill)", background: "var(--live-tint)", color: "var(--live)" }}>
-                    {visible.length} pending
+                  <span className="badge badge-running" title="Runs are paused, waiting on your decision">
+                    <span className="dot" aria-hidden="true" />
+                    <span className="mono">{visible.length}</span> waiting on you
                   </span>
                 )}
-              </h1>
-              <p className="soft" style={{ fontSize: 14 }}>
-                Agents with <code style={{ fontSize: 12, background: "var(--surface-sunken)", padding: "1px 5px", borderRadius: 4 }}>act-with-veto</code> or <code style={{ fontSize: 12, background: "var(--surface-sunken)", padding: "1px 5px", borderRadius: 4 }}>suggest</code> autonomy pause here before acting.
+                {highCount > 0 && (
+                  <span className="badge badge-failed">
+                    <span className="dot" aria-hidden="true" />
+                    <span className="mono">{highCount}</span> high risk
+                  </span>
+                )}
+              </div>
+              <p className="soft body-lg" style={{ margin: 0, maxWidth: "60ch" }}>
+                Some agents pause and ask before they act. Review what each one
+                wants to do, then approve to let it continue or deny to stop it.
               </p>
             </div>
-            <button className="btn btn-secondary btn-sm" onClick={() => void load()}>
-              Refresh
+            <button className="btn btn-ghost btn-sm" onClick={() => void load()}>
+              ↻ Refresh
             </button>
           </div>
         </div>
       </div>
 
       {/* content */}
-      <div className="container" style={{ paddingTop: "var(--s6)", paddingBottom: "var(--s9)" }}>
+      <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
 
-        {loading && <p className="soft small">Loading…</p>}
+        {loading && (
+          <div className="state-loading">
+            <span className="spinner" aria-hidden="true" />
+            <span>Loading approvals…</span>
+          </div>
+        )}
 
-        {!loading && visible.length === 0 && (
-          <div style={{
-            padding: "var(--s9)", textAlign: "center",
-            border: "1.5px dashed var(--line-strong)", borderRadius: "var(--r)",
-            color: "var(--ink-muted)",
-          }}>
-            <div style={{ fontSize: 40, marginBottom: "var(--s4)" }}>✓</div>
-            <p style={{ fontSize: 15, fontWeight: 600, marginBottom: "var(--s2)", color: "var(--ok)" }}>No pending approvals</p>
-            <p className="small muted">
-              When an agent reaches a node with <strong>act-with-veto</strong> or <strong>suggest</strong> autonomy,<br />
-              it will pause here and wait for your decision before continuing.
+        {/* error — API unreachable; keep it actionable, never a blank screen */}
+        {!loading && error && visible.length === 0 && (
+          <div role="alert" className="state-error" style={{ justifyContent: "space-between", maxWidth: 720 }}>
+            <span>{error}</span>
+            <button className="btn btn-danger btn-sm" onClick={() => void load()} style={{ flexShrink: 0 }}>
+              Retry
+            </button>
+          </div>
+        )}
+
+        {/* empty — resolved & settled; trustworthy, never broken-looking */}
+        {!loading && !error && visible.length === 0 && (
+          <div className="state-empty" style={{ padding: "var(--s9) var(--s6)", maxWidth: 720, margin: "0 auto" }}>
+            <div aria-hidden="true" style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: 48, height: 48, borderRadius: "var(--r-pill)",
+              background: "var(--ok-tint)", color: "var(--ok)",
+            }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <p className="h3" style={{ color: "var(--ink)" }}>All approvals have been resolved</p>
+            <p className="body-lg soft" style={{ maxWidth: "44ch", margin: 0 }}>
+              Nothing is waiting on you. When an agent reaches a step that needs
+              a human go-ahead, it pauses here and waits for your decision before
+              continuing.
             </p>
           </div>
         )}
 
+        {/* pending approval cards */}
         {visible.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--s4)", maxWidth: 720 }}>
             {visible.map(a => (
@@ -232,19 +399,19 @@ export default function ApprovalsPage() {
           </div>
         )}
 
-        {/* Explanation panel */}
+        {/* explanation panel — how the human-in-the-loop gate works */}
         {!loading && (
-          <div className="card" style={{ padding: "var(--s5)", marginTop: "var(--s7)", maxWidth: 720, background: "var(--brand-tint)", border: "1px solid rgba(14,124,117,.15)" }}>
-            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: "var(--s3)", color: "var(--brand)" }}>How HITL autonomy works</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "var(--s3)" }}>
+          <div className="card" style={{ padding: "var(--s5)", marginTop: "var(--s7)", maxWidth: 720, background: "var(--brand-tint)", border: "1px solid var(--brand-ring)" }}>
+            <div className="h3" style={{ marginBottom: "var(--s4)", color: "var(--brand)" }}>How an agent decides whether to pause</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
               {[
-                { autonomy: "full", desc: "Agent acts immediately — no gate. Use for read-only or low-risk nodes." },
-                { autonomy: "act-with-veto", desc: "Agent proposes the action, pauses here. You can approve or deny before it executes." },
-                { autonomy: "suggest", desc: "Like act-with-veto but framed as a recommendation. Agent always pauses for human review." },
+                { autonomy: "full", desc: "Acts immediately — no gate. Used for read-only or low-risk steps." },
+                { autonomy: "act-with-veto", desc: "Proposes the action and pauses here. You approve or deny before it runs." },
+                { autonomy: "suggest", desc: "Frames the action as a recommendation. Always pauses for your review." },
               ].map(row => (
                 <div key={row.autonomy} style={{ display: "flex", gap: "var(--s3)", alignItems: "baseline" }}>
-                  <code style={{ fontSize: 11, padding: "2px 7px", background: "var(--surface)", border: "1px solid var(--line-strong)", borderRadius: 4, flexShrink: 0, fontFamily: "var(--font-mono)", color: "var(--brand)" }}>{row.autonomy}</code>
-                  <span style={{ fontSize: 13, color: "var(--ink-soft)" }}>{row.desc}</span>
+                  <code className="mono small" style={{ padding: "var(--s1) var(--s2)", background: "var(--surface)", border: "1px solid var(--line-strong)", borderRadius: "var(--r-sm)", flexShrink: 0, color: "var(--brand)" }}>{row.autonomy}</code>
+                  <span className="small soft">{row.desc}</span>
                 </div>
               ))}
             </div>

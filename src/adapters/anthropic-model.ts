@@ -48,6 +48,11 @@ export class AnthropicModel implements ModelPort {
       const p = cfg.llmConfig?.provider ?? process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
       if (p === "openai") return "gpt-4o";
       if (p === "ollama") return "llama3.2";
+      if (p === "gemini") return "gemini-2.0-flash";
+      if (p === "groq") return "llama-3.3-70b-versatile";
+      if (p === "mistral") return "mistral-large-latest";
+      // "compatible" has no safe default — the user must set KRELVAN_LLM_MODEL.
+      if (p === "compatible") return "";
       return "claude-sonnet-4-6";
     })();
     this.model = cfg.model ?? process.env["KRELVAN_LLM_MODEL"] ?? providerDefault;

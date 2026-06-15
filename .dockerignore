@@ -1,0 +1,14 @@
+node_modules
+web/node_modules
+dist
+web/.next
+data
+.env
+.env.local
+web/.env.local
+*.db
+*.db-shm
+*.db-wal
+.git
+.DS_Store
+npm-debug.log*

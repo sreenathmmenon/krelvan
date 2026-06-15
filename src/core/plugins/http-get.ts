@@ -58,6 +58,30 @@ function parseOptionalHeaders(raw: unknown): Record<string, string> {
   return {};
 }
 
+/** First http(s) URL appearing in a string, or null. */
+function firstUrlIn(text: unknown): string | null {
+  if (typeof text !== "string") return null;
+  // Stop at whitespace, closing bracket/paren/quote, or a trailing sentence period.
+  const m = text.match(/https?:\/\/[^\s)\]}>"'`]+/);
+  if (!m) return null;
+  // Trim a trailing period that is sentence punctuation, not part of the URL.
+  return m[0].replace(/[.,;]+$/, "");
+}
+
+/**
+ * Resolve the URL to fetch from run state, in precedence order:
+ *   1. input.url  2. input["<nodeId>.url"]  3. a URL embedded in the node's role text.
+ */
+function resolveUrl(input: Record<string, unknown>, nodeId: string): string | null {
+  const explicit = input["url"];
+  if (typeof explicit === "string" && explicit.trim() !== "") return explicit.trim();
+
+  const scoped = input[`${nodeId}.url`];
+  if (typeof scoped === "string" && scoped.trim() !== "") return scoped.trim();
+
+  return firstUrlIn(input[`${nodeId}.role`]) ?? firstUrlIn(input["role"]);
+}
+
 export const httpGetCapability: CapabilityPlugin = {
   name: "http_get",
   sideEffect: "read",
@@ -67,9 +91,15 @@ export const httpGetCapability: CapabilityPlugin = {
   async invoke(call: EffectCall): Promise<{ output: unknown; claimedCostCents: number }> {
     const input = call.input as Record<string, unknown>;
 
-    // ── Input validation ──────────────────────────────────────────────────────
-
-    const rawUrl = input["url"];
+    // ── URL resolution ────────────────────────────────────────────────────────
+    // Precedence:
+    //   1. explicit `url` key in run state (a prior step or seed set it),
+    //   2. a node-scoped `<nodeId>.url` key,
+    //   3. an http(s):// URL embedded in this node's role text.
+    // (3) lets the compiler express the target purely in the node role — e.g.
+    // "Fetch ... from https://hn.algolia.com/..." — without the manifest needing
+    // a separate seed key, which is the common single-call fetch pattern.
+    const rawUrl = resolveUrl(input, call.nodeId);
     if (!rawUrl || typeof rawUrl !== "string" || rawUrl.trim() === "") {
       return {
         output: { ok: false, error: "url is required" },

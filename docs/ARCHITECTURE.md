@@ -1,4 +1,4 @@
-# Genesis — Architecture Deep Dive
+# Krelvan — Architecture Deep Dive
 
 *A complete map of genesis-new as built today: every layer, every file, every
 design decision, and exactly why each one exists. Start here if you're new to the
@@ -15,7 +15,7 @@ codebase or returning after time away.*
 > **The ledger IS the runtime.**
 
 Execution is not a side effect of calling code. It is a *projection* of an
-append-only, content-addressed, signed event log. The canvas, the cost meter, the
+append-only, content-addressed, signed event log. The canvas, the
 audit timeline, and agent memory are all pure *reads* (folds) of that one log.
 
 This means:
@@ -35,7 +35,7 @@ This means:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  web/           Next.js UI — canvas, trace, cost meter    │  (not yet built)
+│  web/           Next.js UI — canvas, trace, audit    │  (built, port 3100)
 └─────────────────────────┬────────────────────────────────┘
                           │  REST / WebSocket
 ┌─────────────────────────┴────────────────────────────────┐
@@ -559,7 +559,7 @@ Implements `ModelPort` against the Anthropic API.
 
 ## What's built vs. what's next
 
-### Built and verified (82/82 tests, typecheck clean)
+### Built and verified (167/170 tests, typecheck clean)
 
 | Subsystem | Files | Status |
 |---|---|---|
@@ -578,7 +578,7 @@ Implements `ModelPort` against the Anthropic API.
 
 | What | Why it's next |
 |---|---|
-| Web UI / canvas (`web/`) | The visible "wow" — canvas, live trace, cost meter, time-travel |
+| Web UI / canvas (`web/`) | The visible "wow" — canvas, live trace, audit, time-travel |
 | Postgres store adapter | Multi-tenant / hosted scale (same `LedgerStore` port) |
 | MCP tool adapter | Open ecosystem — any MCP server becomes a usable capability |
 | Telegram / Slack channel adapter | Conversational interface; needed for the live demo |
@@ -591,16 +591,18 @@ Implements `ModelPort` against the Anthropic API.
 cd /Users/sreenath/Code/myAIExps/genesis-new
 npm install
 npm run typecheck        # strict TS, should be clean
-npm test                 # 82/82 passing
+npm test                 # 167/170 passing (3 live-model tests need a key)
 
 npm run demo:ledger      # canvas + cost + audit all fold from one log
 npm run demo:resume      # kill mid-run; each irreversible effect runs exactly once
 npm run demo:e2e         # real 3-agent pipeline drives itself off the ledger
 npm run demo:compile     # intent → compiled+signed manifest → run
-npm run demo:live        # (needs GENESIS_ANTHROPIC_KEY) real Anthropic model call
+npm run demo:live        # (needs KRELVAN_ANTHROPIC_KEY) real Anthropic model call
 ```
 
-Web UI (`web/`): `localhost:3200` — not yet built as of this writing.
+Web UI (`web/`): `localhost:3100` — built (landing + NL builder, dashboard, runs,
+run detail with diagnosis + retry-with-fix, agent detail, interactive canvas,
+capabilities marketplace, MCP, approvals, schedules).
 
 ---
 

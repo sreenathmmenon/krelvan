@@ -1,4 +1,4 @@
-# Genesis — Developer Workflow
+# Krelvan — Developer Workflow
 
 How to run, build, and develop in this repository.
 
@@ -15,10 +15,10 @@ How to run, build, and develop in this repository.
 Copy `.env.example` (if present) or create `.env` at the root:
 
 ```
-GENESIS_ANTHROPIC_KEY=sk-ant-...        # required for demo:live and the API
-GENESIS_LLM_PROVIDER=anthropic          # anthropic | openai | ollama
-GENESIS_LLM_MODEL=claude-sonnet-4-5    # or gpt-4o or qwen2.5:14b
-GENESIS_DATA_DIR=./data                 # where ledger.db, agents.json, etc. live
+KRELVAN_ANTHROPIC_KEY=sk-ant-...        # required for demo:live and the API
+KRELVAN_LLM_PROVIDER=anthropic          # anthropic | openai | ollama
+KRELVAN_LLM_MODEL=claude-sonnet-4-5    # or gpt-4o or qwen2.5:14b
+KRELVAN_DATA_DIR=./data                 # where ledger.db, agents.json, etc. live
 ```
 
 Copy `web/.env.local.example` or create `web/.env.local`:
@@ -34,7 +34,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3201
 ```bash
 # From repo root
 npm run typecheck          # strict TypeScript — must be clean before any commit
-npm test                   # 82 tests, must be green
+npm test                   # tests must be green (167/170)
 
 # Start the API server (port 3201)
 npm run start:api          # or: node --loader ts-node/esm src/api/index.ts
@@ -47,7 +47,7 @@ npm run demo:ledger        # views fold from one verified log
 npm run demo:resume        # crash + resume, each irreversible effect runs exactly once
 npm run demo:e2e           # real multi-agent pipeline off the ledger
 npm run demo:compile       # intent → compiled+signed manifest → run
-npm run demo:live          # needs GENESIS_ANTHROPIC_KEY — real model proposes a workflow
+npm run demo:live          # needs KRELVAN_ANTHROPIC_KEY — real model proposes a workflow
 ```
 
 ---
@@ -90,7 +90,7 @@ genesis-new/
 │   │   └── mcp/         # MCP client (JSON-RPC 2.0 over stdio/HTTP)
 │   ├── adapters/        # I/O adapters outside the core (Anthropic, OpenAI, Ollama)
 │   ├── infrastructure/  # concrete persistence (SQLite plugin repo)
-│   ├── api/             # HTTP server, GenesisRuntime wiring, scheduler
+│   ├── api/             # HTTP server, KrelvanRuntime wiring, scheduler
 │   └── demo/            # runnable end-to-end demos
 ├── web/                 # Next.js 15 frontend (port 3100)
 │   ├── app/             # pages: /, agents/[id], runs/, canvas/[agentId], etc.

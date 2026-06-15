@@ -1,84 +1,198 @@
-# Genesis (core)
+<div align="center">
 
-*Own, run, and trust your own AI agents. The ledger is the runtime.*
+# Krelvan
 
-This is the ground-up TypeScript core, built to the target architecture in
-`../genesis/docs/` (ARCHITECT_FUTURE_PLAN, TARGET_ARCHITECTURE, INTERNAL_ARCHITECTURE).
-It is being built bottom-up, each layer proven by tests before the next.
+### Own, run, and *trust* your own AI agents.
+
+**Describe a goal in plain English. Krelvan builds a real agent, runs it, and keeps a
+signed, replayable record of every step it took — self-hosted, on your machine, yours to keep.**
+
+`The ledger is the runtime` · Self-hostable · Apache-2.0 · Zero runtime deps in core
+
+</div>
+
+---
+
+## Why Krelvan
+
+Every AI-agent platform can *describe* what an agent will do. Krelvan can **prove what it
+actually did** — and reason about it.
+
+Every run is recorded to an **append-only, content-addressed, cryptographically signed
+event log**. The visual canvas, the audit timeline, and the run history are all *reads*
+(folds) of that one log. So **"what you see is exactly what executed" is structural, not
+hopeful.** That single design choice is the difference between a workflow runner and a
+platform you can hand to a regulator, a customer, or a security review.
+
+On top of that record, Krelvan does things only an agentic platform can:
+
+- 🧠 **Builds agents from natural language** — describe an outcome, get a real, validated agent graph.
+- 🔍 **Failure-reasoning** — when a run fails, Krelvan reasons over the signed log to find the *root cause*, the failing step, and a concrete fix.
+- ♻️ **Auto-retry-with-fix** — it rebuilds a *corrected* agent from that diagnosis and re-runs it. (In our tests: a failed run was diagnosed, fixed, re-run, and **completed**.)
+- 🧩 **A capability marketplace** — install tools (HTTP APIs, MCP servers) from a Git-based registry. Every capability is labelled with exactly what it can touch and when it pauses for your approval.
+- 🔌 **7 LLM providers** — Anthropic, OpenAI, Gemini, Groq, Mistral, Ollama (local), or any OpenAI-compatible gateway.
+
+---
+
+## Run it in 60 seconds
+
+The web UI and API boot with **no secrets**. LLM features (building agents, explanations,
+diagnosis) switch on when you add a provider key.
+
+**Option A — one command (Node 22+):**
+
+```bash
+git clone <this-repo> krelvan && cd krelvan
+npm install
+npx krelvan          # builds core + web on first run, then starts both
+```
+
+```
+Web UI   http://localhost:3100
+API      http://localhost:3201/api/health
+```
+
+First run builds the web UI and core; later runs start in seconds. `Ctrl-C` stops both.
+Ports: `PORT` (API, default 3201) · `KRELVAN_WEB_PORT` (web, default 3100).
+
+**Option B — Docker:**
+
+```bash
+docker compose up --build
+```
+
+Same URLs. The SQLite ledger persists in the named volume `krelvan-data`, so your agents
+and runs survive restarts.
+
+**Enable LLM features:** copy `.env.example` → `.env` and set a provider + key:
+
+```bash
+KRELVAN_LLM_PROVIDER=anthropic
+KRELVAN_LLM_MODEL=claude-sonnet-4-6
+KRELVAN_LLM_API_KEY=sk-ant-...
+```
+
+Or go local with **no key**: `KRELVAN_LLM_PROVIDER=ollama` · `KRELVAN_LLM_MODEL=llama3.2`.
+Without any provider the UI still runs and clearly reports LLM as off.
+
+---
 
 ## The one principle
 
 **The ledger IS the runtime.** Execution is a projection of an append-only,
-content-addressed, signed event log. The canvas, the cost meter, and the audit
-timeline are all *reads* (folds) of that one log — so "what you see is exactly what
-executed" is structural, not hopeful.
+content-addressed, signed event log. The canvas, the audit timeline, and the run history
+are all pure *reads* of that log. There is no separate "what happened" store that can
+drift from "what ran" — they are the same thing.
 
-## What's built and proven (run it yourself)
+---
 
-```
+## What's inside
+
+### For the person using it
+- **Describe → build → run** an agent from one sentence, with the plan shown before anything executes.
+- **Signed run records** — open any run and replay every step, decision, and output.
+- **Failure-reasoning + retry-with-fix** — runs that fail get diagnosed and corrected, automatically.
+
+### For companies building on it — "the value isn't features, it's eliminated decisions"
+The hard infrastructure is solved so you only build domain logic:
+
+| Solved for you | What it means |
+|---|---|
+| **Memory** | Episodic + semantic + trust-aware, with provenance — right by default. |
+| **Human-in-the-loop** | Standard pause / approve / resume via an autonomy gradient (suggest · act-with-veto · full). |
+| **Audit by default** | Every decision, tool call, and step signed to a tamper-evident record. |
+| **Capabilities & trust** | Deny-by-default admission; plugins are sandboxed and never self-sign their results. |
+| **Agent coordination** | Sub-agent delegation with supervisor co-sign. |
+| **Failure-reasoning** | Reason about *why* a run failed and how to fix it — not just retry. |
+| **Capability ecosystem** | Install a connector; it works in any agent. |
+
+Ship agentic solutions for clients in days, not months.
+
+### The marketplace (a Git repo, not a hosted site)
+The "Discover" tab loads a registry `index.json` from a Git repo — the WordPress-style
+model. Anyone publishes a capability by opening a PR. Entries are real and installable:
+
+- **YAML capabilities** — wrap any HTTP API (no code).
+- **MCP connectors** — connect GitHub, Slack, a filesystem, or any MCP server; every tool it exposes becomes a capability.
+- **Free + paid** — paid entries carry pricing + a license link; the platform never touches the money.
+
+Point an install at your own fork:
+`NEXT_PUBLIC_KRELVAN_REGISTRY_URL=https://raw.githubusercontent.com/<you>/krelvan-registry/main/index.json`
+(see [`registry/`](registry/) for the format and the seed catalog).
+
+---
+
+## Architecture — 3 strict layers
+
+1. **UI** — Next.js 15 web app: NL builder, interactive signed-graph canvas (pan/zoom/replay), runs, capabilities marketplace, MCP, approvals, schedules.
+2. **API + Runtime** — `node:http` server + the pure kernel / impure engine + the capability plane + the NL→manifest compiler.
+3. **Persistence** — SQLite ledger (via `node:sqlite`), zero third-party runtime deps in core.
+
+### Core invariants (every change respects these)
+1. **The ledger is the only source of truth** — everything else is a pure fold of it.
+2. **The kernel is pure; the engine is the only thing that touches the world.**
+3. **No `eval`, ever** — conditional logic is a restricted, total typed-AST evaluator.
+4. **Deny-by-default** — an ungranted capability never runs.
+5. **Plugins are untrusted** — the supervisor co-signs what it observed; secrets never reach plugins (a broker mints scoped tokens).
+6. **Crash-safe by construction** — state lives only in the log; resume = re-fold; effects run exactly once.
+7. **Zero third-party runtime deps in core** — Node built-ins only, license-clean, small to self-host.
+
+| Layer | Where | Proven by |
+|---|---|---|
+| **Ledger** | `src/core/ledger/` | canonicalization, content-addressing, hash-chaining, signed events, CAS append (no forks), `verify()` catches every corruption |
+| **Manifest + safe expr** | `src/core/manifest/` | structural validation; conditional edges are a typed AST — never `eval` |
+| **Capability plane** | `src/core/capability/` | deny-by-default, autonomy gradient, supervisor co-sign |
+| **Pure kernel + engine** | `src/core/kernel/` | pure `decide()`; 3-event effect protocol; crash-hole HALT; resume |
+| **Memory** | `src/core/memory/` | episodic/semantic planes, provenance, untrusted-inbound quarantine |
+| **Compiler** | NL → signed manifest, with capability monotonicity (prompt injection can't escalate) |
+
+---
+
+## Verify it yourself
+
+```bash
 npm install
 npm run typecheck    # strict TS, clean
-npm test             # 82/82 passing
-npm run demo:ledger  # the inversion: canvas + cost + audit all fold from one log
-npm run demo:resume  # kill mid-run, resume, each irreversible effect runs EXACTLY once
+npm test             # 167 / 170 pass (3 are live-model API tests that need a key)
+npm run demo:ledger  # canvas + audit all fold from one log
+npm run demo:resume  # kill mid-run, resume — each irreversible effect runs EXACTLY once
 npm run demo:e2e     # a real 3-agent pipeline drives itself off the ledger
-npm run demo:compile # intent -> compiled+signed manifest -> run; untrusted principal rejected
-npm run demo:live    # (needs GENESIS_ANTHROPIC_KEY) a REAL model proposes a workflow,
-                     # compiler signs it within authority, engine runs it, log verifies
+npm run demo:compile # intent → compiled + signed manifest → run; untrusted principal rejected
+npm run demo:live    # (needs KRELVAN_ANTHROPIC_KEY) a real model proposes a workflow,
+                     # the compiler signs it within authority, the engine runs it, the log verifies
 ```
 
-### Layers in place
-
-| Layer | Files | Proven by |
-|---|---|---|
-| **Ledger** | `src/core/ledger/` | canonicalization (no floats), content-addressing, hash-chaining, signed events w/ key windows, CAS append (no forks), `verify()` catches every corruption, tail-truncation via checkpoints |
-| **Manifest** | `src/core/manifest/manifest.ts` | structural validation (dangling edges, bad entry, budgets) |
-| **Safe expressions** | `src/core/manifest/expr.ts` | conditional edges are a typed AST evaluator — **never `eval`**; undeclared keys are hard errors |
-| **Capability plane** | `src/core/capability/capability.ts` | deny-by-default admission, reserve-then-settle budget ceilings, autonomy gradient, supervisor co-signs results (**plugins never self-sign**) |
-| **Pure kernel** | `src/core/kernel/kernel.ts`, `project.ts` | `decide(manifest, projection)` is pure; crash-hole HALT; loop bound |
-| **Engine** | `src/core/kernel/engine.ts` | the only impure code; 3-event effect protocol; crash-safe resume, no double-execution |
-
-## Design principles (invariants every change respects)
-
-1. **The ledger is the only source of truth.** Everything else is a pure fold of it.
-2. **The kernel is pure; the engine is the only thing that touches the world.**
-3. **No `eval`, ever.** Conditional logic is a restricted, total AST evaluator.
-4. **Deny-by-default + budget-before-spend.** An effect not granted, or over budget,
-   never runs. Cost is exact integer cents (no floats in the ledger).
-5. **Plugins are untrusted.** The supervisor co-signs what it observed; a plugin's
-   self-report is explicitly-untrusted data.
-6. **Crash-safe by construction.** State lives only in the log; resume = re-fold.
-7. **No external dependencies in the core** (Node built-ins only) — license-clean and
-   small to self-host.
-
-## Quality discipline
-
-- `docs/LEDGER_SPEC.md` — the ledger contract, invariants, and edge-case checklist.
-- `docs/PREMORTEM.md` — 435 enumerated failure modes; each carries a guard and a
-  status. Items flip to GUARDED only when a real passing test covers them. A
-  subsystem is not "done" until its section is GUARDED or explicitly WAIVED.
+---
 
 ## Status — honest
 
-Built & verified (73 tests pass, typecheck clean):
-- **Ledger** + **SQLite durable store** (real on-disk crash/resume)
-- **Identity, Secrets & Time** (key rotation/revocation, secret broker, monotonic clock)
-- **Capability plane** (deny-by-default, budget ceilings, supervisor co-signs)
-- **Manifest + safe expressions** (typed AST, never eval)
-- **Pure kernel + engine** (3-event effect protocol, crash-hole HALT, resume)
-- **NL→manifest compiler** (capability monotonicity — prompt injection can't escalate)
-- **Memory** (4 planes, distillation provenance propagation, untrusted-inbound gate)
-- **Channels + Interaction Resolver** (approval IS authorization, single-use tokens,
-  per-effect assurance)
-- **Observability** (verification + counterfactual replay, cost reconciliation)
+**Built & verified** (typecheck clean · 167/170 tests · web build green):
+- Ledger + SQLite durable store (real on-disk crash/resume)
+- Identity, secrets & time (key rotation/revocation, secret broker, monotonic clock)
+- Capability plane (deny-by-default, autonomy gradient, supervisor co-sign)
+- Manifest + safe expressions (typed AST, never eval)
+- Pure kernel + engine (3-event effect protocol, crash-hole HALT, resume)
+- NL→manifest compiler (capability monotonicity)
+- Memory (multi-plane, provenance, untrusted-inbound gate)
+- **Full web UI** — NL builder, signed-graph canvas, runs, capabilities marketplace, MCP, approvals, schedules
+- **Capabilities marketplace** — Git-registry-backed, view/edit YAML source online, MCP connectors
+- **Failure-reasoning + auto-retry-with-fix** — diagnose a failed run from the ledger, rebuild a corrected agent, re-run
+- **7 LLM providers** behind one client (Anthropic/OpenAI/Gemini/Groq/Mistral/Ollama/OpenAI-compatible)
 
-Demos (all pass): `demo:ledger`, `demo:resume`, `demo:e2e`, `demo:compile`.
+**Not yet built:** PostgreSQL multi-tenant store adapter; asymmetric (ed25519) publisher
+signing for third-party marketplace trust. Tracked in `docs/PREMORTEM.md`.
 
-Real model adapter: **DONE** — `src/adapters/anthropic-model.ts` (built-in fetch, no
-SDK dependency). A live call (`npm run demo:live`) had a real model propose a
-3-node workflow that the compiler signed within authority and the engine ran off a
-verified ledger. The model is strictly untrusted: its output is validated +
-monotonicity-checked, so it can only be rejected, never escalate.
+---
 
-Not yet built: the visible web UI / canvas, and the Postgres (multi-tenant scale)
-store adapter. Deeper premortem items remain tracked in `docs/PREMORTEM.md`.
+## Docs
+
+- [`AGENTS.md`](AGENTS.md) — engineering rules & architecture (read before contributing)
+- [`docs/AGENTIC_CAPABILITIES.md`](docs/AGENTIC_CAPABILITIES.md) — researched catalog of genuinely-agentic capabilities + roadmap
+- [`docs/LEDGER_SPEC.md`](docs/LEDGER_SPEC.md) — the ledger contract & invariants
+- [`docs/PREMORTEM.md`](docs/PREMORTEM.md) — enumerated failure modes, each with a guard + status
+- [`registry/`](registry/) — the capability marketplace registry (format + seed)
+
+## License
+
+Apache-2.0. Self-host it, run it for yourself / your team / your clients, extend it, and
+build paid or free solutions on top — you own what you build.

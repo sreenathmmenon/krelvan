@@ -2,24 +2,30 @@
  * LLMClient — the single interface every LLM call in Krelvan goes through.
  *
  * Providers supported (selected via KRELVAN_LLM_PROVIDER env var):
- *   "anthropic"  — Anthropic API (default). Uses KRELVAN_LLM_API_KEY or KRELVAN_ANTHROPIC_KEY.
- *   "openai"     — OpenAI API. Also covers any OpenAI-compatible endpoint:
- *                  OpenRouter, Groq, Together, Fireworks, LM Studio, Ollama (/v1 compat mode).
- *                  Set KRELVAN_LLM_BASE_URL to override the base URL.
- *   "ollama"     — Ollama native API (http://localhost:11434). No API key needed.
+ *   "anthropic"   — Anthropic API (default). Uses KRELVAN_LLM_API_KEY or KRELVAN_ANTHROPIC_KEY.
+ *   "openai"      — OpenAI API (chat/completions). Set KRELVAN_LLM_BASE_URL to override.
+ *   "ollama"      — Ollama native API (http://localhost:11434). No API key needed.
+ *   "gemini"      — Google Gemini (generativelanguage API). Uses KRELVAN_LLM_API_KEY.
+ *   "groq"        — Groq (OpenAI-compatible, https://api.groq.com/openai/v1).
+ *   "mistral"     — Mistral (OpenAI-compatible, https://api.mistral.ai/v1).
+ *   "compatible"  — Generic OpenAI-compatible endpoint. REQUIRES KRELVAN_LLM_BASE_URL.
+ *                   Unlocks OpenRouter, Together, Fireworks, DeepSeek, vLLM, LM Studio,
+ *                   and any other server that speaks the OpenAI /chat/completions shape.
  *
  * Env vars:
- *   KRELVAN_LLM_PROVIDER      — "anthropic" | "openai" | "ollama"  (default: "anthropic")
+ *   KRELVAN_LLM_PROVIDER      — see list above (default: "anthropic")
  *   KRELVAN_LLM_API_KEY       — API key for the provider (falls back to KRELVAN_ANTHROPIC_KEY for anthropic)
- *   KRELVAN_LLM_BASE_URL      — Base URL override (e.g. https://openrouter.ai/api/v1)
- *   KRELVAN_LLM_MODEL         — Default model to use (overrides per-capability defaults)
+ *   KRELVAN_LLM_BASE_URL      — Base URL override (required for "compatible")
+ *   KRELVAN_LLM_MODEL         — Default model to use (overrides per-capability defaults).
+ *                               For "compatible"/"groq"/"mistral"/openrouter you must set this
+ *                               to whatever model id the endpoint expects.
  *
  * Per-capability model overrides (still work):
  *   KRELVAN_THINK_MODEL       — model for think capability
  *   KRELVAN_ROUTE_MODEL       — model for llm_route capability
  *
- * OpenRouter example:
- *   KRELVAN_LLM_PROVIDER=openai
+ * OpenRouter example (via the generic compatible adapter):
+ *   KRELVAN_LLM_PROVIDER=compatible
  *   KRELVAN_LLM_BASE_URL=https://openrouter.ai/api/v1
  *   KRELVAN_LLM_API_KEY=sk-or-...
  *   KRELVAN_LLM_MODEL=anthropic/claude-sonnet-4-6   (or any OpenRouter model slug)
@@ -30,10 +36,14 @@
  *   (no API key needed; Ollama must be running locally)
  *
  * Groq example:
- *   KRELVAN_LLM_PROVIDER=openai
- *   KRELVAN_LLM_BASE_URL=https://api.groq.com/openai/v1
+ *   KRELVAN_LLM_PROVIDER=groq
  *   KRELVAN_LLM_API_KEY=gsk_...
  *   KRELVAN_LLM_MODEL=llama-3.3-70b-versatile
+ *
+ * Gemini example:
+ *   KRELVAN_LLM_PROVIDER=gemini
+ *   KRELVAN_LLM_API_KEY=...
+ *   KRELVAN_LLM_MODEL=gemini-2.0-flash
  */
 
 import { fetchWithRetry } from "./http-retry.js";
@@ -41,7 +51,34 @@ import { getLogger } from "../core/observability/logger.js";
 
 const log = getLogger("llm-client");
 
-export type LLMProvider = "anthropic" | "openai" | "ollama";
+/**
+ * Provider identifiers. "openai", "groq", "mistral", and "compatible" all use the
+ * OpenAI-compatible /chat/completions wire format under the hood — they differ only
+ * in their default base URL. "gemini" uses Google's native generativelanguage API.
+ */
+export type LLMProvider =
+  | "anthropic"
+  | "openai"
+  | "ollama"
+  | "gemini"
+  | "groq"
+  | "mistral"
+  | "compatible";
+
+/** Providers that speak the OpenAI /chat/completions wire format. */
+const OPENAI_COMPATIBLE: ReadonlySet<LLMProvider> = new Set<LLMProvider>([
+  "openai",
+  "groq",
+  "mistral",
+  "compatible",
+]);
+
+/** Default base URL per OpenAI-compatible provider. "compatible" has none — it MUST be supplied. */
+const OPENAI_COMPATIBLE_DEFAULT_BASE: Partial<Record<LLMProvider, string>> = {
+  openai: "https://api.openai.com/v1",
+  groq: "https://api.groq.com/openai/v1",
+  mistral: "https://api.mistral.ai/v1",
+};
 
 export interface LLMMessage {
   role: "user" | "assistant";
@@ -230,6 +267,82 @@ class OllamaLLMClient implements LLMClient {
   }
 }
 
+// ── Google Gemini client (generativelanguage API) ──────────────────────────────
+
+class GeminiLLMClient implements LLMClient {
+  constructor(private readonly apiKey: string, private readonly baseUrl: string) {}
+
+  async complete(req: LLMRequest): Promise<LLMResponse> {
+    // Gemini's generateContent endpoint. The system prompt is passed via
+    // systemInstruction; user/assistant turns map to role "user"/"model".
+    // Structured output uses responseMimeType + responseSchema (OpenAPI subset).
+    const contents = req.messages.map(m => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    }));
+
+    const generationConfig: Record<string, unknown> = {
+      temperature: req.temperature,
+      maxOutputTokens: req.maxTokens,
+    };
+
+    if (req.schema) {
+      generationConfig["responseMimeType"] = "application/json";
+      // Gemini accepts a JSON-Schema-like object; strip the unsupported
+      // additionalProperties key which the API rejects.
+      generationConfig["responseSchema"] = stripUnsupportedSchemaKeys(req.schema.schema);
+    }
+
+    const body: Record<string, unknown> = {
+      contents,
+      systemInstruction: { parts: [{ text: req.system }] },
+      generationConfig,
+    };
+
+    // API key goes in a query param (?key=...) — Gemini's standard auth.
+    const url = `${this.baseUrl}/v1beta/models/${encodeURIComponent(req.model)}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
+
+    const outcome = await fetchWithRetry(
+      url,
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
+      { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
+    );
+
+    if (!outcome.ok) throw new Error(outcome.status === 0 ? `network error: ${outcome.rawBody}` : `Gemini API ${outcome.status}: ${outcome.rawBody}`);
+
+    const json = (await outcome.resp.json()) as {
+      candidates?: { content?: { parts?: { text?: string }[] } }[];
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+    };
+    const text = (json.candidates?.[0]?.content?.parts ?? [])
+      .map(p => p.text ?? "")
+      .join("")
+      .trim();
+    return {
+      text,
+      inputTokens: json.usageMetadata?.promptTokenCount ?? 0,
+      outputTokens: json.usageMetadata?.candidatesTokenCount ?? 0,
+    };
+  }
+}
+
+/**
+ * Gemini's responseSchema rejects `additionalProperties` (and a few other JSON-Schema
+ * keys). Recursively strip them so a schema authored for Anthropic/OpenAI still works.
+ */
+function stripUnsupportedSchemaKeys(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(stripUnsupportedSchemaKeys);
+  if (schema && typeof schema === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(schema as Record<string, unknown>)) {
+      if (k === "additionalProperties" || k === "$schema") continue;
+      out[k] = stripUnsupportedSchemaKeys(v);
+    }
+    return out;
+  }
+  return schema;
+}
+
 // ── Factory ───────────────────────────────────────────────────────────────────
 
 let _sharedClient: LLMClient | null = null;
@@ -247,36 +360,41 @@ export function getLLMClient(): LLMClient {
 
   log.info({ provider, hasApiKey: !!apiKey, baseUrl }, "llm-client: initialising");
 
-  switch (provider) {
-    case "anthropic":
-      _sharedClient = new AnthropicLLMClient(
-        apiKey,
-        baseUrl ?? "https://api.anthropic.com",
-      );
-      break;
+  _sharedClient = buildClient({ provider, apiKey, baseUrl });
+  return _sharedClient;
+}
 
-    case "openai":
-      _sharedClient = new OpenAILLMClient(
-        apiKey,
-        baseUrl ?? "https://api.openai.com/v1",
-      );
-      break;
+/**
+ * Shared construction logic used by both getLLMClient (env-driven) and makeLLMClient
+ * (explicit-config). Keeping it in one place means every provider behaves identically
+ * regardless of how its config arrived.
+ */
+function buildClient(cfg: LLMClientConfig): LLMClient {
+  const apiKey = cfg.apiKey ?? "";
 
-    case "ollama":
-      _sharedClient = new OllamaLLMClient(
-        baseUrl ?? "http://localhost:11434",
+  if (OPENAI_COMPATIBLE.has(cfg.provider)) {
+    const base = cfg.baseUrl ?? OPENAI_COMPATIBLE_DEFAULT_BASE[cfg.provider];
+    if (!base) {
+      // "compatible" has no sensible default — fail loud rather than silently
+      // pointing at OpenAI with the wrong key.
+      throw new Error(
+        `llm-client: provider "${cfg.provider}" requires KRELVAN_LLM_BASE_URL (e.g. https://openrouter.ai/api/v1)`,
       );
-      break;
-
-    default:
-      log.warn({ provider }, "llm-client: unknown provider, falling back to anthropic");
-      _sharedClient = new AnthropicLLMClient(
-        apiKey,
-        baseUrl ?? "https://api.anthropic.com",
-      );
+    }
+    return new OpenAILLMClient(apiKey, base);
   }
 
-  return _sharedClient;
+  switch (cfg.provider) {
+    case "anthropic":
+      return new AnthropicLLMClient(apiKey, cfg.baseUrl ?? "https://api.anthropic.com");
+    case "ollama":
+      return new OllamaLLMClient(cfg.baseUrl ?? "http://localhost:11434");
+    case "gemini":
+      return new GeminiLLMClient(apiKey, cfg.baseUrl ?? "https://generativelanguage.googleapis.com");
+    default:
+      log.warn({ provider: cfg.provider }, "llm-client: unknown provider, falling back to anthropic");
+      return new AnthropicLLMClient(apiKey, cfg.baseUrl ?? "https://api.anthropic.com");
+  }
 }
 
 /**
@@ -284,21 +402,7 @@ export function getLLMClient(): LLMClient {
  * their config from the runtime, e.g. the compiler and distiller).
  */
 export function makeLLMClient(cfg: LLMClientConfig): LLMClient {
-  switch (cfg.provider) {
-    case "openai":
-      return new OpenAILLMClient(
-        cfg.apiKey ?? "",
-        cfg.baseUrl ?? "https://api.openai.com/v1",
-      );
-    case "ollama":
-      return new OllamaLLMClient(cfg.baseUrl ?? "http://localhost:11434");
-    case "anthropic":
-    default:
-      return new AnthropicLLMClient(
-        cfg.apiKey ?? "",
-        cfg.baseUrl ?? "https://api.anthropic.com",
-      );
-  }
+  return buildClient(cfg);
 }
 
 /**
@@ -312,26 +416,41 @@ export function estimateCostCents(
   inputTokens: number,
   outputTokens: number,
 ): number {
-  if (provider === "ollama") return 0;
+  // Local inference is free; for arbitrary OpenAI-compatible gateways we can't know
+  // the price, so we don't guess (claimedCostCents stays 0 rather than wrong).
+  if (provider === "ollama" || provider === "compatible") return 0;
 
-  // Anthropic pricing (per-million tokens, in cents)
+  // Per-million-token rates in cents, [input, output].
   const anthropicRates: Record<string, [number, number]> = {
-    "claude-opus-4-8":         [1500, 7500],
-    "claude-sonnet-4-6":       [300,  1500],
-    "claude-haiku-4-5-20251001": [25,  125],
+    "claude-opus-4-8":   [500,  2500],
+    "claude-sonnet-4-6": [300,  1500],
+    "claude-haiku-4-5":  [100,  500],
+    "claude-fable-5":    [1000, 5000],
   };
 
-  // OpenAI pricing (rough approximations)
   const openaiRates: Record<string, [number, number]> = {
-    "gpt-4o":           [250,  1000],
-    "gpt-4o-mini":      [15,   60],
-    "gpt-4-turbo":      [1000, 3000],
-    "gpt-3.5-turbo":    [50,   150],
+    "gpt-4o":        [250,  1000],
+    "gpt-4o-mini":   [15,   60],
+    "gpt-4-turbo":   [1000, 3000],
+    "gpt-3.5-turbo": [50,   150],
+    "o3-mini":       [110,  440],
   };
 
-  const rateMap = provider === "anthropic" ? anthropicRates : openaiRates;
+  // Gemini public pricing (approximate, per million tokens).
+  const geminiRates: Record<string, [number, number]> = {
+    "gemini-2.0-flash":  [10,  40],
+    "gemini-1.5-flash":  [7,   30],
+    "gemini-1.5-pro":    [125, 500],
+  };
 
-  // Find the first matching key (model slugs may have suffixes)
+  // Groq / Mistral are cheap and price-volatile; left at 0 (no reliable per-model map).
+  let rateMap: Record<string, [number, number]>;
+  if (provider === "anthropic") rateMap = anthropicRates;
+  else if (provider === "gemini") rateMap = geminiRates;
+  else if (provider === "openai") rateMap = openaiRates;
+  else return 0;
+
+  // Find the first matching key (model slugs may have suffixes/prefixes).
   const entry = Object.entries(rateMap).find(([k]) => model.startsWith(k));
   if (!entry) return 0;
 
@@ -342,4 +461,165 @@ export function estimateCostCents(
 /** Reset the cached client — used in tests and when config changes. */
 export function resetLLMClient(): void {
   _sharedClient = null;
+}
+
+// ── Model registry ──────────────────────────────────────────────────────────────
+
+/**
+ * One selectable model. `model` is the exact id sent on the wire; `label` is the
+ * human-facing name; `note` flags anything the picker should know (e.g. "needs base URL").
+ */
+export interface ModelOption {
+  provider: LLMProvider;
+  /** Exact model id to send to the provider. Empty string means "user supplies it". */
+  model: string;
+  label: string;
+  note?: string;
+}
+
+export interface ProviderInfo {
+  provider: LLMProvider;
+  label: string;
+  /** Whether this provider needs an API key. */
+  needsApiKey: boolean;
+  /** Whether the user MUST supply KRELVAN_LLM_BASE_URL for this provider. */
+  needsBaseUrl: boolean;
+  /** True when the user types an arbitrary model id rather than picking from a fixed list. */
+  customModel: boolean;
+  models: ModelOption[];
+}
+
+/**
+ * Curated, REAL model registry. Every id here is one that actually works against its
+ * provider's API as of this writing. Where we are not certain an id is current, we omit
+ * it and rely on the `customModel` path instead of shipping a wrong hardcoded id.
+ *
+ * The "compatible" provider intentionally ships NO fixed model list — its whole point is
+ * that the user points KRELVAN_LLM_BASE_URL at any OpenAI-compatible gateway (OpenRouter,
+ * Together, Fireworks, DeepSeek, vLLM, LM Studio, …) and types whatever model id that
+ * gateway expects.
+ */
+export const PROVIDER_REGISTRY: readonly ProviderInfo[] = [
+  {
+    provider: "anthropic",
+    label: "Anthropic (Claude)",
+    needsApiKey: true,
+    needsBaseUrl: false,
+    customModel: false,
+    models: [
+      { provider: "anthropic", model: "claude-opus-4-8", label: "Claude Opus 4.8" },
+      { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+      { provider: "anthropic", model: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
+      { provider: "anthropic", model: "claude-fable-5", label: "Claude Fable 5" },
+    ],
+  },
+  {
+    provider: "openai",
+    label: "OpenAI",
+    needsApiKey: true,
+    needsBaseUrl: false,
+    customModel: false,
+    models: [
+      { provider: "openai", model: "gpt-4o", label: "GPT-4o" },
+      { provider: "openai", model: "gpt-4o-mini", label: "GPT-4o mini" },
+      { provider: "openai", model: "gpt-4-turbo", label: "GPT-4 Turbo" },
+      { provider: "openai", model: "o3-mini", label: "o3-mini" },
+      { provider: "openai", model: "", label: "Custom model id…", note: "type any OpenAI model id" },
+    ],
+  },
+  {
+    provider: "gemini",
+    label: "Google Gemini",
+    needsApiKey: true,
+    needsBaseUrl: false,
+    customModel: false,
+    models: [
+      { provider: "gemini", model: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+      { provider: "gemini", model: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
+      { provider: "gemini", model: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
+      { provider: "gemini", model: "", label: "Custom model id…", note: "type any Gemini model id" },
+    ],
+  },
+  {
+    provider: "groq",
+    label: "Groq",
+    needsApiKey: true,
+    needsBaseUrl: false,
+    customModel: false,
+    models: [
+      { provider: "groq", model: "llama-3.3-70b-versatile", label: "Llama 3.3 70B (versatile)" },
+      { provider: "groq", model: "llama-3.1-8b-instant", label: "Llama 3.1 8B (instant)" },
+      { provider: "groq", model: "", label: "Custom model id…", note: "type any Groq model id" },
+    ],
+  },
+  {
+    provider: "mistral",
+    label: "Mistral",
+    needsApiKey: true,
+    needsBaseUrl: false,
+    customModel: false,
+    models: [
+      { provider: "mistral", model: "mistral-large-latest", label: "Mistral Large" },
+      { provider: "mistral", model: "mistral-small-latest", label: "Mistral Small" },
+      { provider: "mistral", model: "", label: "Custom model id…", note: "type any Mistral model id" },
+    ],
+  },
+  {
+    provider: "ollama",
+    label: "Ollama (local)",
+    needsApiKey: false,
+    needsBaseUrl: false,
+    customModel: true,
+    models: [
+      { provider: "ollama", model: "llama3.2", label: "llama3.2 (example)" },
+      { provider: "ollama", model: "", label: "Any local model…", note: "whatever you've pulled" },
+    ],
+  },
+  {
+    provider: "compatible",
+    label: "OpenAI-compatible (OpenRouter, Together, Fireworks, vLLM, LM Studio…)",
+    needsApiKey: true,
+    needsBaseUrl: true,
+    customModel: true,
+    models: [
+      {
+        provider: "compatible",
+        model: "",
+        label: "Any model — set base URL + model id",
+        note: "one adapter unlocks any OpenAI-compatible endpoint; you supply base URL, key and model id",
+      },
+    ],
+  },
+] as const;
+
+/** Flat list of every concrete (non-empty-id) model option across all providers. */
+export function listAllModels(): ModelOption[] {
+  return PROVIDER_REGISTRY.flatMap(p => p.models.filter(m => m.model !== ""));
+}
+
+/** The configured provider from the environment (defaults to anthropic). */
+export function currentProvider(): LLMProvider {
+  return (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") as LLMProvider;
+}
+
+/**
+ * A sensible default model for a provider when the user hasn't set KRELVAN_LLM_MODEL.
+ * `tier` lets cheaper capabilities (llm_route, compose) prefer a smaller model.
+ * Returns "" for providers with no safe default (compatible) — the caller must then
+ * have KRELVAN_LLM_MODEL set, which is enforced upstream.
+ */
+export function defaultModelForProvider(
+  provider: LLMProvider,
+  tier: "smart" | "cheap" = "smart",
+): string {
+  switch (provider) {
+    case "anthropic": return tier === "cheap" ? "claude-haiku-4-5" : "claude-sonnet-4-6";
+    case "openai":    return tier === "cheap" ? "gpt-4o-mini" : "gpt-4o";
+    case "gemini":    return tier === "cheap" ? "gemini-1.5-flash" : "gemini-2.0-flash";
+    case "groq":      return tier === "cheap" ? "llama-3.1-8b-instant" : "llama-3.3-70b-versatile";
+    case "mistral":   return tier === "cheap" ? "mistral-small-latest" : "mistral-large-latest";
+    case "ollama":    return "llama3.2";
+    case "compatible": return "";
+    default:          return "claude-sonnet-4-6";
+  }
 }

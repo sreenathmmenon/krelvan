@@ -17,7 +17,7 @@
  */
 
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
-import { getLLMClient, estimateCostCents } from "../../adapters/llm-client.js";
+import { getLLMClient, estimateCostCents, currentProvider, defaultModelForProvider } from "../../adapters/llm-client.js";
 import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("think");
@@ -25,10 +25,7 @@ const log = getLogger("think");
 function defaultModel(): string {
   if (process.env["KRELVAN_THINK_MODEL"]) return process.env["KRELVAN_THINK_MODEL"];
   if (process.env["KRELVAN_LLM_MODEL"]) return process.env["KRELVAN_LLM_MODEL"];
-  const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
-  if (provider === "openai") return "gpt-4o";
-  if (provider === "ollama") return "llama3.2";
-  return "claude-sonnet-4-6";
+  return defaultModelForProvider(currentProvider(), "smart");
 }
 
 export const thinkCapability: CapabilityPlugin = {

@@ -58,7 +58,7 @@ the affected run is marked **UNVERIFIABLE** and halts — never "confident but w
 
 ## 5. The edge cases the tests MUST cover
 
-1. **Genesis event:** first event in a tenant has `prev == null`, `offset == 0`.
+1. **Krelvan event:** first event in a tenant has `prev == null`, `offset == 0`.
 2. **Empty log read:** projecting an empty/absent run yields the well-defined empty state, not an error.
 3. **Tamper detection:** flip a byte in a stored event → `verify()` returns `HashMismatch`/`BadSignature` and the run is UNVERIFIABLE.
 4. **Dangling parent rejected:** appending an event whose parent isn't present is rejected before it lands.

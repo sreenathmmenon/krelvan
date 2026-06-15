@@ -188,9 +188,13 @@ export function createApiServer(runtime: KrelvanRuntime) {
     { method: "GET",    pattern: ["api", "runs", ":id", "stream"],   handler: (q, r, p) => handleRunStream(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "events"],   handler: (q, r, p) => handleRunEvents(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "explain"],  handler: (q, r, p) => handleRunExplain(q, r, p, runtime) },
+    { method: "GET",    pattern: ["api", "runs", ":id", "diagnose"], handler: (q, r, p) => handleRunDiagnose(q, r, p, runtime) },
+    { method: "POST",   pattern: ["api", "runs", ":id", "retry"],    handler: (q, r, p) => handleRunRetry(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "agents", ":id", "explain-build"], handler: (q, r, p) => handleExplainBuild(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "capabilities"],                              handler: (q, r) => handleListCapabilities(q, r, runtime) },
     { method: "POST",   pattern: ["api", "capabilities"],                              handler: (q, r) => handleInstallCapability(q, r, runtime) },
+    { method: "GET",    pattern: ["api", "capabilities", ":name", "source"],          handler: (q, r, p) => handleGetCapabilitySource(q, r, p, runtime) },
+    { method: "PUT",    pattern: ["api", "capabilities", ":name"],                    handler: (q, r, p) => handleUpdateCapability(q, r, p, runtime) },
     { method: "PATCH",  pattern: ["api", "capabilities", ":name"],                    handler: (q, r, p) => handlePatchCapability(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "capabilities", ":name", "enable"],          handler: (q, r, p) => handleEnableCapability(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "capabilities", ":name", "disable"],         handler: (q, r, p) => handleDisableCapability(q, r, p, runtime) },
@@ -211,7 +215,7 @@ export function createApiServer(runtime: KrelvanRuntime) {
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET,POST,DELETE,PATCH,OPTIONS",
+        "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
       });
       res.end();
@@ -523,12 +527,12 @@ async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, para
     let detail = "";
     switch (e.type) {
       case "RunStarted":        detail = ` manifest=${String(p["manifest"] ?? "")}`;  break;
-      case "AdmissionDecision": detail = p["admitted"] ? ` admitted reservedCents=${String(p["reservedCents"] ?? 0)}` : ` DENIED reason=${String(p["reason"] ?? "")}`; break;
+      case "AdmissionDecision": detail = p["admitted"] ? ` admitted` : ` DENIED reason=${String(p["reason"] ?? "")}`; break;
       case "NodeEntered":       detail = ""; break;
-      case "EffectRequested":   detail = ` cap=${String(p["capability"] ?? "")} budgetCents=${String(p["budgetCents"] ?? 0)}`; break;
-      case "EffectResult":      detail = ` cap=${String(p["capability"] ?? "")} costCents=${String(p["costCents"] ?? 0)} ok=${String(p["ok"] ?? "")} output=${JSON.stringify(p["output"] ?? {}).slice(0, 120)}`; break;
-      case "NodeConcluded":     detail = ` spentCents=${String(p["spentCents"] ?? 0)}`; break;
-      case "RunCompleted":      detail = ` totalCents=${String(p["totalCents"] ?? 0)}`; break;
+      case "EffectRequested":   detail = ` cap=${String(p["capability"] ?? "")}`; break;
+      case "EffectResult":      detail = ` cap=${String(p["capability"] ?? "")} ok=${String(p["ok"] ?? "")} output=${JSON.stringify(p["output"] ?? {}).slice(0, 120)}`; break;
+      case "NodeConcluded":     detail = ""; break;
+      case "RunCompleted":      detail = ` completed`; break;
       case "RunFailed":         detail = ` reason=${String(p["reason"] ?? "")}`; break;
       case "AwaitRequested":    detail = ` capability=${String((p["call"] as Record<string, unknown>)?.["capability"] ?? "")} correlationId=${String(p["correlationId"] ?? "")}`; break;
       case "AwaitResolved":     detail = ` decision=${String(p["decision"] ?? "")} correlationId=${String(p["correlationId"] ?? "")}`; break;
@@ -542,7 +546,6 @@ async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, para
     `Status: ${record.status}`,
     `Started: ${new Date(record.createdAt).toISOString()}`,
     record.finishedAt ? `Finished: ${new Date(record.finishedAt).toISOString()}` : null,
-    record.spentCents != null ? `Total spent: ${record.spentCents}¢` : null,
   ].filter(Boolean).join("\n");
 
   const prompt = [
@@ -551,8 +554,8 @@ async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, para
     "1. What the agent did overall (1–2 sentences).",
     "2. What each node did and what it produced (one bullet per node, in order).",
     "3. If the run failed: why it failed, which step caused it, and what might fix it.",
-    "4. What the agent spent and whether that seems reasonable.",
     "Be specific. Use the actual node names and capability names. Do not mention 'ledger' or 'events'.",
+    "Do NOT mention cost, money, cents, dollars, budget, or spend — pricing is never shown to the user.",
     "",
     `=== Run summary ===`,
     runSummary,
@@ -582,6 +585,153 @@ async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, para
   }
 
   json(res, 200, { explanation, generatedAt: Date.now(), runId: record.runId });
+}
+
+/**
+ * GET /api/runs/:id/diagnose — failure-reasoning.
+ *
+ * Reads the run's signed, tamper-evident ledger and reasons over it to produce a
+ * STRUCTURED diagnosis: root-cause hypothesis, the exact failing step, contributing
+ * factors, a concrete fix, and whether a retry is worthwhile. This is grounded
+ * entirely in the recorded events — the agentic capability the ledger uniquely
+ * enables (you can reason about *why* a run failed, from a trustworthy record).
+ * Only meaningful for failed / halted runs.
+ */
+async function handleRunDiagnose(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const record = rt.runRegistry.get(params["id"] ?? "");
+  if (!record) { jsonError(res, 404, "run not found"); return; }
+  if (record.status !== "failed" && record.status !== "halted") {
+    jsonError(res, 409, "diagnosis is only available for failed or halted runs");
+    return;
+  }
+  if (!rt.hasLlm) { jsonError(res, 503, "no LLM provider configured — set KRELVAN_LLM_PROVIDER + an API key"); return; }
+
+  const events = await rt.store.readRun("default", record.runId);
+
+  // Reconstruct the failure trace from the ledger: ordered events + the failing step.
+  const trace = events.map(e => {
+    const p = e.payload as Record<string, unknown>;
+    const node = e.scope.nodeId ? ` node=${e.scope.nodeId}` : "";
+    let d = "";
+    switch (e.type) {
+      case "RunStarted":        d = ` manifest=${String(p["manifest"] ?? "")}`; break;
+      case "AdmissionDecision": d = p["admitted"] ? ` admitted` : ` DENIED reason="${String(p["reason"] ?? "")}"`; break;
+      case "EffectRequested":   d = ` cap=${String(p["capability"] ?? "")}`; break;
+      case "EffectResult":      d = ` cap=${String(p["capability"] ?? "")} ok=${String(p["ok"] ?? "")} output=${JSON.stringify(p["output"] ?? {}).slice(0, 160)}`; break;
+      case "RunFailed":         d = ` reason="${String(p["reason"] ?? "")}"`; break;
+      case "AwaitRequested":    d = ` awaiting=${String((p["call"] as Record<string, unknown>)?.["capability"] ?? "")}`; break;
+    }
+    return `[${e.offset}] ${e.type}${node}${d}`;
+  }).join("\n");
+
+  const failEvent = [...events].reverse().find(e => e.type === "RunFailed");
+  const failReason = failEvent ? String((failEvent.payload as Record<string, unknown>)["reason"] ?? "") : record.reason ?? "unknown";
+
+  const prompt = [
+    `You are an SRE-grade failure analyst for a Krelvan AI agent run. Reason over the signed event log and diagnose WHY it failed.`,
+    `Agent: ${record.manifestName}. Status: ${record.status}. Failure reason on record: "${failReason}".`,
+    ``,
+    `=== Signed event log (${events.length} events, in order) ===`,
+    trace,
+    ``,
+    `Respond with ONLY a JSON object (no prose, no markdown) of this exact shape:`,
+    `{"rootCause": string, "failingStep": string, "contributingFactors": string[], "fixStrategy": string, "retryWorthwhile": boolean, "retryNote": string}`,
+    `- rootCause: the single most likely cause, specific, referencing the actual node/capability.`,
+    `- failingStep: the node id (and capability) where it broke.`,
+    `- contributingFactors: 1-3 secondary factors, or [] if none.`,
+    `- fixStrategy: a concrete, actionable fix (what to change in the agent or its inputs).`,
+    `- retryWorthwhile: true only if a retry with the fix would plausibly succeed.`,
+    `- retryNote: one line on what to change before retrying.`,
+    `Do NOT mention cost, money, or budget. Be specific and grounded in the events above.`,
+  ].join("\n");
+
+  try {
+    const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
+    const model = process.env["KRELVAN_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
+    const client = getLLMClient();
+    const response = await client.complete({
+      system: "You are a precise failure analyst. You output only valid JSON. You reason strictly from the provided event log.",
+      messages: [{ role: "user", content: prompt }],
+      model, maxTokens: 900, temperature: 0,
+    });
+    let raw = (response.text ?? "").trim();
+    // tolerate ```json fences the model may add
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (m) raw = m[0];
+    let diagnosis: Record<string, unknown>;
+    try { diagnosis = JSON.parse(raw); }
+    catch { jsonError(res, 502, "diagnosis model returned unparseable output"); return; }
+    json(res, 200, { diagnosis, failReason, eventCount: events.length, generatedAt: Date.now(), runId: record.runId });
+  } catch (err) {
+    log.error({ err: (err as Error).message }, "diagnose LLM failed");
+    jsonError(res, 502, `LLM error: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * POST /api/runs/:id/retry — auto-retry-with-fix.
+ *
+ * The genuinely-agentic correction loop: take the failed run's original goal, fold in
+ * the failure diagnosis's fix, rebuild a CORRECTED agent, and run it. Not a dumb retry
+ * of the same broken graph — a new attempt informed by reasoning over what went wrong.
+ * Body (optional): { fixStrategy?: string } — if omitted, the endpoint diagnoses first.
+ */
+async function handleRunRetry(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const record = rt.runRegistry.get(params["id"] ?? "");
+  if (!record) { jsonError(res, 404, "run not found"); return; }
+  if (record.status !== "failed" && record.status !== "halted") {
+    jsonError(res, 409, "retry-with-fix is only available for failed or halted runs"); return;
+  }
+  if (!rt.hasLlm) { jsonError(res, 503, "no LLM provider configured"); return; }
+
+  const agent = rt.agentRegistry.get(record.agentId);
+  if (!agent) { jsonError(res, 404, "the agent for this run no longer exists"); return; }
+  const originalIntent = agent.signed.manifest.intent;
+
+  let body: { fixStrategy?: string } = {};
+  try { const raw = await readBody(req); if (raw) body = JSON.parse(raw); } catch { /* optional body */ }
+
+  // Get the fix: from the caller, or by diagnosing now.
+  let fixStrategy = body.fixStrategy?.trim();
+  let failReason = record.reason ?? "";
+  if (!fixStrategy) {
+    const events = await rt.store.readRun("default", record.runId);
+    const failEvent = [...events].reverse().find(e => e.type === "RunFailed");
+    failReason = failEvent ? String((failEvent.payload as Record<string, unknown>)["reason"] ?? "") : failReason;
+    const trace = events.map(e => {
+      const p = e.payload as Record<string, unknown>;
+      const node = e.scope.nodeId ? ` node=${e.scope.nodeId}` : "";
+      let d = "";
+      if (e.type === "EffectResult") d = ` cap=${String(p["capability"] ?? "")} ok=${String(p["ok"] ?? "")} output=${JSON.stringify(p["output"] ?? {}).slice(0, 140)}`;
+      else if (e.type === "RunFailed") d = ` reason="${String(p["reason"] ?? "")}"`;
+      else if (e.type === "AdmissionDecision") d = p["admitted"] ? " admitted" : ` DENIED reason="${String(p["reason"] ?? "")}"`;
+      return `[${e.offset}] ${e.type}${node}${d}`;
+    }).join("\n");
+    try {
+      const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
+      const model = process.env["KRELVAN_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
+      const client = getLLMClient();
+      const r = await client.complete({
+        system: "You are a failure analyst. Output one concrete sentence describing the fix. No prose, no cost mentions.",
+        messages: [{ role: "user", content: `Agent goal: "${originalIntent}". It failed: "${failReason}".\nSigned log:\n${trace}\n\nIn ONE sentence, the concrete fix to the agent's design so a rebuild would succeed:` }],
+        model, maxTokens: 200, temperature: 0,
+      });
+      fixStrategy = (r.text ?? "").trim();
+    } catch (err) { jsonError(res, 502, `diagnosis failed: ${(err as Error).message}`); return; }
+  }
+  if (!fixStrategy) { jsonError(res, 502, "could not determine a fix"); return; }
+
+  // Rebuild a corrected agent with the fix folded into the goal, then run it.
+  const revisedIntent = `${originalIntent}\n\nIMPORTANT — a previous attempt failed because: ${failReason}. Apply this fix when designing the agent: ${fixStrategy}`;
+  const built = await rt.buildAgent(revisedIntent);
+  if (!built.ok) { json(res, 422, { error: "rebuild_failed", message: built.error, fixStrategy }); return; }
+
+  const newAgent = built.agent;
+  const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const runRecord = rt.runRegistry.create({ agentId: newAgent.id, runId, manifestName: newAgent.signed.manifest.name });
+  void rt.executeRun(runRecord.runId, newAgent.signed.manifest, {}, newAgent.id);
+
+  json(res, 201, { run: runRecord, agent: newAgent, fixStrategy, basedOnRun: record.runId });
 }
 
 async function handleExplainBuild(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
@@ -682,6 +832,26 @@ async function handleInstallCapability(req: IncomingMessage, res: ServerResponse
   const result = rt.installYamlCapability(body.name.trim(), body.yaml.trim());
   if (!result.ok) { json(res, 422, { error: result.error }); return; }
   json(res, 201, { capability: result.capability });
+}
+
+/** GET /api/capabilities/:name/source — view a capability's source (YAML editable). */
+async function handleGetCapabilitySource(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const name = params["name"] ?? "";
+  const result = rt.getCapabilitySource(name);
+  if (!result.ok) { jsonError(res, 404, result.error); return; }
+  json(res, 200, result);
+}
+
+/** PUT /api/capabilities/:name — edit a YAML capability's source online. Body: { yaml }. */
+async function handleUpdateCapability(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const name = params["name"] ?? "";
+  const raw = await readBody(req);
+  let body: { yaml?: string };
+  try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  if (!body.yaml?.trim()) { jsonError(res, 400, "yaml is required"); return; }
+  const result = rt.updateYamlCapability(name, body.yaml);
+  if (!result.ok) { json(res, 422, { error: result.error }); return; }
+  json(res, 200, { capability: result.capability });
 }
 
 async function handlePatchCapability(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {

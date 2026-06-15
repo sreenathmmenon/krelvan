@@ -1,4 +1,4 @@
-# Genesis vs the Field
+# Krelvan vs the Field
 
 *Based on a full reading of every source file in genesis-new. No claims about what
 is "coming" — only what the code actually implements today.*
@@ -7,7 +7,7 @@ is "coming" — only what the code actually implements today.*
 
 ## The one-line pitch
 
-Genesis is the only agent platform where **the execution log IS the runtime** —
+Krelvan is the only agent platform where **the execution log IS the runtime** —
 no separate state store, no inference about what happened, no way for the UI to
 lie about what executed. Every view is a cryptographic fold of a single
 append-only ledger.
@@ -16,7 +16,7 @@ append-only ledger.
 
 ## Head-to-head: Architecture
 
-| Property | Genesis | LangGraph | Mastra | Temporal |
+| Property | Krelvan | LangGraph | Mastra | Temporal |
 |----------|---------|-----------|--------|----------|
 | State model | Append-only signed ledger (fold) | Mutable state dict per run | Mutable per-run context | Event-sourced workflow history |
 | Determinism guarantee | Same events → same state (I8) | Not guaranteed | Not guaranteed | Replay deterministic |
@@ -36,7 +36,7 @@ append-only ledger.
 
 ## Head-to-head: Developer experience
 
-| Property | Genesis | LangGraph | Mastra | Replit/Lovable/v0 |
+| Property | Krelvan | LangGraph | Mastra | Replit/Lovable/v0 |
 |----------|---------|-----------|--------|-------------------|
 | Define agent | Natural language → signed manifest | Python/JS graph code | TypeScript graph code | UI/chat |
 | Build preview | Full graph + node/capability list before running | None | None | Output preview |
@@ -52,7 +52,7 @@ append-only ledger.
 
 ---
 
-## What Genesis does that nothing else does
+## What Krelvan does that nothing else does
 
 ### 1. Capability monotonicity
 
@@ -67,7 +67,7 @@ inference time.
 
 ### 2. Evidentiary canvas
 
-The canvas (and every other view: cost meter, timeline, memory) is a **pure fold
+The canvas (and every other view: timeline, memory) is a **pure fold
 of the ledger**. There is no in-process state that the UI reads; it literally
 re-folds the event log on every render. This means:
 
@@ -130,37 +130,37 @@ runs is structurally prevented.
 
 ---
 
-## What LangGraph has that Genesis doesn't (yet)
+## What LangGraph has that Krelvan doesn't (yet)
 
 - **Graph visualizer with editing**: LangGraph Studio lets you edit the graph
-  visually. Genesis canvas shows the graph but doesn't support dragging nodes yet.
+  visually. Krelvan canvas shows the graph but doesn't support dragging nodes yet.
 - **LangSmith integration**: deep tracing, evaluation, dataset management.
-  Genesis has its own observability but no external evaluation suite.
-- **Streaming tokens**: LangGraph surfaces token-level streaming. Genesis records
+  Krelvan has its own observability but no external evaluation suite.
+- **Streaming tokens**: LangGraph surfaces token-level streaming. Krelvan records
   full results.
 - **Ecosystem size**: many more community examples, templates, adapters.
 
-## What Temporal has that Genesis doesn't (yet)
+## What Temporal has that Krelvan doesn't (yet)
 
 - **Multi-tenant scale**: Temporal has production-proven multi-tenant infrastructure.
-  Genesis runs on SQLite today; Postgres adapter is designed but not coded.
+  Krelvan runs on SQLite today; Postgres adapter is designed but not coded.
 - **Language polyglot**: Temporal supports Go/Java/Python/TypeScript workers.
-  Genesis is TypeScript only.
-- **Battle-tested durability**: Temporal has years of production load. Genesis's
+  Krelvan is TypeScript only.
+- **Battle-tested durability**: Temporal has years of production load. Krelvan's
   SQLite store is crash-safe but not yet proven at scale.
 
-## What Mastra has that Genesis doesn't (yet)
+## What Mastra has that Krelvan doesn't (yet)
 
 - **Vercel/Next.js native deployment story**: Mastra integrates tightly with
   Vercel edge functions.
 - **RAG pipeline primitives**: Mastra has built-in vector store integration.
-  Genesis has semantic memory but not a general RAG pipeline.
+  Krelvan has semantic memory but not a general RAG pipeline.
 
 ---
 
-## What Replit/Lovable/v0 do that Genesis doesn't try to do
+## What Replit/Lovable/v0 do that Krelvan doesn't try to do
 
-These tools generate *code* from natural language. Genesis generates *agent
+These tools generate *code* from natural language. Krelvan generates *agent
 systems* — signed, budget-enforced, auditable programs with explicit capability
 grants that execute against a verifiable ledger. They solve different problems.
 The builder UI surface looks similar but the trust model is entirely different.
@@ -169,8 +169,8 @@ The builder UI surface looks similar but the trust model is entirely different.
 
 ## Summary
 
-Genesis's bet: **trust is the moat.** Most platforms assume the agent is benign
-and build features on top. Genesis builds from the opposite assumption — the model
+Krelvan's bet: **trust is the moat.** Most platforms assume the agent is benign
+and build features on top. Krelvan builds from the opposite assumption — the model
 is an untrusted data source, every side effect must be admitted, every cost must
 be reserved before spending, every event must be signed, and the UI must be a fold
 of the ledger rather than an independent process that could lie.

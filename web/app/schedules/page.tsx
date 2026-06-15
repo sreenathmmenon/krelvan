@@ -13,23 +13,58 @@ import {
 } from "../../lib/api";
 
 const CRON_PRESETS = [
-  { label: "Every day at 8am",    spec: "0 8 * * *",    kind: "cron" as const },
-  { label: "Every hour",          spec: "0 * * * *",    kind: "cron" as const },
   { label: "Every 15 minutes",    spec: "*/15 * * * *", kind: "cron" as const },
+  { label: "Every hour",          spec: "0 * * * *",    kind: "cron" as const },
+  { label: "Every day at 8am",    spec: "0 8 * * *",    kind: "cron" as const },
   { label: "Every Monday 9am",    spec: "0 9 * * 1",    kind: "cron" as const },
-  { label: "Every 5 minutes",     spec: "300000",        kind: "interval" as const },
-  { label: "Every 30 minutes",    spec: "1800000",       kind: "interval" as const },
+  { label: "Every 5 minutes",     spec: "300000",       kind: "interval" as const },
+  { label: "Every 30 minutes",    spec: "1800000",      kind: "interval" as const },
 ];
+
+type ScheduleState = "armed" | "enabled" | "paused";
+
+function scheduleState(s: ScheduleRecord): ScheduleState {
+  if (!s.enabled) return "paused";
+  return s.armed ? "armed" : "enabled";
+}
+
+// armed/enabled are STATIC states (not actively running) → neutral, never amber.
+// amber (--live) is reserved for live/running execution only.
+const STATE_BADGE_CLASS: Record<ScheduleState, string> = {
+  armed:   "badge badge-neutral",
+  enabled: "badge badge-neutral",
+  paused:  "badge badge-paused",
+};
+
+const STATE_LABEL: Record<ScheduleState, string> = {
+  armed:   "armed",
+  enabled: "enabled",
+  paused:  "paused",
+};
 
 function formatSpec(kind: "cron" | "interval", spec: string): string {
   if (kind === "interval") {
     const ms = parseInt(spec, 10);
     if (isNaN(ms)) return spec;
     if (ms < 60_000) return `${ms}ms`;
-    if (ms < 3_600_000) return `every ${ms / 60_000}min`;
-    return `every ${ms / 3_600_000}h`;
+    if (ms < 3_600_000) return `every ${ms / 60_000} min`;
+    return `every ${ms / 3_600_000} h`;
   }
   return spec;
+}
+
+// Plain-English gloss for a cron expression — covers the common presets and a few
+// general shapes, falling back gracefully. Display-only; never blocks the raw spec.
+function describeCron(spec: string): string | null {
+  const map: Record<string, string> = {
+    "*/15 * * * *": "Runs every 15 minutes",
+    "*/5 * * * *":  "Runs every 5 minutes",
+    "0 * * * *":    "Runs at the top of every hour",
+    "0 8 * * *":    "Runs every day at 8:00am",
+    "0 9 * * 1":    "Runs every Monday at 9:00am",
+    "0 0 * * *":    "Runs every day at midnight",
+  };
+  return map[spec.trim()] ?? null;
 }
 
 export default function SchedulesPage() {
@@ -46,7 +81,7 @@ export default function SchedulesPage() {
       setAgents(a);
       setError(null);
     } catch (e) {
-      setError((e as Error).message);
+      setError((e as Error).message || "Could not reach the Krelvan API.");
     } finally {
       setLoading(false);
     }
@@ -72,42 +107,96 @@ export default function SchedulesPage() {
     }
   }
 
+  const activeCount = schedules.filter(s => s.enabled).length;
+  const pausedCount = schedules.length - activeCount;
+  // Soonest upcoming run across all enabled schedules — the next thing that fires.
+  const nextUp = schedules
+    .filter(s => s.enabled && s.nextRunAt != null)
+    .map(s => s.nextRunAt as number)
+    .sort((a, b) => a - b)[0];
+
   return (
-    <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--s6)" }}>
-        <div>
+    <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s9)" }}>
+      {/* ── page header: context · title · description · primary action ── */}
+      <div
+        style={{
+          display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+          gap: "var(--s5)", flexWrap: "wrap", marginBottom: "var(--s6)",
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <p className="micro" style={{ marginBottom: "var(--s2)" }}>Automation</p>
           <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Schedules</h1>
-          <p className="soft" style={{ fontSize: 14, margin: 0 }}>
-            Run agents automatically — on a cron expression or a fixed interval.
+          <p className="soft body-lg" style={{ margin: 0, maxWidth: "58ch" }}>
+            Run an agent on its own — on a recurring cron expression or a fixed interval.
+            Each scheduled run is recorded just like one you start by hand.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowForm(v => !v)}>
-          {showForm ? "Cancel" : "New schedule"}
+        <button
+          className={showForm ? "btn btn-secondary" : "btn btn-primary"}
+          style={{ flexShrink: 0 }}
+          onClick={() => setShowForm(v => !v)}
+        >
+          {showForm ? "Cancel" : "+ New schedule"}
         </button>
       </div>
 
-      {error && (
-        <div style={{
-          padding: "var(--s4) var(--s5)", marginBottom: "var(--s6)",
-          background: "var(--danger-tint)", border: "1px solid rgba(185,28,28,.2)", borderRadius: "var(--r)",
-          color: "var(--danger)", fontSize: 13,
-        }}>
-          {error}
+      {/* ── summary strip: only when schedules exist ── */}
+      {!loading && schedules.length > 0 && (
+        <div className="stat-strip" style={{ marginBottom: "var(--s6)" }}>
+          <div className="stat-cell">
+            <span className="stat-value">{schedules.length}</span>
+            <span className="stat-label">schedules</span>
+          </div>
+          <div className="stat-cell">
+            <span className="stat-value">{activeCount}</span>
+            <span className="stat-label">active</span>
+          </div>
+          <div className="stat-cell">
+            <span className="stat-value">{pausedCount}</span>
+            <span className="stat-label">paused</span>
+          </div>
+          <div className="stat-cell">
+            <span className="stat-value" style={{ fontSize: 15 }}>
+              {nextUp != null ? timeAgo(nextUp) : "—"}
+            </span>
+            <span className="stat-label">next run</span>
+          </div>
         </div>
       )}
 
+      {/* ── error state ── */}
+      {error && (
+        <div role="alert" className="state-error" style={{ marginBottom: "var(--s6)", justifyContent: "space-between" }}>
+          <span>{error}</span>
+          <button
+            onClick={() => void load()}
+            className="btn btn-sm"
+            style={{ background: "transparent", color: "var(--danger)", border: "1px solid var(--danger-ring)", flexShrink: 0 }}
+          >
+            Retry now
+          </button>
+        </div>
+      )}
+
+      {/* ── create form (inline, not modal) ── */}
       {showForm && (
         <CreateForm
           agents={agents}
           onCreated={(s) => { setSchedules(prev => [s, ...prev]); setShowForm(false); }}
           onError={setError}
+          onCancel={() => setShowForm(false)}
         />
       )}
 
+      {/* ── loading / empty / list ── */}
       {loading ? (
-        <div className="soft small" style={{ padding: "var(--s7)" }}>Loading…</div>
+        <div className="state-loading">
+          <span className="spinner" aria-hidden="true" />
+          <span>Loading schedules…</span>
+        </div>
       ) : schedules.length === 0 ? (
-        <Empty />
+        <Empty hasAgents={agents.length > 0} onNew={() => setShowForm(true)} />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
           {schedules.map(s => (
@@ -149,63 +238,101 @@ function ScheduleCard({
     setDeleting(false);
   }
 
+  const state = scheduleState(s);
+  const gloss = s.kind === "cron" ? describeCron(s.spec) : `Runs ${formatSpec("interval", s.spec)}`;
+
   return (
-    <div style={{
-      background: "var(--surface)", border: "1px solid var(--line)",
-      borderRadius: "var(--r)", padding: "var(--s5)",
-      display: "grid", gridTemplateColumns: "1fr auto",
-      gap: "var(--s4)", alignItems: "start",
-      opacity: s.enabled ? 1 : 0.6,
-      transition: "opacity 200ms",
-    }}>
-      <div>
+    <div
+      className="card card-hover"
+      style={{
+        padding: "var(--s5)",
+        display: "grid", gridTemplateColumns: "auto 1fr auto",
+        gap: "var(--s5)", alignItems: "center",
+        borderLeft: `3px solid ${s.enabled ? "var(--brand)" : "var(--line-strong)"}`,
+        opacity: s.enabled ? 1 : 0.72,
+        transition: "opacity var(--t-standard) var(--ease)",
+      }}
+    >
+      {/* leading status dot — neutral/paused only; schedules are never "live" */}
+      <span
+        aria-hidden="true"
+        style={{
+          width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
+          background: s.enabled ? "var(--brand)" : "var(--paused)",
+          boxShadow: s.enabled ? "0 0 0 4px var(--brand-ring)" : "none",
+        }}
+      />
+
+      {/* main column */}
+      <div style={{ minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", marginBottom: "var(--s2)", flexWrap: "wrap" }}>
-          <span style={{ fontWeight: 600, fontSize: 14 }}>{s.label || formatSpec(s.kind, s.spec)}</span>
-          <span style={{
-            fontSize: 11, fontWeight: 600, fontFamily: "var(--font-mono)",
-            padding: "2px 8px", borderRadius: "var(--r-pill)",
-            background: s.kind === "cron" ? "var(--brand-tint)" : "var(--ok-tint)",
-            color: s.kind === "cron" ? "var(--brand)" : "var(--ok)",
-          }}>
+          <span className="h3" style={{ color: "var(--ink)" }}>
+            {s.label || formatSpec(s.kind, s.spec)}
+          </span>
+          <span className="badge badge-neutral mono" style={{ textTransform: "lowercase" }}>
             {s.kind}
           </span>
-          <span style={{
-            fontSize: 11, padding: "2px 8px", borderRadius: "var(--r-pill)",
-            background: s.enabled && s.armed ? "var(--live-tint)" : "var(--brand-tint)",
-            color: s.enabled && s.armed ? "var(--live)" : "var(--ink-soft)",
-            fontWeight: 600,
-          }}>
-            {s.enabled && s.armed ? "armed" : s.enabled ? "enabled" : "paused"}
+          <span className={STATE_BADGE_CLASS[state]}>
+            {STATE_LABEL[state]}
           </span>
         </div>
 
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--ink-soft)", marginBottom: "var(--s3)" }}>
-          {formatSpec(s.kind, s.spec)}
+        {/* the spec — the source of truth, in mono — with a plain-English gloss */}
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap", marginBottom: "var(--s3)" }}>
+          <code
+            className="mono small"
+            style={{
+              padding: "2px var(--s2)", borderRadius: "var(--r-sm)",
+              background: "var(--surface-sunken)", border: "1px solid var(--line)",
+              color: "var(--ink-soft)",
+            }}
+          >
+            {formatSpec(s.kind, s.spec)}
+          </code>
+          {gloss && <span className="small muted">{gloss}</span>}
         </div>
 
-        <div style={{ display: "flex", gap: "var(--s5)", fontSize: 12, color: "var(--ink-muted)", flexWrap: "wrap" }}>
-          <span>Agent: <a href={`/agents/${s.agentId}`} style={{ color: "var(--brand)", fontWeight: 500 }}>{s.agentName}</a></span>
-          {s.lastRunAt && <span>Last run: {timeAgo(s.lastRunAt)}</span>}
-          {s.nextRunAt && s.enabled && (
-            <span>Next: {timeAgo(s.nextRunAt)} ({new Date(s.nextRunAt).toLocaleTimeString()})</span>
+        <div className="small muted" style={{ display: "flex", gap: "var(--s5)", flexWrap: "wrap", alignItems: "center" }}>
+          <span>
+            Agent:{" "}
+            <a href={`/agents/${s.agentId}`} style={{ fontWeight: 500 }}>{s.agentName}</a>
+          </span>
+          <span>
+            Last run:{" "}
+            {s.lastRunAt
+              ? (s.lastRunId
+                  ? <a href={`/runs/${s.lastRunId}`} className="mono" style={{ fontWeight: 500 }}>{timeAgo(s.lastRunAt)}</a>
+                  : <span className="mono">{timeAgo(s.lastRunAt)}</span>)
+              : <span className="mono">never</span>}
+          </span>
+          {s.enabled && s.nextRunAt != null && (
+            <span>
+              Next run:{" "}
+              <span className="mono" style={{ color: "var(--ink-soft)", fontWeight: 500 }}>
+                {timeAgo(s.nextRunAt)}
+              </span>
+              <span className="mono" style={{ color: "var(--ink-muted)" }}>
+                {" "}· {new Date(s.nextRunAt).toLocaleTimeString()}
+              </span>
+            </span>
           )}
+          {!s.enabled && <span className="mono">Paused — will not run</span>}
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center" }}>
+      {/* actions */}
+      <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center", justifySelf: "end" }}>
         {!confirmDelete ? (
           <>
             <button
               className="btn btn-sm btn-secondary"
               disabled={toggling}
               onClick={() => void handleToggle()}
-              style={{ opacity: toggling ? .6 : 1 }}
             >
               {toggling ? "…" : s.enabled ? "Pause" : "Enable"}
             </button>
             <button
-              className="btn btn-sm"
-              style={{ color: "var(--danger)", borderColor: "rgba(185,28,28,.25)" }}
+              className="btn btn-sm btn-danger"
               onClick={() => setConfirmDelete(true)}
             >
               Delete
@@ -213,7 +340,7 @@ function ScheduleCard({
           </>
         ) : (
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
-            <span style={{ fontSize: 11, color: "var(--danger)", fontWeight: 500, whiteSpace: "nowrap" }}>Delete?</span>
+            <span className="micro" style={{ color: "var(--danger)", whiteSpace: "nowrap" }}>Delete?</span>
             <button
               className="btn btn-sm btn-secondary"
               onClick={() => setConfirmDelete(false)}
@@ -221,8 +348,7 @@ function ScheduleCard({
               Cancel
             </button>
             <button
-              className="btn btn-sm"
-              style={{ background: "var(--danger)", color: "white", border: "none", opacity: deleting ? .6 : 1 }}
+              className="btn btn-sm btn-danger"
               disabled={deleting}
               onClick={() => void handleDelete()}
             >
@@ -239,10 +365,12 @@ function CreateForm({
   agents,
   onCreated,
   onError,
+  onCancel,
 }: {
   agents: AgentRecord[];
   onCreated: (s: ScheduleRecord) => void;
   onError: (e: string) => void;
+  onCancel: () => void;
 }) {
   const [agentId, setAgentId] = useState(agents[0]?.id ?? "");
   const [kind, setKind] = useState<"cron" | "interval">("cron");
@@ -250,7 +378,7 @@ function CreateForm({
   const [label, setLabel] = useState("");
   const [saving, setSaving] = useState(false);
 
-  function applyPreset(preset: typeof CRON_PRESETS[0]) {
+  function applyPreset(preset: typeof CRON_PRESETS[number]) {
     setKind(preset.kind);
     setSpec(preset.spec);
     setLabel(preset.label);
@@ -258,7 +386,7 @@ function CreateForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!agentId) { onError("Select an agent"); return; }
+    if (!agentId) { onError("Select an agent to schedule."); return; }
     setSaving(true);
     try {
       const s = await createSchedule({ agentId, kind, spec, label: label || undefined });
@@ -270,35 +398,47 @@ function CreateForm({
     }
   }
 
-  return (
-    <div style={{
-      background: "var(--surface)", border: "1px solid var(--line)",
-      borderRadius: "var(--r)", padding: "var(--s6)",
-      marginBottom: "var(--s6)",
-    }}>
-      <h3 style={{ fontWeight: 600, fontSize: 15, marginBottom: "var(--s5)" }}>New schedule</h3>
+  const noAgents = agents.length === 0;
 
-      {/* quick presets */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)", marginBottom: "var(--s5)" }}>
-        <span className="micro" style={{ alignSelf: "center" }}>Quick:</span>
-        {CRON_PRESETS.map(p => (
-          <button
-            key={p.spec}
-            type="button"
-            className="chip"
-            onClick={() => applyPreset(p)}
-            style={{
-              background: spec === p.spec ? "var(--brand-tint)" : undefined,
-              color: spec === p.spec ? "var(--brand)" : undefined,
-              borderColor: spec === p.spec ? "var(--brand)" : undefined,
-            }}
-          >
-            {p.label}
-          </button>
-        ))}
+  return (
+    <div className="card" style={{ padding: "var(--s6)", marginBottom: "var(--s6)", boxShadow: "var(--shadow-md)" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "var(--s4)", marginBottom: "var(--s5)" }}>
+        <h2 className="h2">New schedule</h2>
+        <span className="small muted">Pick an agent, choose how often, give it a name.</span>
       </div>
 
-      <form onSubmit={(e) => void handleSubmit(e)} style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
+      {noAgents && (
+        <div className="state-error" role="alert" style={{ marginBottom: "var(--s5)", background: "var(--info-tint)", color: "var(--info)", borderColor: "transparent" }}>
+          <span>You need an agent before you can schedule one. <a href="/" style={{ color: "var(--info)", fontWeight: 600 }}>Build an agent →</a></span>
+        </div>
+      )}
+
+      {/* quick presets */}
+      <div style={{ marginBottom: "var(--s5)" }}>
+        <p className="micro" style={{ marginBottom: "var(--s3)" }}>Quick presets</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)" }}>
+          {CRON_PRESETS.map(p => {
+            const active = spec === p.spec;
+            return (
+              <button
+                key={p.spec}
+                type="button"
+                className="chip"
+                onClick={() => applyPreset(p)}
+                style={active ? {
+                  background: "var(--brand-tint)",
+                  color: "var(--brand)",
+                  borderColor: "var(--brand)",
+                } : undefined}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <form onSubmit={(e) => void handleSubmit(e)} style={{ display: "flex", flexDirection: "column", gap: "var(--s5)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--s4)" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
             <span className="micro">Agent</span>
@@ -307,7 +447,7 @@ function CreateForm({
               value={agentId}
               onChange={e => setAgentId(e.target.value)}
             >
-              {agents.length === 0
+              {noAgents
                 ? <option value="">No agents yet</option>
                 : agents.map(a => (
                     <option key={a.id} value={a.id}>{a.signed.manifest.name}</option>
@@ -315,17 +455,27 @@ function CreateForm({
             </select>
           </label>
 
-          <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
-            <span className="micro">Type</span>
-            <select
-              className="input"
-              value={kind}
-              onChange={e => setKind(e.target.value as "cron" | "interval")}
-            >
-              <option value="cron">Cron expression</option>
-              <option value="interval">Interval (ms)</option>
-            </select>
-          </label>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
+            <span className="micro">How often</span>
+            <div className="segmented" role="group" aria-label="Schedule type" style={{ width: "fit-content" }}>
+              <button
+                type="button"
+                className={kind === "cron" ? "is-active" : ""}
+                aria-pressed={kind === "cron"}
+                onClick={() => { setKind("cron"); setSpec("0 8 * * *"); }}
+              >
+                Cron
+              </button>
+              <button
+                type="button"
+                className={kind === "interval" ? "is-active" : ""}
+                aria-pressed={kind === "interval"}
+                onClick={() => { setKind("interval"); setSpec("3600000"); }}
+              >
+                Interval
+              </button>
+            </div>
+          </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--s4)" }}>
@@ -338,11 +488,11 @@ function CreateForm({
               onChange={e => setSpec(e.target.value)}
               placeholder={kind === "cron" ? "0 8 * * *" : "3600000"}
             />
-            {kind === "cron" && (
-              <span style={{ fontSize: 11, color: "var(--ink-muted)" }}>
-                min hour day month weekday
-              </span>
-            )}
+            <span className="mono small muted">
+              {kind === "cron"
+                ? (describeCron(spec) ?? "min  hour  day  month  weekday")
+                : `= ${formatSpec("interval", spec)}`}
+            </span>
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
@@ -354,11 +504,15 @@ function CreateForm({
               onChange={e => setLabel(e.target.value)}
               placeholder="e.g. Daily morning digest"
             />
+            <span className="small muted">A friendly name for this schedule.</span>
           </label>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--s3)" }}>
-          <button type="submit" className="btn btn-primary" disabled={saving || agents.length === 0}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--s3)", borderTop: "1px solid var(--line)", paddingTop: "var(--s5)" }}>
+          <button type="button" className="btn btn-secondary" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={saving || noAgents}>
             {saving ? "Creating…" : "Create schedule"}
           </button>
         </div>
@@ -367,21 +521,34 @@ function CreateForm({
   );
 }
 
-function Empty() {
+function Empty({ hasAgents, onNew }: { hasAgents: boolean; onNew: () => void }) {
   return (
-    <div style={{
-      padding: "var(--s9) var(--s6)",
-      textAlign: "center",
-      background: "var(--surface)",
-      border: "1px solid var(--line)",
-      borderRadius: "var(--r)",
-    }}>
-      <div style={{ fontSize: 32, marginBottom: "var(--s4)" }}>⏰</div>
-      <div style={{ fontWeight: 600, marginBottom: "var(--s2)", fontSize: 15 }}>No schedules yet</div>
-      <div style={{ fontSize: 13, color: "var(--ink-soft)", maxWidth: 400, margin: "0 auto" }}>
-        Schedules make Krelvan autonomous. Create an agent, then schedule it to run every day,
-        every hour, or on any cron expression you need.
+    <div className="state-empty" style={{ padding: "var(--s9) var(--s6)", gap: "var(--s4)" }}>
+      <div
+        aria-hidden="true"
+        style={{
+          width: 56, height: 56, borderRadius: "var(--r-lg)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: "var(--brand-tint)", color: "var(--brand)", fontSize: 26,
+        }}
+      >
+        ⏱
       </div>
+      <div className="h2" style={{ color: "var(--ink)" }}>No schedules yet</div>
+      <div className="body-lg soft" style={{ maxWidth: "46ch" }}>
+        Schedules make Krelvan autonomous. Point an agent at a cron expression or a fixed
+        interval and it runs on its own — every run recorded and replayable, just like one
+        you start by hand.
+      </div>
+      {hasAgents ? (
+        <button className="btn btn-primary" style={{ marginTop: "var(--s2)" }} onClick={onNew}>
+          + New schedule
+        </button>
+      ) : (
+        <a href="/" className="btn btn-primary" style={{ marginTop: "var(--s2)" }}>
+          Build an agent first →
+        </a>
+      )}
     </div>
   );
 }

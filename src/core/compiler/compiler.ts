@@ -84,8 +84,16 @@ export class Compiler {
     private readonly signer: Signer,
   ) {}
 
-  async compile(intent: string, principal: Principal, now: number): Promise<CompileResult> {
+  // `intent` is what the model is asked to satisfy (on a self-correction retry this
+  // carries appended validation-error feedback). `cleanIntent`, when given, is the
+  // user's ORIGINAL goal — it is what we store as the manifest intent + provenance,
+  // so internal retry feedback never leaks into what the user sees.
+  async compile(intent: string, principal: Principal, now: number, cleanIntent?: string): Promise<CompileResult> {
     const proposal = await this.model.propose(intent);
+
+    // The stored intent must be the user's words, not the augmented retry prompt.
+    const storedIntent = cleanIntent ?? intent;
+    proposal.intent = storedIntent;
 
     // 1. structural validation
     const vIssues = validateManifest(proposal);
@@ -105,7 +113,7 @@ export class Compiler {
     // 4. sign with provenance
     const id = contentAddress(canonicalize(proposal as unknown));
     const provenance = {
-      intent,
+      intent: storedIntent,
       principalKind: principal.kind,
       principalId: principal.id,
       compiledAt: now,

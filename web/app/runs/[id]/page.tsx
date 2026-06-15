@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { getRun, getRunEvents, listApprovals, resolveApproval, explainRun, startRun, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type PendingApproval, type RunExplanation, API_BASE } from "../../../lib/api";
+import { getRun, getRunEvents, listApprovals, resolveApproval, explainRun, diagnoseRun, retryRunWithFix, startRun, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type PendingApproval, type RunExplanation, type RunDiagnosis, API_BASE } from "../../../lib/api";
 import { layoutGraph, graphBounds, edgePath } from "../../../lib/layout";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -12,6 +12,20 @@ import { type ManifestExpr } from "../../../lib/api";
 import { type NodePos } from "../../../lib/layout";
 interface ManifestEdge  { from: string; to: string; when?: ManifestExpr; }
 type Manifest = RunManifest;
+
+// Single source of truth: run/node status → badge variant class.
+const STATUS_BADGE_CLASS: Record<string, string> = {
+  // run statuses
+  completed: "badge-done",
+  failed:    "badge-failed",
+  running:   "badge-running",
+  halted:    "badge-running",
+  pending:   "badge-neutral",
+  paused:    "badge-paused",
+  // node statuses
+  done:      "badge-done",
+  idle:      "badge-neutral",
+};
 
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -27,6 +41,10 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [explanation, setExplanation] = useState<RunExplanation | null>(null);
   const [explaining, setExplaining] = useState(false);
   const [explainError, setExplainError] = useState<string | null>(null);
+  const [diagnosis, setDiagnosis] = useState<RunDiagnosis | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagnoseError, setDiagnoseError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [resolving, setResolving] = useState<string | null>(null);
@@ -145,6 +163,31 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       .finally(() => setExplaining(false));
   }, [detail?.run.status, explanation, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-diagnose failed / halted runs — failure-reasoning grounded in the ledger.
+  useEffect(() => {
+    if (!detail) return;
+    if (detail.run.status !== "failed" && detail.run.status !== "halted") return;
+    if (diagnosis || diagnosing) return;
+    setDiagnosing(true);
+    setDiagnoseError(null);
+    void diagnoseRun(id)
+      .then(res => setDiagnosis(res))
+      .catch(err => setDiagnoseError((err as Error).message))
+      .finally(() => setDiagnosing(false));
+  }, [detail?.run.status, diagnosis, diagnosing, id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleRetryWithFix() {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      const res = await retryRunWithFix(id, diagnosis?.diagnosis.fixStrategy);
+      router.push(`/runs/${res.run.runId}`);
+    } catch (e) {
+      setDiagnoseError((e as Error).message);
+      setRetrying(false);
+    }
+  }
+
   async function handleResolveApproval(correlationId: string, decision: "approve" | "deny") {
     setResolving(correlationId);
     try {
@@ -172,8 +215,33 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     }
   }
 
-  if (loading) return <div className="container" style={{ paddingTop: "var(--s7)" }}><p className="soft small">Loading…</p></div>;
-  if (!detail)  return <div className="container" style={{ paddingTop: "var(--s7)" }}><p className="soft small">Run not found.</p></div>;
+  if (loading) return (
+    <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
+      <div style={{ marginBottom: "var(--s6)" }}>
+        <div className="skeleton skeleton-line" style={{ height: 28, width: 280, marginBottom: "var(--s3)" }} />
+        <div className="skeleton skeleton-line" style={{ height: 12, width: 180 }} />
+      </div>
+      <div className="state-loading" style={{ flexDirection: "column", gap: "var(--s3)" }}>
+        <span className="spinner" aria-hidden="true" />
+        <span>Loading run…</span>
+      </div>
+    </div>
+  );
+  if (!detail) return (
+    <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
+      <div style={{ marginBottom: "var(--s6)" }}>
+        <a href="/runs" className="small" style={{ color: "var(--ink-muted)" }}>← All runs</a>
+      </div>
+      <div className="state-empty">
+        <div style={{ marginBottom: "var(--s3)", color: "var(--ink-muted)" }}><Glyph kind="search" size={32} /></div>
+        <p className="h3" style={{ color: "var(--ink)" }}>This run could not be found</p>
+        <p className="small soft" style={{ maxWidth: "40ch", margin: "0 auto", lineHeight: 1.6 }}>
+          It may have been deleted, or the link is incorrect. Browse your runs to find what you&apos;re looking for.
+        </p>
+        <a href="/runs" className="btn btn-primary" style={{ marginTop: "var(--s2)" }}>Back to all runs →</a>
+      </div>
+    </div>
+  );
 
   const { run, manifest: apiManifest, projection } = detail;
 
@@ -181,13 +249,8 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   // Fall back to reconstructing from ledger events only if the agent has been deleted.
   const syntheticManifest = apiManifest ?? buildSyntheticManifest(events, projection, run.manifestName);
 
-  const statusColor = run.status === "completed" ? "var(--ok)"
-    : run.status === "failed" ? "var(--danger)"
-    : run.status === "running" ? "var(--live)"
-    : run.status === "halted" ? "var(--live)"
-    : "var(--paused)";
-
   const isLiveSSE = sseRef.current !== null;
+  const isTerminalStatus = run.status === "completed" || run.status === "failed";
 
   return (
     <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
@@ -196,11 +259,12 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       {approvals.length > 0 && (
         <div style={{
           marginBottom: "var(--s5)", padding: "var(--s4) var(--s5)",
-          background: "var(--live-tint)", border: "1.5px solid var(--live)",
+          background: "var(--live-tint)", border: "1px solid var(--live)",
           borderRadius: "var(--r)", display: "flex", flexDirection: "column", gap: "var(--s3)",
         }}>
-          <div style={{ fontWeight: 700, fontSize: 14, color: "var(--live)", display: "flex", alignItems: "center", gap: "var(--s2)" }}>
-            <span>⏸</span> Run paused — waiting for your approval
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
+            <span className="badge badge-running"><span className="dot" />paused</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--live)" }}>Run paused — waiting for your approval</span>
           </div>
           {approvals.map(a => (
             <div key={a.correlationId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "var(--s3)", background: "var(--surface)", padding: "var(--s3) var(--s4)", borderRadius: "var(--r)" }}>
@@ -208,24 +272,22 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                 <div style={{ fontSize: 13, fontWeight: 600 }}>
                   Node <strong>{a.nodeId}</strong> wants to call <strong>{a.capability}</strong>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--ink-muted)", marginTop: 2 }}>Approve to proceed · deny to stop the run.</div>
+                <div className="micro" style={{ marginTop: "var(--s1)", textTransform: "none", letterSpacing: 0 }}>Approve to proceed · deny to stop the run.</div>
               </div>
               <div style={{ display: "flex", gap: "var(--s2)" }}>
                 <button
-                  className="btn btn-sm"
-                  style={{ background: "var(--danger-tint)", color: "var(--danger)", border: "none", opacity: resolving ? .6 : 1 }}
+                  className="btn btn-sm btn-danger"
                   disabled={resolving !== null}
                   onClick={() => void handleResolveApproval(a.correlationId, "deny")}
                 >
-                  {resolving === a.correlationId ? "…" : "✗ Deny"}
+                  {resolving === a.correlationId ? "…" : <><Glyph kind="cross" size={14} /> Deny</>}
                 </button>
                 <button
                   className="btn btn-primary btn-sm"
-                  style={{ opacity: resolving ? .6 : 1 }}
                   disabled={resolving !== null}
                   onClick={() => void handleResolveApproval(a.correlationId, "approve")}
                 >
-                  {resolving === a.correlationId ? "…" : "✓ Approve"}
+                  {resolving === a.correlationId ? "…" : <><Glyph kind="check" size={14} /> Approve</>}
                 </button>
               </div>
             </div>
@@ -235,44 +297,38 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
       {/* header */}
       <div style={{ marginBottom: "var(--s6)" }}>
-        <div style={{ marginBottom: "var(--s2)" }}>
-          <div style={{ display: "flex", gap: "var(--s4)", alignItems: "center" }}>
-            <a href="/runs" style={{ fontSize: 12, color: "var(--ink-muted)", textDecoration: "none" }}>← All runs</a>
-            <a href={`/canvas/${run.agentId}?run=${id}`} style={{ fontSize: 12, color: "var(--brand)", textDecoration: "none", fontWeight: 500 }}>Open in Canvas ↗</a>
-          </div>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "var(--s4)" }}>
-          <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-.02em", marginBottom: "var(--s1)" }}>{run.manifestName}</h1>
-            <div style={{ display: "flex", gap: "var(--s4)", flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)" }}>{run.runId}</span>
-              <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>{timeAgo(run.createdAt)}</span>
+        <nav aria-label="Breadcrumb" style={{ marginBottom: "var(--s4)", display: "flex", gap: "var(--s4)", alignItems: "center", flexWrap: "wrap" }}>
+          <a href="/runs" className="small" style={{ color: "var(--ink-muted)" }}>← All runs</a>
+          <span className="small" aria-hidden="true" style={{ color: "var(--line-strong)" }}>·</span>
+          <a href={`/canvas/${run.agentId}?run=${id}`} className="small" style={{ color: "var(--brand)", fontWeight: 500 }}>Open in Canvas ↗</a>
+        </nav>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "var(--s5)" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap", marginBottom: "var(--s2)" }}>
+              <h1 className="h1" style={{ margin: 0 }}>{run.manifestName}</h1>
               {isLiveSSE && (
-                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--live)", display: "flex", alignItems: "center", gap: 4 }}>
-                  <span className="status-dot running" style={{ width: 6, height: 6 }} />
-                  live
-                </span>
+                <span className="badge badge-running"><span className="dot" />live</span>
               )}
             </div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "var(--s2)" }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: statusColor, display: "flex", alignItems: "center", gap: 6 }}>
-              {(run.status === "running" || run.status === "halted") && <span className="status-dot running" />}
-              {run.status === "halted" ? "awaiting approval" : run.status}
+            <div style={{ display: "flex", gap: "var(--s4)", flexWrap: "wrap", alignItems: "center" }}>
+              <span className="mono" style={{ fontSize: 11, color: "var(--ink-muted)" }}>{run.runId}</span>
+              <span className="small" style={{ color: "var(--ink-muted)" }}>{timeAgo(run.createdAt)}</span>
             </div>
-            {run.spentCents != null && (
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: 22, fontWeight: 600, color: "var(--ink)" }}>{run.spentCents}¢</div>
-            )}
-            {(run.status === "completed" || run.status === "failed") && (
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "var(--s3)" }}>
+            <span className={`badge ${STATUS_BADGE_CLASS[run.status] ?? "badge-neutral"}`}>
+              {(run.status === "running" || run.status === "halted") && <span className="dot" />}
+              {run.status === "halted" ? "awaiting approval" : run.status}
+            </span>
+            {isTerminalStatus && (
               <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center" }}>
                 <a href={`/canvas/${run.agentId}`} className="btn btn-secondary btn-sm">View agent →</a>
                 <button
                   className="btn btn-primary btn-sm"
                   disabled={startingRun}
                   onClick={() => void handleRunAgain()}
-                  style={{ opacity: startingRun ? 0.6 : 1 }}
                 >
-                  {startingRun ? "Starting…" : "▶ Run again"}
+                  {startingRun ? "Starting…" : <><Glyph kind="play" size={13} /> Run again</>}
                 </button>
               </div>
             )}
@@ -280,39 +336,102 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         </div>
       </div>
 
-      {/* budget bar */}
-      <BudgetBar spent={projection.budget.runSpentCents} total={projection.budget.runReservedCents || run.spentCents || 200} status={run.status} />
+
+      {/* failure diagnosis — failure-reasoning over the signed ledger (failed/halted only) */}
+      {(diagnosing || diagnosis || diagnoseError) && (run.status === "failed" || run.status === "halted") && (
+        <div style={{
+          marginTop: "var(--s5)",
+          border: "1px solid var(--danger-ring)", borderLeft: "3px solid var(--danger)",
+          borderRadius: "var(--r-lg)", background: "var(--surface)", boxShadow: "var(--shadow-sm)",
+          overflow: "hidden",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", padding: "var(--s4) var(--s5)", background: "var(--danger-tint)", borderBottom: "1px solid var(--danger-ring)" }}>
+            <span aria-hidden="true" style={{ color: "var(--danger)", display: "inline-flex" }}>
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none"><path d="M8 1.5l6.5 11.5H1.5L8 1.5z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><path d="M8 6.2v3.1M8 11.3h.01" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+            </span>
+            <span className="micro" style={{ color: "var(--danger)", letterSpacing: ".06em" }}>Diagnosis</span>
+            <span className="small muted">reasoned from the signed record</span>
+          </div>
+          <div style={{ padding: "var(--s5)" }}>
+            {diagnosing && !diagnosis && (
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", color: "var(--ink-soft)", fontSize: 13 }}>
+                <span className="spinner" aria-hidden="true" />
+                Reasoning over every recorded step to find what went wrong…
+              </div>
+            )}
+            {diagnoseError && !diagnosis && (
+              <div className="small" style={{ color: "var(--ink-muted)" }}>Couldn&apos;t generate a diagnosis: {diagnoseError}</div>
+            )}
+            {diagnosis && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
+                <div>
+                  <div className="micro" style={{ marginBottom: "var(--s1)" }}>Root cause</div>
+                  <p className="body-lg" style={{ margin: 0, lineHeight: 1.6, color: "var(--ink)" }}>{diagnosis.diagnosis.rootCause}</p>
+                </div>
+                <div style={{ display: "flex", gap: "var(--s2)", flexWrap: "wrap", alignItems: "center" }}>
+                  <span className="micro" style={{ color: "var(--ink-muted)" }}>Failing step</span>
+                  <span className="badge badge-failed mono">{diagnosis.diagnosis.failingStep}</span>
+                </div>
+                {diagnosis.diagnosis.contributingFactors.length > 0 && (
+                  <div>
+                    <div className="micro" style={{ marginBottom: "var(--s2)" }}>Contributing factors</div>
+                    <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "var(--s2)", padding: 0 }}>
+                      {diagnosis.diagnosis.contributingFactors.map((f, i) => (
+                        <li key={i} className="small" style={{ display: "flex", gap: "var(--s2)", color: "var(--ink-soft)", lineHeight: 1.55 }}>
+                          <span aria-hidden="true" style={{ color: "var(--ink-muted)", flexShrink: 0 }}>·</span>{f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <div style={{ background: "var(--brand-tint)", borderRadius: "var(--r)", padding: "var(--s4)" }}>
+                  <div className="micro" style={{ marginBottom: "var(--s1)", color: "var(--brand)" }}>Suggested fix</div>
+                  <p className="small" style={{ margin: 0, lineHeight: 1.6, color: "var(--ink)" }}>{diagnosis.diagnosis.fixStrategy}</p>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap", paddingTop: "var(--s2)", borderTop: "1px solid var(--line)" }}>
+                  <span className={`badge ${diagnosis.diagnosis.retryWorthwhile ? "badge-done" : "badge-neutral"}`}>
+                    {diagnosis.diagnosis.retryWorthwhile ? "Retry worthwhile" : "Retry unlikely to help"}
+                  </span>
+                  <span className="small muted" style={{ flex: 1, minWidth: "20ch" }}>{diagnosis.diagnosis.retryNote}</span>
+                  {diagnosis.diagnosis.retryWorthwhile && (
+                    <button className="btn btn-primary btn-sm" disabled={retrying} onClick={handleRetryWithFix}>
+                      {retrying ? "Rebuilding & running…" : "Retry with fix →"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* auto-explanation banner — shown above tabs, no click required */}
-      {(explaining || explanation || explainError) && (run.status === "completed" || run.status === "failed") && (
+      {(explaining || explanation || explainError) && isTerminalStatus && (
         <div style={{
           marginTop: "var(--s5)",
           padding: "var(--s4) var(--s5)",
-          background: explanation ? "var(--surface)" : "var(--canvas)",
-          border: `1px solid ${explanation ? "var(--line)" : "var(--line-strong)"}`,
+          background: explainError && !explanation ? "var(--surface)" : explanation ? "var(--surface)" : "var(--brand-tint)",
+          border: `1px solid ${explanation ? "var(--line)" : explainError ? "var(--line)" : "var(--brand-ring)"}`,
           borderRadius: "var(--r)",
           boxShadow: explanation ? "var(--shadow-sm)" : "none",
+          borderLeft: explanation || explainError ? undefined : "3px solid var(--brand)",
         }}>
           {explaining && !explanation && (
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", color: "var(--ink-muted)", fontSize: 13 }}>
-              <span style={{
-                width: 14, height: 14, borderRadius: "50%",
-                border: "2px solid var(--brand)", borderTopColor: "transparent",
-                display: "inline-block", animation: "spin 0.8s linear infinite",
-                flexShrink: 0,
-              }} />
-              Generating explanation…
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", color: "var(--brand)", fontSize: 13, fontWeight: 500 }}>
+              <span className="spinner" aria-hidden="true" />
+              Reading every step and explaining this run in plain English…
             </div>
           )}
           {explanation && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--s3)" }}>
-                <span className="micro" style={{ color: "var(--brand)" }}>✦ Agent reasoning</span>
+                <span className="micro" style={{ color: "var(--brand)", display: "inline-flex", alignItems: "center", gap: "var(--s2)" }}>
+                  <Glyph kind="spark" size={13} color="var(--brand)" /> Agent reasoning
+                </span>
                 <div style={{ display: "flex", alignItems: "center", gap: "var(--s4)" }}>
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-muted)" }}>{timeAgo(explanation.generatedAt)}</span>
+                  <span className="mono micro" style={{ color: "var(--ink-muted)" }}>{timeAgo(explanation.generatedAt)}</span>
                   <button
                     className="btn btn-secondary btn-sm"
-                    style={{ opacity: explaining ? .6 : 1 }}
                     disabled={explaining}
                     onClick={() => {
                       setExplaining(true);
@@ -330,8 +449,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             </div>
           )}
           {explainError && !explanation && (
-            <div style={{ fontSize: 13, color: "var(--danger)", display: "flex", alignItems: "center", gap: "var(--s3)" }}>
-              <span>⚠</span> {explainError}
+            <div className="state-error" style={{ alignItems: "center", gap: "var(--s3)" }}>
+              <Glyph kind="warn" size={16} />
+              <span style={{ flex: 1 }}>{explainError}</span>
               <button className="btn btn-secondary btn-sm" onClick={() => {
                 setExplaining(true); setExplainError(null);
                 void explainRun(id).then(res => setExplanation(res)).catch(err => setExplainError((err as Error).message)).finally(() => setExplaining(false));
@@ -394,22 +514,42 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       {/* timeline */}
       {tab === "timeline" && (
         <div role="tabpanel" id="panel-timeline" aria-labelledby="tab-timeline" className="card" style={{ padding: 0, overflow: "hidden" }}>
-          {events.length === 0 && <p style={{ padding: "var(--s4)", fontSize: 13, color: "var(--ink-muted)" }}>No events yet.</p>}
+          {events.length === 0 && (
+            <div className="state-empty" style={{ border: "none" }}>
+              <div style={{ color: "var(--ink-muted)" }}><Glyph kind="ledger" size={28} /></div>
+              <p className="h3" style={{ color: "var(--ink)" }}>No events recorded yet</p>
+              <p className="small soft" style={{ maxWidth: "42ch", lineHeight: 1.6 }}>
+                Once this run starts, every step the agent takes is signed and appended here in order.
+              </p>
+            </div>
+          )}
+          {events.length > 0 && (
+            <div style={{
+              display: "grid", gridTemplateColumns: "40px 170px 1fr 90px",
+              gap: "var(--s3)", padding: "var(--s2) var(--s4)",
+              background: "var(--surface-sunken)", borderBottom: "1px solid var(--line)",
+            }}>
+              <span className="micro" style={{ textAlign: "right" }}>#</span>
+              <span className="micro">event</span>
+              <span className="micro">detail</span>
+              <span className="micro" style={{ textAlign: "right" }}>author</span>
+            </div>
+          )}
           {events.map((e, i) => (
             <div key={e.id} style={{
-              display: "grid", gridTemplateColumns: "36px 170px 1fr 90px",
+              display: "grid", gridTemplateColumns: "40px 170px 1fr 90px",
               gap: "var(--s3)", padding: "var(--s3) var(--s4)",
-              borderTop: i === 0 ? "none" : "1px solid var(--line)",
+              borderTop: "1px solid var(--line)",
               fontSize: 12, alignItems: "center",
-              background: i % 2 === 0 ? "transparent" : "var(--canvas)",
+              background: i % 2 === 0 ? "transparent" : "var(--surface-hover)",
             }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-muted)" }}>#{e.offset}</span>
+              <span className="mono" style={{ fontSize: 11, color: "var(--ink-muted)", textAlign: "right" }}>#{e.offset}</span>
               <span style={{ fontWeight: 600, color: eventColor(e.type), fontSize: 11 }}>{e.type}</span>
               <span style={{ color: "var(--ink-soft)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {e.nodeId && <><span style={{ color: "var(--brand)", fontWeight: 500 }}>{e.nodeId}</span> · </>}
                 {eventDetail(e)}
               </span>
-              <span style={{ fontFamily: "var(--font-mono)", textAlign: "right", fontSize: 10, color: "var(--ink-muted)" }}>{e.author.slice(0, 8)}</span>
+              <span className="mono" style={{ textAlign: "right", fontSize: 11, color: "var(--ink-muted)" }}>{e.author.slice(0, 8)}</span>
             </div>
           ))}
         </div>
@@ -419,14 +559,22 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       {tab === "state" && (
         <div role="tabpanel" id="panel-state" aria-labelledby="tab-state">
           {Object.keys(projection.state).length === 0
-            ? <p style={{ fontSize: 13, color: "var(--ink-muted)" }}>No run state yet.</p>
+            ? (
+              <div className="state-empty">
+                <div style={{ color: "var(--ink-muted)" }}><Glyph kind="state" size={28} /></div>
+                <p className="h3" style={{ color: "var(--ink)" }}>No state values yet</p>
+                <p className="small soft" style={{ maxWidth: "42ch", lineHeight: 1.6 }}>
+                  As nodes run, the values they read and write appear here — the working memory of the run.
+                </p>
+              </div>
+            )
             : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "var(--s3)" }}>
                 {Object.entries(projection.state)
                   .filter(([k]) => !k.startsWith("_"))
                   .map(([k, v]) => (
                     <div key={k} className="card" style={{ padding: "var(--s4)" }}>
-                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--brand)", marginBottom: 4, wordBreak: "break-all" }}>{k}</div>
+                      <div className="mono" style={{ fontSize: 11, color: "var(--brand)", marginBottom: "var(--s1)", wordBreak: "break-all" }}>{k}</div>
                       <div style={{ fontSize: 13, color: "var(--ink)", wordBreak: "break-word", maxHeight: 80, overflow: "hidden" }}>
                         {String(v).slice(0, 200)}
                       </div>
@@ -548,17 +696,21 @@ function OutputPanel({ projection, manifest, run }: {
 
   if (isRunning) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "var(--s9) 0", gap: "var(--s3)" }}>
-        <span className="status-dot running" style={{ width: 10, height: 10 }} />
-        <p style={{ fontSize: 14, color: "var(--ink-muted)" }}>Agent is running — output will appear here when complete.</p>
+      <div className="state-empty" style={{ borderColor: "var(--live)", background: "var(--live-tint)" }}>
+        <span className="spinner live" aria-hidden="true" />
+        <p className="h3" style={{ color: "var(--live)" }}>Agent is working…</p>
+        <p className="small soft" style={{ maxWidth: "42ch", lineHeight: 1.6 }}>
+          The result will appear here the moment it finishes. Watch it think live on the <strong>Graph</strong> tab,
+          or follow each step on the <strong>Timeline</strong>.
+        </p>
       </div>
     );
   }
 
   if (isFailed) {
     return (
-      <div className="card" style={{ padding: "var(--s5)", borderColor: "var(--err)", background: "var(--err-tint, #fff5f5)" }}>
-        <p style={{ fontSize: 13, fontWeight: 600, color: "var(--err)", marginBottom: "var(--s2)" }}>Run failed</p>
+      <div className="card" style={{ padding: "var(--s5)", borderColor: "var(--danger-ring)", background: "var(--danger-tint)" }}>
+        <p style={{ fontSize: 13, fontWeight: 600, color: "var(--danger)", marginBottom: "var(--s2)" }}>Run failed</p>
         <p style={{ fontSize: 13, color: "var(--ink-soft)" }}>{run.reason ?? "No error details available."}</p>
       </div>
     );
@@ -569,67 +721,114 @@ function OutputPanel({ projection, manifest, run }: {
 
       {/* Primary outputs */}
       {outputs.length === 0 && (
-        <div className="card" style={{ padding: "var(--s5)", textAlign: "center" }}>
-          <p style={{ fontSize: 13, color: "var(--ink-muted)" }}>
-            No text output produced. Check the <strong>State</strong> tab for raw values.
+        <div className="state-empty">
+          <div style={{ color: "var(--ink-muted)" }}><Glyph kind="output" size={28} /></div>
+          <p className="h3" style={{ color: "var(--ink)" }}>No text output produced</p>
+          <p className="small soft" style={{ maxWidth: "44ch", lineHeight: 1.6 }}>
+            This run didn&apos;t compose a human-readable result. Open the <strong>State</strong> tab to see the
+            raw values it produced, or the <strong>Timeline</strong> for every recorded step.
           </p>
         </div>
       )}
 
       {outputs.map((o, idx) => (
-        <div key={o.key} className="card" style={{ padding: 0, overflow: "hidden" }}>
-          {/* header */}
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "var(--s3) var(--s4)",
-            borderBottom: "1px solid var(--line)",
-            background: "var(--surface-sunken)",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)" }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--brand)", textTransform: "uppercase", letterSpacing: ".06em" }}>{o.label}</span>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-muted)", background: "var(--line)", padding: "2px 6px", borderRadius: 4 }}>{o.nodeId}</span>
-            </div>
-            {idx === 0 && outputs.length > 0 && (
-              <button onClick={copyAll} style={{
-                fontSize: 11, color: "var(--ink-muted)", background: "none", border: "1px solid var(--line)",
-                borderRadius: 6, padding: "3px 10px", cursor: "pointer",
-              }}>
-                {copied ? "Copied!" : "Copy all"}
-              </button>
-            )}
-          </div>
-          {/* body */}
-          <div style={{ padding: "var(--s5)", fontSize: 14, color: "var(--ink)", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-            {o.value}
-          </div>
-        </div>
+        <OutputBlockCard
+          key={o.key}
+          block={o}
+          showCopy={idx === 0 && outputs.length > 0}
+          copied={copied}
+          onCopy={copyAll}
+        />
       ))}
 
       {/* Scalar decisions summary */}
       {Object.keys(scalarsByNode).length > 0 && (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "var(--s3) var(--s4)", borderBottom: "1px solid var(--line)", background: "var(--surface-sunken)" }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Decisions &amp; values</span>
+            <span className="micro">Decisions &amp; values</span>
           </div>
           <div style={{ padding: "var(--s4)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
             {nodeOrder.filter(nid => scalarsByNode[nid]?.length).map(nodeId => (
               <div key={nodeId}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--brand)", marginBottom: "var(--s2)", fontFamily: "var(--font-mono)" }}>{nodeId}</div>
+                <div className="mono" style={{ fontSize: 11, fontWeight: 600, color: "var(--brand)", marginBottom: "var(--s2)" }}>{nodeId}</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)" }}>
                   {scalarsByNode[nodeId].map(({ key, value }) => (
                     <div key={key} style={{
-                      display: "flex", gap: 6, alignItems: "baseline",
-                      background: "var(--surface-sunken)", borderRadius: 6, padding: "4px 10px",
+                      display: "flex", gap: "var(--s2)", alignItems: "baseline",
+                      background: "var(--surface-sunken)", borderRadius: "var(--r-sm)", padding: "var(--s1) var(--s3)",
                       border: "1px solid var(--line)",
                     }}>
-                      <span style={{ fontSize: 11, color: "var(--ink-muted)", fontFamily: "var(--font-mono)" }}>{key}</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink)" }}>{value}</span>
+                      <span className="mono" style={{ fontSize: 11, color: "var(--ink-muted)" }}>{key}</span>
+                      <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--ink)" }}>{value}</span>
                     </div>
                   ))}
                 </div>
               </div>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Output block card ─────────────────────────────────────────────────────────
+// Composed/result text shows expanded (it's the answer). Raw "Fetched data"
+// (an http_get body) is intermediate — collapsed by default, pretty-printed and
+// truncated on expand — so the human-readable result stays the headline.
+function OutputBlockCard({ block, showCopy, copied, onCopy }: {
+  block: { label: string; nodeId: string; key: string; value: string; kind: "text" | "data" };
+  showCopy: boolean;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  const isData = block.kind === "data";
+  const [open, setOpen] = useState(!isData);
+
+  // Pretty-print JSON bodies; cap at a sane length so a big payload can't flood the page.
+  const MAX = 4000;
+  let display = block.value;
+  if (isData) {
+    try { display = JSON.stringify(JSON.parse(block.value), null, 2); } catch { /* not JSON — leave as-is */ }
+  }
+  const truncated = display.length > MAX;
+  if (truncated) display = display.slice(0, MAX) + `\n… (${block.value.length.toLocaleString()} chars total — see the Timeline for the full record)`;
+
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <div
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "var(--s3) var(--s4)",
+          borderBottom: open ? "1px solid var(--line)" : "none",
+          background: "var(--surface-sunken)",
+          cursor: isData ? "pointer" : "default",
+        }}
+        onClick={isData ? () => setOpen(o => !o) : undefined}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)" }}>
+          {isData && (
+            <span className="mono" style={{ fontSize: 11, color: "var(--ink-muted)", width: 10, display: "inline-block" }}>{open ? "▾" : "▸"}</span>
+          )}
+          <span className="micro" style={{ color: "var(--brand)", letterSpacing: ".06em" }}>{block.label}</span>
+          <span className="mono badge badge-neutral" style={{ fontSize: 11 }}>{block.nodeId}</span>
+          {isData && !open && <span className="small muted">click to inspect the raw fetched payload</span>}
+        </div>
+        {showCopy && (
+          <button onClick={(e) => { e.stopPropagation(); onCopy(); }} className="btn btn-secondary btn-sm">
+            {copied ? "Copied!" : "Copy all"}
+          </button>
+        )}
+      </div>
+      {open && (
+        <div style={{
+          padding: "var(--s5)",
+          fontSize: isData ? 12 : 14,
+          fontFamily: isData ? "var(--font-mono, monospace)" : undefined,
+          color: "var(--ink)", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word",
+          maxHeight: isData ? 360 : undefined, overflow: isData ? "auto" : undefined,
+        }}>
+          {display}
         </div>
       )}
     </div>
@@ -656,12 +855,11 @@ function ExplainPanel({ runId, status, explanation, loading, error, onGenerate }
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--s4)" }}>
             <span className="micro">Explanation</span>
             <div style={{ display: "flex", alignItems: "center", gap: "var(--s4)" }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-muted)" }}>
+              <span className="mono micro" style={{ color: "var(--ink-muted)" }}>
                 {timeAgo(explanation.generatedAt)}
               </span>
               <button
                 className="btn btn-secondary btn-sm"
-                style={{ opacity: loading ? .6 : 1 }}
                 disabled={loading}
                 onClick={() => void onGenerate()}
               >
@@ -670,7 +868,7 @@ function ExplainPanel({ runId, status, explanation, loading, error, onGenerate }
             </div>
           </div>
           {!isTerminal && (
-            <div style={{ fontSize: 12, color: "var(--live)", marginBottom: "var(--s4)", fontWeight: 500, padding: "var(--s2) var(--s3)", background: "var(--live-tint)", borderRadius: "var(--r)" }}>
+            <div style={{ fontSize: 12, color: "var(--info)", marginBottom: "var(--s4)", fontWeight: 500, padding: "var(--s2) var(--s3)", background: "var(--info-tint)", borderRadius: "var(--r)" }}>
               Run is still {status} — regenerate once it finishes for a complete picture.
             </div>
           )}
@@ -679,33 +877,29 @@ function ExplainPanel({ runId, status, explanation, loading, error, onGenerate }
           </div>
         </div>
       ) : (
-        <div style={{
-          padding: "var(--s9) var(--s6)", textAlign: "center",
-          background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--r)",
-          backgroundImage: "radial-gradient(circle at 50% 40%, rgba(14,124,117,.03) 0%, transparent 60%)",
-        }}>
-          <div style={{ fontSize: 40, marginBottom: "var(--s5)" }}>✦</div>
-          <p style={{ fontSize: 16, fontWeight: 600, marginBottom: "var(--s3)", color: "var(--ink)", letterSpacing: "-.01em" }}>
+        <div className="state-empty">
+          <div style={{ color: "var(--brand)" }}><Glyph kind="spark" size={28} color="var(--brand)" /></div>
+          <p className="h3" style={{ color: "var(--ink)" }}>
             Understand this run in plain English
           </p>
-          <p style={{ fontSize: 13, color: "var(--ink-soft)", maxWidth: "44ch", margin: "0 auto var(--s6)", lineHeight: 1.6 }}>
-            Krelvan reads every event in this run and explains what each node did, why it succeeded or failed, and what was spent.
+          <p className="small soft" style={{ maxWidth: "44ch", margin: "0 auto", lineHeight: 1.6 }}>
+            Krelvan reads every event in this run and explains what each node did, and why it succeeded or failed.
           </p>
           {!isTerminal && (
-            <p style={{ fontSize: 12, color: "var(--live)", marginBottom: "var(--s5)", fontWeight: 500 }}>
+            <p style={{ fontSize: 12, color: "var(--info)", fontWeight: 500 }}>
               Run is still {status} — you can explain it now or wait until it finishes.
             </p>
           )}
           <button
             className="btn btn-primary btn-lg"
-            style={{ opacity: loading ? .6 : 1 }}
             disabled={loading}
             onClick={() => void onGenerate()}
+            style={{ marginTop: "var(--s2)" }}
           >
             {loading ? "Generating…" : "Generate explanation"}
           </button>
           {error && (
-            <div style={{ marginTop: "var(--s4)", padding: "var(--s3) var(--s4)", background: "var(--danger-tint)", borderRadius: "var(--r)", fontSize: 13, color: "var(--danger)" }}>
+            <div className="state-error" style={{ marginTop: "var(--s4)", textAlign: "left" }}>
               {error}
             </div>
           )}
@@ -713,7 +907,7 @@ function ExplainPanel({ runId, status, explanation, loading, error, onGenerate }
       )}
 
       {explanation && error && (
-        <div style={{ padding: "var(--s3) var(--s4)", background: "var(--danger-tint)", borderRadius: "var(--r)", fontSize: 13, color: "var(--danger)", marginTop: "var(--s3)" }}>
+        <div className="state-error" style={{ marginTop: "var(--s3)" }}>
           {error}
         </div>
       )}
@@ -744,29 +938,27 @@ function GraphCanvas({ manifest, projection, events, selectedNode, onSelectNode 
     <div
       className="card"
       style={{
-        background: "var(--surface)",
-        backgroundImage: "radial-gradient(circle at 65% 35%, rgba(14,124,117,.04) 0%, transparent 55%)",
+        background: "var(--graph-bg)",
         overflow: "auto",
         position: "relative",
       }}
     >
       {/* verified badge */}
-      <div style={{
-        position: "absolute", top: 12, right: 12, zIndex: 10,
-        fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600,
-        color: "var(--ok)", background: "var(--ok-tint)",
-        padding: "3px 8px", borderRadius: "var(--r-pill)",
-        display: "flex", alignItems: "center", gap: 5,
-        cursor: "help",
-      }} title="Append-only ledger — each event is HMAC-signed and cannot be altered after writing">
-        <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--ok)", display: "inline-block" }} />
-        {events.length} events · HMAC verified
+      <div
+        className="badge badge-done mono"
+        style={{ position: "absolute", top: "var(--s3)", right: "var(--s3)", zIndex: 10, cursor: "help" }}
+        title="Append-only ledger — each event is HMAC-signed and cannot be altered after writing"
+      >
+        <span className="dot" />
+        <span className="mono">{events.length}</span> events · HMAC verified
       </div>
 
       <svg
         width={w + PAD * 2}
         height={h + PAD * 2}
         style={{ display: "block", minHeight: 180 }}
+        role="img"
+        aria-label={`Run execution graph with ${manifest.nodes.length} nodes`}
       >
         <defs>
           {/* arrowhead marker — teal */}
@@ -780,7 +972,8 @@ function GraphCanvas({ manifest, projection, events, selectedNode, onSelectNode 
             <polygon points="0 0, 10 3.5, 0 7" fill="var(--line-strong)" />
           </marker>
 
-          {/* animated dash for active edges */}
+          {/* animated dash for active edges — all CSS-class driven so the
+              global prefers-reduced-motion guard in globals.css applies */}
           <style>{`
             .edge-active-dash {
               stroke-dasharray: 8 6;
@@ -789,6 +982,23 @@ function GraphCanvas({ manifest, projection, events, selectedNode, onSelectNode 
             }
             @keyframes svg-dash-flow {
               to { stroke-dashoffset: -28; }
+            }
+            .graph-node-glow {
+              animation: pulse 1.4s ease-in-out infinite;
+              transform-box: fill-box;
+              transform-origin: center;
+            }
+            .graph-node-dot {
+              animation: pulse 1.4s ease-in-out infinite;
+              transform-box: fill-box;
+              transform-origin: center;
+            }
+            .graph-travel-dot {
+              animation: dot-travel 1.2s linear infinite;
+              offset-rotate: 0deg;
+            }
+            @media (prefers-reduced-motion: reduce) {
+              .edge-active-dash, .graph-node-glow, .graph-node-dot, .graph-travel-dot { animation: none !important; }
             }
           `}</style>
         </defs>
@@ -874,28 +1084,13 @@ function GraphNodeSvg({ node, pos, status, visits, isSelected, projection, onCli
   onClick: () => void;
 }) {
   const { x, y, w, h } = pos;
-  const r = 10;
+  const r = 8;
 
-  const bg = status === "running" ? "#FEF3E0" : status === "done" ? "#DCFCE7" : "#FFFFFF";
-  const borderColor = status === "running" ? "#D97706" : status === "done" ? "#16794C" : isSelected ? "#0E7C75" : "#E7E3DC";
+  const bg = status === "running" ? "var(--live-tint)" : status === "done" ? "var(--ok-tint)" : "var(--surface)";
+  const borderColor = status === "running" ? "var(--live)" : status === "done" ? "var(--ok)" : isSelected ? "var(--brand)" : "var(--line)";
   const borderWidth = status !== "idle" || isSelected ? 2 : 1;
 
-  // Per-cap cost from projection
-  const capCosts = node.capabilities.map(c => {
-    const key = `${node.id}:${c.name}`;
-    return { name: c.name, cents: projection.budget.perCapSpentCents[key] ?? 0 };
-  });
-  const totalCost = capCosts.reduce((s, c) => s + c.cents, 0);
-
-  const iconMap: Record<string, string> = {
-    think: "🧠", recall: "📚", remember: "💾", llm_route: "🔀",
-    web_search: "🔍", compose: "✍️", notify_webhook: "📡",
-    telegram_send: "✈️", email_send: "📧", http_get: "↓", http_post: "↑",
-  };
-
-  const capIcon = node.capabilities.length > 0
-    ? (iconMap[node.capabilities[0]!.name] ?? "⚡")
-    : "○";
+  const capName = node.capabilities.length > 0 ? node.capabilities[0]!.name : null;
 
   return (
     <g
@@ -909,7 +1104,7 @@ function GraphNodeSvg({ node, pos, status, visits, isSelected, projection, onCli
         <rect
           x={x - 4} y={y - 4}
           width={w + 8} height={h + 8}
-          rx={r + 3}
+          rx={r + 4}
           fill="none"
           stroke="var(--brand)"
           strokeWidth={2}
@@ -917,20 +1112,18 @@ function GraphNodeSvg({ node, pos, status, visits, isSelected, projection, onCli
         />
       )}
 
-      {/* running glow */}
+      {/* running glow — CSS-class animation respects prefers-reduced-motion */}
       {status === "running" && (
         <rect
-          x={x - 6} y={y - 6}
-          width={w + 12} height={h + 12}
+          className="graph-node-glow"
+          x={x - 4} y={y - 4}
+          width={w + 8} height={h + 8}
           rx={r + 4}
           fill="none"
           stroke="var(--live)"
           strokeWidth={3}
           opacity={0.25}
-        >
-          <animate attributeName="opacity" values="0.15;0.4;0.15" dur="1.6s" repeatCount="indefinite" />
-          <animate attributeName="stroke-width" values="2;5;2" dur="1.6s" repeatCount="indefinite" />
-        </rect>
+        />
       )}
 
       {/* node box */}
@@ -944,8 +1137,12 @@ function GraphNodeSvg({ node, pos, status, visits, isSelected, projection, onCli
         style={{ transition: "fill 300ms, stroke 300ms" }}
       />
 
-      {/* capability icon + name */}
-      <text x={x + 12} y={y + 22} fontSize={18} dominantBaseline="middle">{capIcon}</text>
+      {/* capability glyph (teal geometric SVG — no emoji) + name */}
+      <g transform={`translate(${x + 12}, ${y + 14})`}>
+        {capName ? capGlyphPaths(capName) : (
+          <circle cx="8" cy="8" r="3" stroke="var(--ink-muted)" strokeWidth="1.2" fill="none" />
+        )}
+      </g>
       <text
         x={x + 36} y={y + 21}
         fontSize={12} fontWeight={600}
@@ -956,7 +1153,7 @@ function GraphNodeSvg({ node, pos, status, visits, isSelected, projection, onCli
       </text>
 
       {/* role */}
-      <text x={x + 36} y={y + 38} fontSize={10} fill="#8A938F" dominantBaseline="middle">
+      <text x={x + 36} y={y + 38} fontSize={11} fill="var(--ink-muted)" dominantBaseline="middle">
         {node.role.length > 22 ? node.role.slice(0, 20) + "…" : node.role}
       </text>
 
@@ -964,36 +1161,27 @@ function GraphNodeSvg({ node, pos, status, visits, isSelected, projection, onCli
       <g>
         {status === "running" && (
           <>
-            <circle cx={x + 12} cy={y + 56} r={3} fill="var(--live)">
-              <animate attributeName="opacity" values="1;0.3;1" dur="1s" repeatCount="indefinite" />
-            </circle>
-            <text x={x + 20} y={y + 56} fontSize={10} fill="var(--live)" fontWeight={600} dominantBaseline="middle">
+            <circle className="graph-node-dot" cx={x + 12} cy={y + 56} r={3} fill="var(--live)" />
+            <text x={x + 20} y={y + 56} fontSize={11} fill="var(--live)" fontWeight={600} dominantBaseline="middle">
               running
             </text>
           </>
         )}
         {status === "done" && (
           <>
-            <text x={x + 10} y={y + 56} fontSize={11} fill="var(--ok)" dominantBaseline="middle">✓</text>
-            <text x={x + 22} y={y + 56} fontSize={10} fill="var(--ok)" fontWeight={600} dominantBaseline="middle">
+            <path
+              d={`M${x + 8} ${y + 56}l2.2 2.2 3.6-4.4`}
+              stroke="var(--ok)" strokeWidth={1.6} fill="none"
+              strokeLinecap="round" strokeLinejoin="round" aria-label="done"
+            />
+            <text x={x + 18} y={y + 56} fontSize={11} fill="var(--ok)" fontWeight={600} dominantBaseline="middle">
               done{visits > 1 ? ` ×${visits}` : ""}
             </text>
           </>
         )}
         {status === "idle" && (
-          <text x={x + 10} y={y + 56} fontSize={10} fill="var(--ink-muted)" dominantBaseline="middle">
+          <text x={x + 10} y={y + 56} fontSize={11} fill="var(--ink-muted)" dominantBaseline="middle">
             waiting
-          </text>
-        )}
-        {totalCost > 0 && (
-          <text
-            x={x + w - 8} y={y + 56}
-            fontSize={10} fill="var(--brand)"
-            fontFamily="var(--font-mono)"
-            textAnchor="end"
-            dominantBaseline="middle"
-          >
-            {totalCost}¢
           </text>
         )}
       </g>
@@ -1004,10 +1192,20 @@ function GraphNodeSvg({ node, pos, status, visits, isSelected, projection, onCli
 // ── Traveling dot along an SVG path ──────────────────────────────────────────
 
 function TravelingDotSvg({ path }: { path: string }) {
+  // CSS offset-path so the global prefers-reduced-motion guard applies
+  // (inline SMIL <animateMotion> would bypass it).
   return (
-    <circle r={5} fill="var(--live)" style={{ filter: "drop-shadow(0 0 4px #D97706)" }}>
-      <animateMotion dur="1.2s" repeatCount="indefinite" path={path} />
-    </circle>
+    <circle
+      className="graph-travel-dot"
+      r={5}
+      cx={0}
+      cy={0}
+      fill="var(--live)"
+      style={{
+        offsetPath: `path('${path}')`,
+        filter: "drop-shadow(0 0 4px var(--live))",
+      }}
+    />
   );
 }
 
@@ -1043,31 +1241,28 @@ function NodeDetail({ nodeId, projection, events, budgetCents, onClose }: {
     return null;
   })();
 
-  // Collect per-cap costs
-  const perCapCosts = Object.entries(projection.budget.perCapSpentCents)
-    .filter(([k]) => k.startsWith(`${nodeId}:`))
-    .map(([k, v]) => ({ cap: k.slice(nodeId.length + 1), cents: v }));
-
-  const totalCost = perCapCosts.reduce((s, c) => s + c.cents, 0);
+  // Which capabilities this node used (names only — no cost is ever shown).
+  const nodeCaps = Object.keys(projection.budget.perCapSpentCents)
+    .filter((k) => k.startsWith(`${nodeId}:`))
+    .map((k) => ({ cap: k.slice(nodeId.length + 1) }));
 
   return (
     <div className="card" style={{ padding: "var(--s5)", position: "sticky", top: 72 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--s4)" }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>{nodeId}</div>
-          <div style={{
-            fontSize: 11, fontWeight: 600, marginTop: 2,
-            color: status === "running" ? "var(--live)" : status === "done" ? "var(--ok)" : "var(--ink-muted)",
-          }}>
-            {status} {ns?.visits ? `· ${ns.visits} visit${ns.visits > 1 ? "s" : ""}` : ""}
+          <div className="h3">{nodeId}</div>
+          <div style={{ marginTop: "var(--s1)" }}>
+            <span className={`badge ${STATUS_BADGE_CLASS[status] ?? "badge-neutral"}`}>
+              {status === "running" && <span className="dot" />}
+              {status}{ns?.visits ? ` · ${ns.visits} visit${ns.visits > 1 ? "s" : ""}` : ""}
+            </span>
           </div>
         </div>
         <button
           onClick={onClose}
           aria-label="Close"
-          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--ink-muted)", padding: "8px", borderRadius: "var(--r)", transition: "background 120ms" }}
-          onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-sunken)")}
-          onMouseLeave={e => (e.currentTarget.style.background = "none")}
+          className="btn btn-ghost btn-sm"
+          style={{ padding: "0 var(--s2)" }}
         >
           ×
         </button>
@@ -1076,11 +1271,11 @@ function NodeDetail({ nodeId, projection, events, budgetCents, onClose }: {
       {/* outputs */}
       {nodeState.length > 0 && (
         <div style={{ marginBottom: "var(--s4)" }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: "var(--s2)" }}>Outputs</div>
+          <div className="micro" style={{ marginBottom: "var(--s2)" }}>Outputs</div>
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
             {nodeState.map(({ key, value }) => (
               <div key={key} style={{ background: "var(--surface-sunken)", padding: "var(--s2) var(--s3)", borderRadius: "var(--r)" }}>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--brand)", marginBottom: 2 }}>{key}</div>
+                <div className="mono" style={{ fontSize: 11, color: "var(--brand)", marginBottom: "var(--s1)" }}>{key}</div>
                 <div style={{ fontSize: 12, wordBreak: "break-word", maxHeight: 60, overflow: "hidden" }}>
                   {String(value).slice(0, 300)}
                 </div>
@@ -1093,49 +1288,43 @@ function NodeDetail({ nodeId, projection, events, budgetCents, onClose }: {
       {/* reasoning */}
       {thoughtText && (
         <div style={{ marginBottom: "var(--s4)" }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: "var(--s2)" }}>Reasoning</div>
+          <div className="micro" style={{ marginBottom: "var(--s2)" }}>Reasoning</div>
           <ReasoningBlock text={thoughtText} />
         </div>
       )}
 
-      {/* cost */}
-      {perCapCosts.length > 0 && (
+      {/* capabilities used by this node */}
+      {nodeCaps.length > 0 && (
         <div style={{ marginBottom: "var(--s4)" }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: "var(--s2)" }}>Cost</div>
-          {perCapCosts.map(({ cap, cents }) => (
-            <div key={cap} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "2px 0" }}>
-              <span style={{ color: "var(--ink-soft)" }}>{cap}</span>
-              <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--brand)" }}>{cents}¢</span>
+          <div className="micro" style={{ marginBottom: "var(--s2)" }}>Capabilities used</div>
+          {nodeCaps.map(({ cap }) => (
+            <div key={cap} style={{ display: "flex", alignItems: "center", gap: "var(--s2)", fontSize: 12, padding: "var(--s1) 0" }}>
+              <span className="status-dot done" aria-hidden="true" style={{ width: 6, height: 6 }} />
+              <span className="mono" style={{ color: "var(--ink-soft)" }}>{cap}</span>
             </div>
           ))}
-          {perCapCosts.length > 1 && (
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderTop: "1px solid var(--line)", marginTop: 4 }}>
-              <span style={{ color: "var(--ink)", fontWeight: 600 }}>Total</span>
-              <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--ink)" }}>{totalCost}¢</span>
-            </div>
-          )}
         </div>
       )}
 
       {/* events for this node */}
       {nodeEvents.length > 0 && (
         <div>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: "var(--s2)" }}>
+          <div className="micro" style={{ marginBottom: "var(--s2)" }}>
             Events ({nodeEvents.length})
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--s1)" }}>
             {nodeEvents.map(e => (
               <div key={e.id} style={{ display: "flex", gap: "var(--s2)", alignItems: "baseline" }}>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--ink-muted)", minWidth: 20 }}>#{e.offset}</span>
-                <span style={{ fontSize: 10, fontWeight: 600, color: eventColor(e.type) }}>{e.type}</span>
+                <span className="mono" style={{ fontSize: 11, color: "var(--ink-muted)", minWidth: 24 }}>#{e.offset}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: eventColor(e.type) }}>{e.type}</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {nodeState.length === 0 && perCapCosts.length === 0 && nodeEvents.length === 0 && (
-        <p style={{ fontSize: 12, color: "var(--ink-muted)" }}>Node has not run yet.</p>
+      {nodeState.length === 0 && nodeCaps.length === 0 && nodeEvents.length === 0 && (
+        <p className="small muted">Node has not run yet.</p>
       )}
     </div>
   );
@@ -1160,7 +1349,8 @@ function ReasoningBlock({ text }: { text: string }) {
       {isLong && (
         <button
           onClick={() => setExpanded(e => !e)}
-          style={{ marginTop: "var(--s2)", fontSize: 11, color: "var(--brand)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+          className="btn btn-ghost btn-sm"
+          style={{ marginTop: "var(--s2)", height: "auto", padding: "var(--s1) var(--s2)" }}
         >
           {expanded ? "Show less" : "Show more"}
         </button>
@@ -1169,30 +1359,166 @@ function ReasoningBlock({ text }: { text: string }) {
   );
 }
 
-// ── Budget bar ────────────────────────────────────────────────────────────────
+// ── Capability glyphs (teal geometric SVG — no emoji; matches _builder.tsx
+// CapGlyph + the homepage glyph language). Authored on a 16×16 grid, drawn via a
+// translate at the call site. Stroke uses --brand; neutral square for unknowns. ─
+function capGlyphPaths(name: string): React.ReactNode {
+  switch (name) {
+    case "think":
+      return (
+        <>
+          <circle cx="8" cy="8" r="5.2" stroke="var(--brand)" strokeWidth="1.3" fill="none" />
+          <circle cx="8" cy="8" r="1.7" fill="var(--brand)" />
+        </>
+      );
+    case "recall":
+      return (
+        <>
+          <path d="M2.5 3.2h4.2c.7 0 1.3.6 1.3 1.3v8.3c0-.7-.6-1.3-1.3-1.3H2.5V3.2z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <path d="M13.5 3.2H9.3c-.7 0-1.3.6-1.3 1.3v8.3c0-.7.6-1.3 1.3-1.3h4.2V3.2z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+        </>
+      );
+    case "remember":
+      return (
+        <>
+          <path d="M3 3h7.5L13 5.5V13H3V3z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <rect x="5.5" y="3" width="5" height="3" stroke="var(--brand)" strokeWidth="1.1" fill="none" />
+          <rect x="5" y="8.5" width="6" height="3.5" stroke="var(--brand)" strokeWidth="1.1" fill="none" />
+        </>
+      );
+    case "llm_route":
+      return (
+        <>
+          <path d="M3 8h3.5M9.5 4.5L12.5 4.5M9.5 11.5L12.5 11.5M6.5 8c1.2 0 1.6-3.5 3-3.5M6.5 8c1.2 0 1.6 3.5 3 3.5" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+          <path d="M11 3l1.8 1.5L11 6M11 10l1.8 1.5L11 13" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      );
+    case "web_search":
+      return (
+        <>
+          <circle cx="7" cy="7" r="4" stroke="var(--brand)" strokeWidth="1.3" fill="none" />
+          <path d="M10 10l3.2 3.2" stroke="var(--brand)" strokeWidth="1.4" strokeLinecap="round" />
+        </>
+      );
+    case "compose":
+      return (
+        <>
+          <path d="M3 13l1-3 6.5-6.5 2 2L6 12l-3 1z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <path d="M10 4.5l1.5-1.5 2 2L12 6.5" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+        </>
+      );
+    case "http_get":
+    case "http_post":
+      return (
+        <>
+          <circle cx="8" cy="8" r="5.2" stroke="var(--brand)" strokeWidth="1.2" fill="none" />
+          <path d="M2.8 8h10.4M8 2.8c1.6 1.4 2.4 3.3 2.4 5.2S9.6 12.8 8 13.2C6.4 12.8 5.6 10.9 5.6 8S6.4 4.2 8 2.8z" stroke="var(--brand)" strokeWidth="1.1" fill="none" />
+        </>
+      );
+    case "telegram_send":
+    case "email_send":
+      return (
+        <>
+          <rect x="2.5" y="4" width="11" height="8" rx="1" stroke="var(--brand)" strokeWidth="1.2" fill="none" />
+          <path d="M3 4.8l5 4 5-4" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      );
+    case "slack_send":
+      return (
+        <path d="M3 4.5h10v6H7l-3 2.5v-2.5H3v-6z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+      );
+    case "notify_webhook":
+      return (
+        <>
+          <path d="M8 2.6c2 0 3.3 1.5 3.3 3.4v2.4l1.2 1.8H3.5l1.2-1.8V6c0-1.9 1.3-3.4 3.3-3.4z" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <path d="M6.6 12.2c.2.8.8 1.2 1.4 1.2s1.2-.4 1.4-1.2" stroke="var(--brand)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+        </>
+      );
+    default:
+      return (
+        <>
+          <rect x="3.5" y="3.5" width="9" height="9" rx="2" stroke="var(--brand)" strokeWidth="1.2" fill="none" />
+          <circle cx="8" cy="8" r="1.6" fill="var(--brand)" />
+        </>
+      );
+  }
+}
 
-function BudgetBar({ spent, total, status }: { spent: number; total: number; status: string }) {
-  const pct = Math.min(100, total > 0 ? Math.round((spent / total) * 100) : 0);
-  const isLive = status === "running";
-  return (
-    <div className="card" style={{ padding: "var(--s3) var(--s4)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "var(--s2)", fontSize: 12 }}>
-        <span style={{ color: "var(--ink-muted)" }}>Budget used</span>
-        <span style={{ fontFamily: "var(--font-mono)" }}>
-          <span style={{ color: isLive ? "var(--live)" : "var(--ink)", fontWeight: 600 }}>{spent}¢</span>
-          <span style={{ color: "var(--ink-muted)" }}> / {total}¢</span>
-        </span>
-      </div>
-      <div style={{ height: 6, background: "var(--surface-sunken)", borderRadius: 999, overflow: "hidden" }}>
-        <div style={{
-          height: "100%", borderRadius: 999,
-          background: status === "failed" ? "var(--danger)" : isLive ? "var(--live)" : "var(--brand)",
-          width: `${pct}%`,
-          transition: "width 400ms ease, background 300ms",
-        }} />
-      </div>
-    </div>
-  );
+// ── Inline glyphs for empty/labels (currentColor, 14×14 viewBox) ───────────────
+function Glyph({ kind, size = 28, color }: { kind: "spark" | "ledger" | "state" | "output" | "search" | "warn" | "check" | "cross" | "pause" | "play"; size?: number; color?: string }) {
+  const stroke = color ?? "currentColor";
+  const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", "aria-hidden": true as const };
+  switch (kind) {
+    case "spark":
+      return (
+        <svg {...common}>
+          <path d="M12 3v18M3 12h18M6 6l12 12M18 6L6 18" stroke={stroke} strokeWidth="1.4" strokeLinecap="round" opacity={0.9} />
+          <circle cx="12" cy="12" r="2.4" fill={stroke} />
+        </svg>
+      );
+    case "ledger":
+      return (
+        <svg {...common}>
+          <rect x="4" y="3.5" width="16" height="17" rx="2" stroke={stroke} strokeWidth="1.5" />
+          <path d="M8 8h8M8 12h8M8 16h5" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      );
+    case "state":
+      return (
+        <svg {...common}>
+          <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" stroke={stroke} strokeWidth="1.5" />
+          <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" stroke={stroke} strokeWidth="1.5" />
+          <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" stroke={stroke} strokeWidth="1.5" />
+          <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" stroke={stroke} strokeWidth="1.5" />
+        </svg>
+      );
+    case "output":
+      return (
+        <svg {...common}>
+          <path d="M4 11l4-7 6.5-1L20 8l-1 6.5L12 21l-7-4-1-6z" stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" />
+          <path d="M9 12l2 2 4-5" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "search":
+      return (
+        <svg {...common}>
+          <circle cx="10.5" cy="10.5" r="6" stroke={stroke} strokeWidth="1.6" />
+          <path d="M15 15l4.5 4.5" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      );
+    case "warn":
+      return (
+        <svg {...common}>
+          <path d="M12 3.5l9 16H3l9-16z" stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" />
+          <path d="M12 9.5v4.5M12 17h.01" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+      );
+    case "check":
+      return (
+        <svg {...common}>
+          <path d="M5 12.5l4.5 4.5L19 7" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "cross":
+      return (
+        <svg {...common}>
+          <path d="M6 6l12 12M18 6L6 18" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      );
+    case "pause":
+      return (
+        <svg {...common}>
+          <rect x="6" y="5" width="4" height="14" rx="1" fill={stroke} />
+          <rect x="14" y="5" width="4" height="14" rx="1" fill={stroke} />
+        </svg>
+      );
+    case "play":
+      return (
+        <svg {...common}>
+          <path d="M7 5l12 7-12 7V5z" fill={stroke} />
+        </svg>
+      );
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1255,12 +1581,14 @@ function buildSyntheticManifest(events: LedgerEvent[], projection: RunDetail["pr
 }
 
 function eventColor(type: string): string {
+  // Static log-entry colors only — amber (--live) is reserved for live/animating
+  // UI, never a static descriptor, so node/await entries use brand/info/paused.
   if (type === "RunCompleted") return "var(--ok)";
   if (type === "RunFailed")    return "var(--danger)";
   if (type === "EffectResult") return "var(--brand)";
-  if (type.startsWith("Node")) return "var(--live)";
+  if (type.startsWith("Node")) return "var(--brand)";
   if (type === "AdmissionDecision") return "var(--ink-soft)";
-  if (type === "AwaitRequested") return "var(--live)";
+  if (type === "AwaitRequested") return "var(--paused)";
   if (type === "AwaitResolved")  return "var(--ok)";
   return "var(--ink-muted)";
 }
@@ -1270,21 +1598,21 @@ function eventDetail(e: LedgerEvent): string {
   switch (e.type) {
     case "RunStarted": return `manifest: ${String(p["manifest"] ?? "")}`;
     case "AdmissionDecision": return p["admitted"]
-      ? `admitted · ${String(p["reservedCents"] ?? 0)}¢ reserved`
+      ? `admitted`
       : `DENIED: ${String(p["reason"] ?? "")}`;
     case "EffectRequested": return String(p["capability"] ?? "");
-    case "EffectResult": return `${String(p["costCents"] ?? 0)}¢ · ${JSON.stringify(p["output"]).slice(0, 60)}`;
+    case "EffectResult": return `${JSON.stringify(p["output"]).slice(0, 70)}`;
     case "NodeConcluded": return p["state"] ? JSON.stringify(p["state"]).slice(0, 60) : "concluded";
     case "SubRunRequested": return `sub-run: ${String(p["subRunId"] ?? "").slice(0, 16)}`;
-    case "SubRunCompleted": return `completed · ${String(p["actualCostCents"] ?? 0)}¢`;
+    case "SubRunCompleted": return `completed`;
     case "SubRunFailed":    return `FAILED: ${String(p["reason"] ?? "")}`;
     case "AwaitRequested": {
       const cap = String((p["call"] as Record<string,unknown>)?.["capability"] ?? "");
-      return `⏸ Waiting for approval to run ${cap}`;
+      return `Waiting for approval to run ${cap}`;
     }
     case "AwaitResolved": {
       const decision = String(p["decision"] ?? "");
-      return decision === "approve" ? "✓ Approved — run resumed" : "✗ Denied — run stopped";
+      return decision === "approve" ? "Approved — run resumed" : "Denied — run stopped";
     }
     default: return "";
   }

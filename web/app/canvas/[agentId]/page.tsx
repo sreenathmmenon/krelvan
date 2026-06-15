@@ -31,17 +31,146 @@ function exprLabel(expr: ManifestExpr, depth = 0): string {
   }
 }
 
-// ── Capability icon map ────────────────────────────────────────────────────────
+// ── Capability glyphs (teal geometric SVG — no emoji; matches the homepage glyph
+// style on page.tsx / _builder.tsx CapGlyph). Each glyph is authored on a 16×16
+// grid. capGlyphPaths returns the raw vector paths; render at any scale by wrapping
+// in an SVG sized 16×16 (HTML) or a translated <g> (inside the canvas SVG). ──────
 
-const CAP_ICON: Record<string, string> = {
-  think: "🧠", recall: "📚", remember: "💾", llm_route: "🔀",
-  web_search: "🔍", compose: "✍️", telegram_send: "✈️", http_get: "↓",
-  http_post: "↑", email_send: "📧", text_transform: "🔤",
-  identify: "🪪", slack_send: "💬", notify_webhook: "📡",
-};
+function capGlyphPaths(name: string, color = "var(--brand)"): React.ReactNode {
+  const s = { stroke: color };
+  switch (name) {
+    case "think":
+      return (<>
+        <circle cx="8" cy="8" r="5.2" strokeWidth="1.3" fill="none" {...s} />
+        <circle cx="8" cy="8" r="1.7" fill={color} />
+      </>);
+    case "recall":
+      return (<>
+        <path d="M2.5 3.2h4.2c.7 0 1.3.6 1.3 1.3v8.3c0-.7-.6-1.3-1.3-1.3H2.5V3.2z" strokeWidth="1.2" fill="none" strokeLinejoin="round" {...s} />
+        <path d="M13.5 3.2H9.3c-.7 0-1.3.6-1.3 1.3v8.3c0-.7.6-1.3 1.3-1.3h4.2V3.2z" strokeWidth="1.2" fill="none" strokeLinejoin="round" {...s} />
+      </>);
+    case "remember":
+      return (<>
+        <path d="M3 3h7.5L13 5.5V13H3V3z" strokeWidth="1.2" fill="none" strokeLinejoin="round" {...s} />
+        <rect x="5.5" y="3" width="5" height="3" strokeWidth="1.1" fill="none" {...s} />
+        <rect x="5" y="8.5" width="6" height="3.5" strokeWidth="1.1" fill="none" {...s} />
+      </>);
+    case "llm_route":
+      return (<>
+        <path d="M3 8h3.5M9.5 4.5L12.5 4.5M9.5 11.5L12.5 11.5M6.5 8c1.2 0 1.6-3.5 3-3.5M6.5 8c1.2 0 1.6 3.5 3 3.5" strokeWidth="1.2" fill="none" strokeLinecap="round" {...s} />
+        <path d="M11 3l1.8 1.5L11 6M11 10l1.8 1.5L11 13" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...s} />
+      </>);
+    case "web_search":
+      return (<>
+        <circle cx="7" cy="7" r="4" strokeWidth="1.3" fill="none" {...s} />
+        <path d="M10 10l3.2 3.2" strokeWidth="1.4" strokeLinecap="round" {...s} />
+      </>);
+    case "compose":
+      return (<>
+        <path d="M3 13l1-3 6.5-6.5 2 2L6 12l-3 1z" strokeWidth="1.2" fill="none" strokeLinejoin="round" {...s} />
+        <path d="M10 4.5l1.5-1.5 2 2L12 6.5" strokeWidth="1.2" fill="none" strokeLinejoin="round" {...s} />
+      </>);
+    case "http_get":
+    case "http_post":
+      return (<>
+        <circle cx="8" cy="8" r="5.2" strokeWidth="1.2" fill="none" {...s} />
+        <path d="M2.8 8h10.4M8 2.8c1.6 1.4 2.4 3.3 2.4 5.2S9.6 12.8 8 13.2C6.4 12.8 5.6 10.9 5.6 8S6.4 4.2 8 2.8z" strokeWidth="1.1" fill="none" {...s} />
+      </>);
+    case "telegram_send":
+    case "email_send":
+      return (<>
+        <rect x="2.5" y="4" width="11" height="8" rx="1" strokeWidth="1.2" fill="none" {...s} />
+        <path d="M3 4.8l5 4 5-4" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...s} />
+      </>);
+    case "slack_send":
+      return (
+        <path d="M3 4.5h10v6H7l-3 2.5v-2.5H3v-6z" strokeWidth="1.2" fill="none" strokeLinejoin="round" {...s} />
+      );
+    case "notify_webhook":
+      return (<>
+        <path d="M8 2.6c2 0 3.3 1.5 3.3 3.4v2.4l1.2 1.8H3.5l1.2-1.8V6c0-1.9 1.3-3.4 3.3-3.4z" strokeWidth="1.2" fill="none" strokeLinejoin="round" {...s} />
+        <path d="M6.6 12.2c.2.8.8 1.2 1.4 1.2s1.2-.4 1.4-1.2" strokeWidth="1.2" fill="none" strokeLinecap="round" {...s} />
+      </>);
+    case "text_transform":
+      return (<>
+        <path d="M3.5 4h9M8 4v8.5M5.5 12.5h5" strokeWidth="1.2" fill="none" strokeLinecap="round" {...s} />
+      </>);
+    case "identify":
+      return (<>
+        <rect x="2.5" y="3.5" width="11" height="9" rx="1.4" strokeWidth="1.2" fill="none" {...s} />
+        <circle cx="6" cy="7" r="1.5" strokeWidth="1.1" fill="none" {...s} />
+        <path d="M3.8 11c.3-1.3 1.2-2 2.2-2s1.9.7 2.2 2M10 6.5h2.3M10 9h2.3" strokeWidth="1.1" fill="none" strokeLinecap="round" {...s} />
+      </>);
+    default:
+      return (<>
+        <rect x="3.5" y="3.5" width="9" height="9" rx="2" strokeWidth="1.2" fill="none" {...s} />
+        <circle cx="8" cy="8" r="1.6" fill={color} />
+      </>);
+  }
+}
 
-function capIcon(name: string): string {
-  return CAP_ICON[name] ?? "⚡";
+// HTML-context glyph (detail drawer, dropdowns): a fixed 16×16 inline SVG.
+function CapGlyphInline({ name, size = 14, color = "var(--brand)" }: { name: string; size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true" style={{ flexShrink: 0, display: "block" }}>
+      {capGlyphPaths(name, color)}
+    </svg>
+  );
+}
+
+// SVG-context glyph (inside the canvas <svg>): translate to top-left of a 16×16 box.
+function CapGlyphSvg({ name, x, y, size = 13, color = "var(--brand)" }: { name: string; x: number; y: number; size?: number; color?: string }) {
+  const k = size / 16;
+  return (
+    <g transform={`translate(${x},${y}) scale(${k})`}>
+      {capGlyphPaths(name, color)}
+    </g>
+  );
+}
+
+// ── Small UI glyphs (HTML context) — replace emoji/dingbats with crisp SVG ─────
+
+function ChevronDown({ size = 11, color = "var(--ink-muted)" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <path d="M2.5 4.5L6 8l3.5-3.5" stroke={color} strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconCheck({ size = 12, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true" style={{ flexShrink: 0, display: "block" }}>
+      <path d="M2.5 6.3l2.3 2.4L9.5 3.6" stroke={color} strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconPlay({ size = 12, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 12 12" aria-hidden="true" style={{ flexShrink: 0, display: "block" }}>
+      <path d="M3 2.2l6.5 3.8L3 9.8z" fill={color} />
+    </svg>
+  );
+}
+
+function IconClose({ size = 14, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden="true" style={{ flexShrink: 0, display: "block" }}>
+      <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// "Nothing here" frame glyph — a node/graph mark, teal, in the homepage style.
+function GlyphGraphEmpty({ size = 30 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" style={{ display: "block" }}>
+      <rect x="4" y="6" width="11" height="8" rx="2" stroke="var(--brand)" strokeWidth="1.5" fill="none" opacity={0.85} />
+      <rect x="17" y="18" width="11" height="8" rx="2" stroke="var(--brand)" strokeWidth="1.5" fill="none" opacity={0.85} />
+      <path d="M15 10h3a4 4 0 0 1 4 4v4" stroke="var(--brand)" strokeWidth="1.5" fill="none" strokeLinecap="round" opacity={0.55} />
+    </svg>
+  );
 }
 
 // ── Replay projection: fold events 0..cursor into node state ──────────────────
@@ -54,14 +183,16 @@ interface NodeSnapshot {
 
 interface ReplayState {
   nodes: Record<string, NodeSnapshot>;
-  perCapSpentCents: Record<string, number>;
-  runSpentCents: number;
+  // Activity = how many effects ran at each node (drives the activity heat-map).
+  perNodeActivity: Record<string, number>;
+  // Per-capability effect counts, keyed `${nodeId}:${capabilityName}`.
+  perCapActivity: Record<string, number>;
 }
 
 function replayUpTo(events: LedgerEvent[], cursor: number): ReplayState {
   const nodes: Record<string, NodeSnapshot> = {};
-  const perCapSpentCents: Record<string, number> = {};
-  let runSpentCents = 0;
+  const perNodeActivity: Record<string, number> = {};
+  const perCapActivity: Record<string, number> = {};
 
   for (let i = 0; i <= cursor && i < events.length; i++) {
     const e = events[i]!;
@@ -78,15 +209,14 @@ function replayUpTo(events: LedgerEvent[], cursor: number): ReplayState {
     }
     if (e.type === "EffectResult" && nodeId) {
       const capKey = String((e.payload as Record<string, unknown>)["capabilityName"] ?? "");
-      const costCents = Number((e.payload as Record<string, unknown>)["claimedCostCents"] ?? 0);
+      perNodeActivity[nodeId] = (perNodeActivity[nodeId] ?? 0) + 1;
       if (capKey) {
         const k = `${nodeId}:${capKey}`;
-        perCapSpentCents[k] = (perCapSpentCents[k] ?? 0) + costCents;
-        runSpentCents += costCents;
+        perCapActivity[k] = (perCapActivity[k] ?? 0) + 1;
       }
     }
   }
-  return { nodes, perCapSpentCents, runSpentCents };
+  return { nodes, perNodeActivity, perCapActivity };
 }
 
 // ── Pan + zoom reducer ────────────────────────────────────────────────────────
@@ -140,6 +270,20 @@ function panReducer(state: PanState, action: PanAction): PanState {
   }
 }
 
+// ── Shared status → badge variant map ─────────────────────────────────────────
+
+const STATUS_BADGE_CLASS: Record<string, string> = {
+  running:   "badge badge-running",
+  pending:   "badge badge-running",
+  completed: "badge badge-done",
+  failed:    "badge badge-failed",
+  paused:    "badge badge-paused",
+};
+
+function statusBadgeClass(status: string): string {
+  return STATUS_BADGE_CLASS[status] ?? "badge badge-neutral";
+}
+
 // ── Run selector dropdown ──────────────────────────────────────────────────────
 
 function RunSelectorDropdown({ runs, selectedRunId, onSelect }: {
@@ -159,31 +303,26 @@ function RunSelectorDropdown({ runs, selectedRunId, onSelect }: {
   }, []);
 
   const selected = runs.find(r => r.runId === selectedRunId);
-  const statusColor = (s: string) =>
-    s === "running" ? "var(--live)" : s === "completed" ? "var(--ok)" : s === "failed" ? "var(--danger)" : "var(--ink-muted)";
-  const statusDot = (s: string) =>
-    s === "running" ? "⬤" : s === "completed" ? "✓" : s === "failed" ? "✗" : "○";
+  const statusDotClass = (s: string) =>
+    s === "running" ? "status-dot running" : s === "completed" ? "status-dot done" : s === "failed" ? "status-dot failed" : "status-dot paused";
 
   return (
     <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
       <button
+        className="btn btn-secondary btn-sm"
         onClick={() => setOpen(o => !o)}
-        style={{
-          fontSize: 12, padding: "5px 10px", borderRadius: "var(--r)",
-          border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)",
-          cursor: "pointer", display: "flex", alignItems: "center", gap: 6, minWidth: 180, maxWidth: 240,
-        }}
+        style={{ minWidth: 180, maxWidth: 240, justifyContent: "flex-start" }}
       >
         {selected ? (
           <>
-            <span style={{ color: statusColor(selected.status), fontSize: 10, flexShrink: 0 }}>{statusDot(selected.status)}</span>
-            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>{selected.manifestName}</span>
-            <span style={{ color: "var(--ink-muted)", flexShrink: 0, fontSize: 11 }}>{timeAgo(selected.createdAt)}</span>
+            <span className={statusDotClass(selected.status)} aria-hidden="true" />
+            <span className="text-truncate" style={{ flex: 1, textAlign: "left" }}>{selected.manifestName}</span>
+            <span className="micro" style={{ flexShrink: 0, textTransform: "none", letterSpacing: 0 }}>{timeAgo(selected.createdAt)}</span>
           </>
         ) : (
           <span style={{ color: "var(--ink-soft)", flex: 1, textAlign: "left" }}>Blueprint (no run)</span>
         )}
-        <span style={{ color: "var(--ink-muted)", fontSize: 9, flexShrink: 0 }}>▾</span>
+        <ChevronDown />
       </button>
 
       {open && (
@@ -192,10 +331,16 @@ function RunSelectorDropdown({ runs, selectedRunId, onSelect }: {
           background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--r)",
           boxShadow: "var(--shadow-md)", overflow: "hidden",
         }}>
+          <style>{`
+            .canvas-run-option { transition: background var(--t-fast) var(--ease); }
+            .canvas-run-option[data-selected="false"]:hover { background: var(--surface-hover) !important; }
+          `}</style>
           <div
+            className="canvas-run-option small"
+            data-selected={!selectedRunId}
             onClick={() => { onSelect(null); setOpen(false); }}
             style={{
-              padding: "8px 12px", fontSize: 12, cursor: "pointer",
+              padding: "var(--s2) var(--s3)", cursor: "pointer",
               borderBottom: "1px solid var(--line)",
               background: !selectedRunId ? "var(--brand-tint)" : "transparent",
               color: !selectedRunId ? "var(--brand)" : "var(--ink-soft)",
@@ -206,19 +351,19 @@ function RunSelectorDropdown({ runs, selectedRunId, onSelect }: {
           {runs.map(r => (
             <div
               key={r.runId}
+              className="canvas-run-option small"
+              data-selected={r.runId === selectedRunId}
               onClick={() => { onSelect(r.runId); setOpen(false); }}
               style={{
-                padding: "8px 12px", fontSize: 12, cursor: "pointer",
-                display: "flex", alignItems: "center", gap: 8,
+                padding: "var(--s2) var(--s3)", cursor: "pointer",
+                display: "flex", alignItems: "center", gap: "var(--s2)",
                 borderBottom: "1px solid var(--line)",
                 background: r.runId === selectedRunId ? "var(--brand-tint)" : "transparent",
               }}
-              onMouseEnter={e => { if (r.runId !== selectedRunId) (e.currentTarget as HTMLDivElement).style.background = "var(--surface-hover)"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = r.runId === selectedRunId ? "var(--brand-tint)" : "transparent"; }}
             >
-              <span style={{ color: statusColor(r.status), fontSize: 11, flexShrink: 0 }}>{statusDot(r.status)}</span>
-              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: r.runId === selectedRunId ? 600 : 400 }}>{r.manifestName}</span>
-              <span style={{ color: "var(--ink-muted)", fontSize: 11, flexShrink: 0 }}>{timeAgo(r.createdAt)}</span>
+              <span className={statusDotClass(r.status)} aria-hidden="true" />
+              <span className="text-truncate" style={{ flex: 1, fontWeight: r.runId === selectedRunId ? 600 : 400 }}>{r.manifestName}</span>
+              <span className="micro" style={{ flexShrink: 0, textTransform: "none", letterSpacing: 0 }}>{timeAgo(r.createdAt)}</span>
             </div>
           ))}
         </div>
@@ -230,7 +375,10 @@ function RunSelectorDropdown({ runs, selectedRunId, onSelect }: {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CanvasPage({ params, searchParams }: { params: Promise<{ agentId: string }>; searchParams: Promise<{ run?: string }> }) {
-  const { agentId } = use(params);
+  const { agentId: rawAgentId } = use(params);
+  // Next may hand back the param still percent-encoded (the id contains "sha256:").
+  // Decode defensively so getAgent()'s own encodeURIComponent doesn't double-encode.
+  const agentId = (() => { try { return decodeURIComponent(rawAgentId); } catch { return rawAgentId; } })();
   const { run: runFromUrl } = use(searchParams);
 
   const [agent, setAgent]       = useState<AgentRecord | null>(null);
@@ -241,7 +389,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   const [loading, setLoading]   = useState(true);
   const [mode, setMode]         = useState<"blueprint" | "live">("blueprint");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [showCost, setShowCost] = useState(false);
+  const [showHeat, setShowHeat] = useState(false);
   const [scrubCursor, setScrubCursor] = useState<number | null>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
@@ -338,13 +486,41 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
 
   useEffect(() => {
     if (!containerRef.current || !manifest) return;
-    const { width, height } = containerRef.current.getBoundingClientRect();
-    dispatchPan({ type: "reset", containerW: width, containerH: height, graphW, graphH });
+    const el = containerRef.current;
+    const fit = () => {
+      const { width, height } = el.getBoundingClientRect();
+      if (width > 0 && height > 0) {
+        dispatchPan({ type: "reset", containerW: width, containerH: height, graphW, graphH });
+      }
+    };
+    fit();
+    // Re-fit once the container has its real size (mobile/late layout) and on resize,
+    // so the graph always centers/scales to the viewport instead of sitting tiny in a corner.
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [manifest?.name, graphW, graphH]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Projection: normalize live projection to ReplayState shape ───────────
 
   const liveProjection = detail?.projection ?? null;
+
+  // Activity counts (effects per node / per capability) are derived from the
+  // ledger events — they drive the activity heat-map, not the live budget.
+  const liveActivity = useMemo(() => {
+    const perNodeActivity: Record<string, number> = {};
+    const perCapActivity: Record<string, number> = {};
+    for (const e of events) {
+      if (e.type !== "EffectResult" || !e.nodeId) continue;
+      perNodeActivity[e.nodeId] = (perNodeActivity[e.nodeId] ?? 0) + 1;
+      const capKey = String((e.payload as Record<string, unknown>)["capabilityName"] ?? "");
+      if (capKey) {
+        const k = `${e.nodeId}:${capKey}`;
+        perCapActivity[k] = (perCapActivity[k] ?? 0) + 1;
+      }
+    }
+    return { perNodeActivity, perCapActivity };
+  }, [events]);
 
   const normalizedLive: ReplayState | null = liveProjection ? {
     nodes: Object.fromEntries(
@@ -354,8 +530,8 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
         visits: ns.visits,
       }])
     ),
-    perCapSpentCents: liveProjection.budget.perCapSpentCents,
-    runSpentCents: liveProjection.budget.runSpentCents,
+    perNodeActivity: liveActivity.perNodeActivity,
+    perCapActivity: liveActivity.perCapActivity,
   } : null;
 
   // Memoized — avoids O(n) full-replay scan on every render during scrubbing
@@ -367,8 +543,10 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   const activeProjection: ReplayState | null =
     scrubbedProjection ?? (mode === "live" ? normalizedLive : null);
 
-  // Total run cost for heat calculation
-  const totalRunCost = activeProjection?.runSpentCents ?? 0;
+  // Peak per-node activity — normalizes the activity heat-map (hottest node = 1.0)
+  const maxNodeActivity = activeProjection
+    ? Object.values(activeProjection.perNodeActivity).reduce((m, v) => Math.max(m, v), 0)
+    : 0;
 
   // Which node is currently running (for active edge detection)
   const runningNode = activeProjection
@@ -445,40 +623,101 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   }
 
   if (loading) return (
-    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <p style={{ fontSize: 13, color: "var(--ink-muted)" }}>Loading…</p>
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "var(--s4)", background: "var(--graph-bg)" }}>
+      <span className="spinner" aria-hidden="true" style={{ width: 22, height: 22 }} />
+      <span className="small soft">Loading canvas…</span>
     </div>
   );
 
   if (!agent) return (
-    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <p style={{ fontSize: 13, color: "var(--ink-muted)" }}>Agent not found.</p>
+    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--graph-bg)", padding: "var(--s6)" }}>
+      <div className="state-empty" style={{ maxWidth: 380, boxShadow: "var(--shadow-md)" }}>
+        <div style={{ marginBottom: "var(--s2)" }}><GlyphGraphEmpty /></div>
+        <p className="h3" style={{ color: "var(--ink)" }}>Agent not found</p>
+        <p className="small muted" style={{ maxWidth: "34ch", lineHeight: 1.6 }}>
+          This agent may have been deleted, or the link is incorrect.
+        </p>
+        <a href="/agents" className="btn btn-secondary btn-sm" style={{ marginTop: "var(--s2)" }}>← Back to agents</a>
+      </div>
     </div>
   );
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--canvas)", opacity: mounted ? 1 : 0, transition: "opacity 200ms ease" }}>
+      {/* Mobile: the interactive canvas is a desktop-class tool. On phones we show a
+          clean notice + quick actions instead of a cramped, unusable graph. */}
+      <div className="canvas-mobile-note">
+        <div className="canvas-mobile-note__card">
+          <div className="empty-invite__glyph" aria-hidden="true" style={{ marginBottom: "var(--s3)" }}>
+            <svg viewBox="0 0 16 16" width="22" height="22" fill="none"><rect x="1.5" y="3" width="13" height="8.5" rx="1.5" stroke="var(--brand)" strokeWidth="1.3"/><path d="M5.5 14h5M8 11.5V14" stroke="var(--brand)" strokeWidth="1.3" strokeLinecap="round"/></svg>
+          </div>
+          <p className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s2)" }}>The canvas is best on a larger screen</p>
+          <p className="small soft" style={{ maxWidth: "34ch", margin: "0 auto var(--s5)" }}>
+            The interactive graph — pan, zoom, replay each step — needs more room than a phone.
+            Open this agent on a desktop to explore it. You can still jump to its run or details below.
+          </p>
+          <div style={{ display: "flex", gap: "var(--s2)", justifyContent: "center", flexWrap: "wrap" }}>
+            {selectedRunId && <a href={`/runs/${selectedRunId}`} className="btn btn-primary btn-sm">View the run →</a>}
+            <a href={`/agents/${agentId}`} className="btn btn-secondary btn-sm">Agent details</a>
+          </div>
+        </div>
+      </div>
+      <style>{`
+        .canvas-mobile-note {
+          display: none; position: fixed; inset: 56px 0 0 0; z-index: 60;
+          align-items: center; justify-content: center; padding: var(--s5);
+          background: var(--canvas);
+        }
+        .canvas-mobile-note__card {
+          text-align: center; max-width: 420px;
+          border: 1px solid var(--line); border-radius: var(--r-lg);
+          background: radial-gradient(120% 80% at 50% 0%, var(--brand-tint) 0%, rgba(230,244,242,0) 55%), var(--surface);
+          box-shadow: var(--shadow-sm); padding: var(--s8) var(--s6);
+        }
+        @media (max-width: 640px) {
+          .canvas-mobile-note { display: flex !important; }
+        }
+        .canvas-ledger-badge { transition: background var(--t-fast) var(--ease); }
+        .canvas-ledger-badge:hover { background: var(--ok); color: #fff; }
+        .canvas-scrubber {
+          flex: 1; height: 4px; -webkit-appearance: none; appearance: none;
+          background: var(--surface-sunken); border-radius: var(--r-pill);
+          accent-color: var(--brand); cursor: pointer; outline: none;
+        }
+        .canvas-scrubber::-webkit-slider-thumb {
+          -webkit-appearance: none; appearance: none;
+          width: 16px; height: 16px; border-radius: 50%;
+          background: var(--brand); border: 2px solid var(--surface);
+          box-shadow: var(--shadow-sm); cursor: pointer;
+        }
+        .canvas-scrubber::-moz-range-thumb {
+          width: 16px; height: 16px; border-radius: 50%;
+          background: var(--brand); border: 2px solid var(--surface);
+          box-shadow: var(--shadow-sm); cursor: pointer;
+        }
+        .canvas-scrubber:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; }
+      `}</style>
 
-      {/* ── Toolbar ──────────────────────────────────────────────────────── */}
-      <div style={{
+      {/* ── Toolbar (scrolls horizontally if it can't fit, e.g. on phones) ──── */}
+      <div className="canvas-toolbar" style={{
         height: 52, flexShrink: 0,
         borderBottom: "1px solid var(--line)",
         background: "rgba(248,247,244,.96)", backdropFilter: "blur(10px)",
         display: "flex", alignItems: "center", gap: "var(--s4)", padding: "0 var(--s5)",
-        zIndex: 20,
+        zIndex: 20, overflowX: "auto", overflowY: "hidden",
       }}>
         {/* back */}
-        <a href={`/agents/${agentId}`} style={{ fontSize: 12, color: "var(--ink-muted)", textDecoration: "none", flexShrink: 0 }}>← Agent</a>
+        <a href={`/agents/${agentId}`} className="small" style={{ color: "var(--ink-muted)", flexShrink: 0 }}>← Agent</a>
 
         <div style={{ width: 1, height: 20, background: "var(--line)" }} />
 
         {/* agent name + intent */}
-        <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 1, maxWidth: 220 }}>
-          <span style={{ fontWeight: 700, fontSize: 14, color: "var(--ink)", letterSpacing: "-.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: "var(--s1)", maxWidth: 220 }}>
+          <span className="h3 text-truncate" style={{ color: "var(--ink)" }}>
             {agent.signed.manifest.name}
           </span>
           {agent.signed.provenance.intent && (
-            <span style={{ fontSize: 11, color: "var(--ink-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <span className="micro text-truncate" style={{ textTransform: "none", letterSpacing: 0 }}>
               {agent.signed.provenance.intent.length > 60 ? agent.signed.provenance.intent.slice(0, 57) + "…" : agent.signed.provenance.intent}
             </span>
           )}
@@ -488,18 +727,12 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
         <a
           href={selectedRunId ? `/runs/${selectedRunId}#timeline` : `/agents/${agentId}`}
           title="Every event is HMAC-chained — the ledger cannot be altered without detection"
-          style={{
-            display: "flex", alignItems: "center", gap: 4,
-            padding: "3px 9px", borderRadius: "var(--r-pill)",
-            background: "var(--ok-tint)", border: "1px solid rgba(22,121,76,.2)",
-            fontSize: 11, fontWeight: 600, color: "var(--ok)",
-            textDecoration: "none", flexShrink: 0,
-            transition: "background 120ms",
-          }}
-          onMouseEnter={e => (e.currentTarget.style.background = "#bbf7d0")}
-          onMouseLeave={e => (e.currentTarget.style.background = "var(--ok-tint)")}
+          className="badge badge-done canvas-ledger-badge"
+          style={{ flexShrink: 0, textDecoration: "none" }}
         >
-          ✓ Signed
+          <IconCheck />
+          <span className="sr-only">Verified:</span>
+          Signed
         </a>
 
         {/* run selector */}
@@ -511,43 +744,45 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
 
         {/* blueprint / live toggle */}
         {selectedRunId && (
-          <div style={{ display: "flex", borderRadius: "var(--r)", border: "1px solid var(--line)", overflow: "hidden", flexShrink: 0 }}>
+          <div className="segmented" style={{ flexShrink: 0 }}>
             {(["blueprint", "live"] as const).map(m => (
-              <button key={m} onClick={() => setMode(m)} style={{
-                padding: "4px 12px", fontSize: 12, fontWeight: 500, border: "none", cursor: "pointer",
-                background: mode === m ? (m === "live" ? "var(--live)" : "var(--brand)") : "var(--surface)",
-                color: mode === m ? "#fff" : "var(--ink-soft)",
-                transition: "background 150ms, color 150ms",
-              }}>
-                {m === "blueprint" ? "Blueprint" : "Live ▶"}
+              <button key={m} onClick={() => setMode(m)} aria-pressed={mode === m}>
+                {m === "blueprint" ? "Blueprint" : "Live"}
               </button>
             ))}
           </div>
         )}
 
-        {/* cost heat toggle */}
-        {selectedRunId && mode === "live" && (
-          <button onClick={() => setShowCost(c => !c)} style={{
-            padding: "4px 12px", fontSize: 12, fontWeight: 500, borderRadius: "var(--r)",
-            border: "1px solid var(--line)", cursor: "pointer",
-            background: showCost ? "rgba(217,119,6,.12)" : "var(--surface)",
-            color: showCost ? "#D97706" : "var(--ink-soft)",
-            transition: "background 150ms, color 150ms",
-          }}>
-            {showCost ? "◉" : "○"} Cost heat
-          </button>
-        )}
 
         {/* live indicator */}
         {detail?.run.status === "running" && mode === "live" && (
-          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--live)", fontWeight: 600, flexShrink: 0 }}>
-            <span className="status-dot running" style={{ width: 6, height: 6 }} />
+          <div className="micro" style={{ display: "flex", alignItems: "center", gap: "var(--s1)", color: "var(--live)", fontWeight: 600, flexShrink: 0 }}>
+            <span className="status-dot running" style={{ width: 6, height: 6 }} aria-hidden="true" />
             live
           </div>
         )}
 
+        {/* activity heat-map toggle — colors nodes by how active they were (more
+            effects = hotter). No cost is ever shown. */}
+        {mode === "live" && (
+          <label
+            className="micro"
+            title="Shade nodes by activity — the more effects a node ran, the warmer it glows."
+            style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexShrink: 0, cursor: "pointer", textTransform: "none", letterSpacing: 0 }}
+          >
+            <input
+              type="checkbox"
+              checked={showHeat}
+              onChange={e => setShowHeat(e.target.checked)}
+              style={{ accentColor: "var(--brand)", cursor: "pointer" }}
+            />
+            Activity heat
+          </label>
+        )}
+
         {/* run again */}
         <button
+          className="btn btn-primary btn-sm"
           onClick={() => {
             if (startingRun) return;
             setStartingRun(true);
@@ -561,71 +796,67 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
               .finally(() => setStartingRun(false));
           }}
           disabled={startingRun || detail?.run.status === "running"}
-          style={{
-            padding: "5px 14px", fontSize: 12, fontWeight: 600, borderRadius: "var(--r)",
-            border: "none", cursor: startingRun ? "default" : "pointer",
-            background: "var(--brand)", color: "#fff",
-            opacity: (startingRun || detail?.run.status === "running") ? 0.55 : 1,
-            transition: "opacity 150ms",
-            flexShrink: 0,
-          }}
+          style={{ flexShrink: 0 }}
         >
-          {startingRun ? "Starting…" : "▶ Run again"}
+          {startingRun ? <><span className="spinner" aria-hidden="true" style={{ width: 13, height: 13, borderTopColor: "var(--brand-ink)", borderColor: "rgba(255,255,255,.4)" }} /> Starting…</> : <><IconPlay /> Run again</>}
         </button>
 
         <div style={{ flex: 1 }} />
 
         {/* run stats */}
         {detail && mode === "live" && (
-          <div style={{ display: "flex", gap: "var(--s5)", fontSize: 12, flexShrink: 0 }}>
-            <span style={{ color: "var(--ink-muted)" }}>
-              {Object.values(detail.projection.nodes).filter(n => n.concluded).length} / {manifest?.nodes.length ?? 0} nodes
+          <div className="small" style={{ display: "flex", alignItems: "center", gap: "var(--s4)", flexShrink: 0 }}>
+            <span className="muted">
+              <span className="mono">{Object.values(detail.projection.nodes).filter(n => n.concluded).length}</span>
+              {" / "}
+              <span className="mono">{manifest?.nodes.length ?? 0}</span>
+              {" nodes"}
             </span>
-            {detail.run.spentCents != null && (
-              <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--brand)" }}>
-                {detail.run.spentCents}¢
-              </span>
-            )}
-            <span style={{
-              fontWeight: 600, fontSize: 12, padding: "2px 8px", borderRadius: "var(--r-pill)",
-              background: detail.run.status === "completed" ? "var(--ok-tint)" : detail.run.status === "failed" ? "var(--danger-tint)" : detail.run.status === "running" ? "var(--live-tint)" : "var(--surface-sunken)",
-              color: detail.run.status === "completed" ? "var(--ok)" : detail.run.status === "failed" ? "var(--danger)" : detail.run.status === "running" ? "var(--live)" : "var(--ink-muted)",
-            }}>
+            <span className={statusBadgeClass(detail.run.status)}>
+              {detail.run.status === "running" && <span className="dot" aria-hidden="true" />}
               {detail.run.status}
             </span>
           </div>
         )}
 
         {/* zoom + fit controls */}
-        <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: "var(--s1)", alignItems: "center", flexShrink: 0 }}>
           <button
+            className="btn btn-secondary btn-sm"
             onClick={() => { const c = containerRef.current; if (!c) return; dispatchPan({ type: "zoom_step", factor: 1 / 1.2, cx: c.clientWidth / 2, cy: c.clientHeight / 2 }); }}
-            title="Zoom out (−)"
-            style={{ padding: "3px 8px", fontSize: 14, borderRadius: "var(--r)", border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer", color: "var(--ink-soft)", lineHeight: 1 }}
+            title="Zoom out (−)" aria-label="Zoom out"
+            style={{ width: 30, padding: 0 }}
           >−</button>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-muted)", minWidth: 36, textAlign: "center" }}>
+          <span className="mono micro" style={{ color: "var(--ink-muted)", minWidth: 36, textAlign: "center", textTransform: "none", letterSpacing: 0 }}>
             {Math.round(pan.scale * 100)}%
           </span>
           <button
+            className="btn btn-secondary btn-sm"
             onClick={() => { const c = containerRef.current; if (!c) return; dispatchPan({ type: "zoom_step", factor: 1.2, cx: c.clientWidth / 2, cy: c.clientHeight / 2 }); }}
-            title="Zoom in (+)"
-            style={{ padding: "3px 8px", fontSize: 14, borderRadius: "var(--r)", border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer", color: "var(--ink-soft)", lineHeight: 1 }}
+            title="Zoom in (+)" aria-label="Zoom in"
+            style={{ width: 30, padding: 0 }}
           >+</button>
-          <button onClick={() => {
-            if (!containerRef.current) return;
-            const { width, height } = containerRef.current.getBoundingClientRect();
-            dispatchPan({ type: "reset", containerW: width, containerH: height, graphW, graphH });
-          }} title="Fit graph to viewport (0)" style={{
-            padding: "3px 10px", fontSize: 12, borderRadius: "var(--r)",
-            border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer", color: "var(--ink-soft)",
-          }}>⊡</button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => {
+              if (!containerRef.current) return;
+              const { width, height } = containerRef.current.getBoundingClientRect();
+              dispatchPan({ type: "reset", containerW: width, containerH: height, graphW, graphH });
+            }}
+            title="Fit graph to viewport (0)" aria-label="Fit graph to viewport"
+            style={{ width: 30, padding: 0 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <path d="M2 5V3a1 1 0 0 1 1-1h2M12 5V3a1 1 0 0 0-1-1H9M2 9v2a1 1 0 0 0 1 1h2M12 9v2a1 1 0 0 1-1 1H9" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
 
-        <span style={{ fontSize: 10, color: "var(--ink-muted)", flexShrink: 0, display: "flex", gap: 6 }}>
+        <span className="micro" style={{ flexShrink: 0, display: "flex", gap: "var(--s2)", textTransform: "none", letterSpacing: 0 }}>
           {[["0","fit"],["+/−","zoom"],["Tab","mode"],["Esc","desel"]].map(([k, l]) => (
-            <span key={k}>
-              <kbd style={{ fontFamily: "var(--font-mono)", background: "var(--surface-sunken)", border: "1px solid var(--line)", borderRadius: 3, padding: "1px 4px" }}>{k}</kbd>
-              {" "}{l}
+            <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: "var(--s1)" }}>
+              <kbd>{k}</kbd>
+              {l}
             </span>
           ))}
         </span>
@@ -638,8 +869,10 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
           style={{
             flex: 1, overflow: "hidden", cursor: !manifest ? "default" : pan.dragging ? "grabbing" : "grab",
             position: "relative",
-            backgroundImage: "radial-gradient(circle, var(--line) 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
+            background: "var(--graph-bg)",
+            backgroundImage: "radial-gradient(var(--graph-dot) 1px, transparent 1px)",
+            backgroundSize: "22px 22px",
+            backgroundPosition: "center",
           }}
           onWheel={onWheel}
           onPointerDown={onPointerDown}
@@ -647,13 +880,22 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
           onPointerUp={onPointerUp}
         >
           {!manifest ? (
-            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-              <p style={{ fontSize: 13, color: "var(--ink-muted)" }}>No manifest found for this agent.</p>
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "var(--s6)" }}>
+              <div className="state-empty" style={{ maxWidth: 380, boxShadow: "var(--shadow-md)" }}>
+                <div style={{ marginBottom: "var(--s2)" }}><GlyphGraphEmpty /></div>
+                <p className="h3" style={{ color: "var(--ink)" }}>Nothing to render yet</p>
+                <p className="small muted" style={{ maxWidth: "34ch", lineHeight: 1.6 }}>
+                  This agent has no plan to draw on the canvas.
+                </p>
+                <a href={`/agents/${agentId}`} className="btn btn-secondary btn-sm" style={{ marginTop: "var(--s2)" }}>← Back to agent</a>
+              </div>
             </div>
           ) : (
             <svg
               width={graphW + 120}
               height={graphH + 120}
+              role="img"
+              aria-label={`Agent graph: ${manifest.nodes.length} nodes, ${manifest.edges.length} edges`}
               style={{
                 display: "block",
                 transform: `translate(${pan.tx}px, ${pan.ty}px) scale(${pan.scale})`,
@@ -732,14 +974,14 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
                       {mode === "live" && isActive && (
                         <>
                           <path d={d} fill="none" stroke="var(--live)" strokeWidth={2.5} className="c-edge-active" opacity={0.6} />
-                          <circle r={5} fill="var(--live)" style={{ filter: "drop-shadow(0 0 4px #D97706)" }}>
-                            <animateMotion dur="1.2s" repeatCount="indefinite" path={d} />
+                          <circle r={5} fill="var(--live)" style={{ filter: "drop-shadow(0 0 4px var(--live))" }}>
+                            <animateMotion dur="1.4s" repeatCount="indefinite" path={d} />
                           </circle>
                         </>
                       )}
                       {condText && (
                         <g style={{ pointerEvents: "none" }}>
-                          <rect x={midX - pillW / 2} y={midY - 10} width={pillW} height={20} rx={5}
+                          <rect x={midX - pillW / 2} y={midY - 10} width={pillW} height={20} rx={4}
                             fill={isHovered ? "var(--brand)" : "var(--surface)"}
                             stroke={isHovered ? "var(--brand)" : "var(--line-strong)"} strokeWidth={1}
                             style={{ filter: isHovered ? "drop-shadow(0 1px 3px rgba(0,0,0,.15))" : "none", transition: "fill 150ms, stroke 150ms" }} />
@@ -765,12 +1007,11 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
                     : ns?.entered ? "running"
                     : "idle";
 
-                  // Cost heat — logarithmic scale so small differences still show
-                  const nodeCost = Object.entries(activeProjection?.perCapSpentCents ?? {})
-                    .filter(([k]) => k.startsWith(`${node.id}:`))
-                    .reduce((s, [, v]) => s + (v as number), 0);
-                  const heatFraction = showCost && totalRunCost > 0
-                    ? Math.log(nodeCost + 1) / Math.log(totalRunCost + 1)
+                  // Activity heat — logarithmic scale so small differences still show.
+                  // Driven by how many effects ran at this node (more activity = hotter).
+                  const nodeActivity = activeProjection?.perNodeActivity[node.id] ?? 0;
+                  const heatFraction = showHeat && maxNodeActivity > 0
+                    ? Math.log(nodeActivity + 1) / Math.log(maxNodeActivity + 1)
                     : 0;
 
                   return (
@@ -782,8 +1023,8 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
                       visits={ns?.visits ?? 0}
                       isSelected={selectedNode === node.id}
                       heatFraction={heatFraction}
-                      showCost={showCost}
-                      nodeCost={nodeCost}
+                      showHeat={showHeat}
+                      nodeActivity={nodeActivity}
                       isEntry={node.id === manifest.entry}
                       onClick={() => setSelectedNode(selectedNode === node.id ? null : node.id)}
                     />
@@ -799,19 +1040,25 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
             <div style={{
               position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
               zIndex: 10, pointerEvents: "auto", textAlign: "center",
-              background: "rgba(248,247,244,.96)", border: "1px solid var(--line-strong)",
-              borderRadius: "var(--r)", padding: "var(--s6) var(--s7)",
-              boxShadow: "var(--shadow-md)", maxWidth: 320,
+              background: "var(--surface)", border: "1px solid var(--line-strong)",
+              borderRadius: "var(--r-lg)", padding: "var(--s7) var(--s7) var(--s6)",
+              boxShadow: "var(--shadow-lg)", maxWidth: 340,
+              animation: "fade-in 400ms var(--ease) forwards",
             }}>
-              <div style={{ fontSize: 28, marginBottom: "var(--s3)" }}>▶</div>
-              <p style={{ fontWeight: 700, fontSize: 15, marginBottom: "var(--s2)", letterSpacing: "-.01em" }}>This is the blueprint</p>
-              <p style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.6, marginBottom: "var(--s5)" }}>
-                Run the agent to see it execute live — every decision, cost, and transition recorded to a tamper-evident ledger.
+              <div style={{
+                width: 44, height: 44, margin: "0 auto var(--s4)",
+                borderRadius: "var(--r-pill)", background: "var(--brand-tint)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "var(--brand)",
+              }} aria-hidden="true"><IconPlay size={17} color="var(--brand)" /></div>
+              <span className="micro" style={{ color: "var(--brand)" }}>Blueprint</span>
+              <p className="h3" style={{ margin: "var(--s2) 0", color: "var(--ink)" }}>This is the plan, before anything runs</p>
+              <p className="small soft" style={{ lineHeight: 1.65, marginBottom: "var(--s5)", maxWidth: "32ch", marginInline: "auto" }}>
+                Run it to watch the agent act live — every decision and step recorded to a record you can replay.
               </p>
               <button
                 className="btn btn-primary"
                 disabled={startingRun}
-                style={{ opacity: startingRun ? 0.6 : 1 }}
                 onClick={() => {
                   if (startingRun) return;
                   setStartingRun(true);
@@ -825,41 +1072,27 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
                     .finally(() => setStartingRun(false));
                 }}
               >
-                {startingRun ? "Starting…" : "▶ Run now"}
+                {startingRun ? <><span className="spinner" aria-hidden="true" style={{ width: 14, height: 14, borderTopColor: "var(--brand-ink)", borderColor: "rgba(255,255,255,.4)" }} /> Starting…</> : <><IconPlay /> Run now</>}
               </button>
             </div>
           )}
 
           {/* ── Ledger badge ───────────────────────────────────────────── */}
           {events.length > 0 && (
-            <div style={{
-              position: "absolute", bottom: isScrubbing ? 72 : 16, right: 16, zIndex: 5,
-              fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600,
-              color: "var(--ok)", background: "rgba(248,247,244,.9)",
-              padding: "4px 10px", borderRadius: "var(--r-pill)",
-              display: "flex", alignItems: "center", gap: 5,
-              border: "1px solid var(--ok)",
-              transition: "bottom 200ms",
+            <div className="small" style={{
+              position: "absolute", bottom: isScrubbing ? 72 : "var(--s4)", right: "var(--s4)", zIndex: 5,
+              color: "var(--ok)", background: "var(--surface)",
+              padding: "var(--s1) var(--s3)", borderRadius: "var(--r-pill)",
+              display: "flex", alignItems: "center", gap: "var(--s2)",
+              border: "1px solid var(--ok)", boxShadow: "var(--shadow-sm)",
+              fontWeight: 600,
+              transition: "bottom var(--t-standard)",
               cursor: "help",
             }} title="Append-only ledger — each event is SHA-256 content-addressed, hash-chained, and HMAC-signed. No event can be altered after it is written.">
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--ok)", display: "inline-block" }} />
-              {events.length} events · Tamper-evident ledger
-            </div>
-          )}
-
-          {/* ── Cost heat legend ───────────────────────────────────────── */}
-          {showCost && totalRunCost > 0 && (
-            <div style={{
-              position: "absolute", top: 12, left: 12, zIndex: 5,
-              background: "rgba(248,247,244,.92)", border: "1px solid var(--line)",
-              borderRadius: "var(--r)", padding: "var(--s3) var(--s4)", fontSize: 11,
-            }}>
-              <div style={{ fontWeight: 600, color: "var(--ink-muted)", marginBottom: "var(--s2)", textTransform: "uppercase", letterSpacing: ".05em", fontSize: 10 }}>Cost heat</div>
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)" }}>
-                <span style={{ color: "var(--ink-muted)" }}>0¢</span>
-                <div style={{ width: 80, height: 8, borderRadius: 4, background: "linear-gradient(to right, #fff 0%, rgba(217,119,6,0.5) 100%)", border: "1px solid var(--line)" }} />
-                <span style={{ color: "#D97706", fontWeight: 600 }}>{totalRunCost}¢</span>
-              </div>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--ok)", display: "inline-block", flexShrink: 0 }} aria-hidden="true" />
+              <span><span className="mono">{events.length}</span> events</span>
+              <span style={{ color: "var(--ink-muted)" }} aria-hidden="true">·</span>
+              <span>Signed ledger</span>
             </div>
           )}
         </div>
@@ -868,16 +1101,18 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
         {mode === "live" && events.length >= 1 && (
           <div style={{
             flexShrink: 0, borderTop: "1px solid var(--line)",
-            background: "rgba(248,247,244,.96)", padding: "10px var(--s5)",
+            background: "var(--surface)", padding: "var(--s3) var(--s5)",
             display: "flex", alignItems: "center", gap: "var(--s4)", zIndex: 10,
           }}>
-            <span style={{ fontSize: 11, color: "var(--ink-muted)", flexShrink: 0, fontWeight: 600, minWidth: 100 }}>
+            <span className="micro" style={{ flexShrink: 0, fontWeight: 600, minWidth: 100, textTransform: "none", letterSpacing: 0 }}>
               {isScrubbing && scrubCursor !== null
-                ? `${scrubCursor + 1} / ${events.length}`
-                : `${events.length} events`}
+                ? <><span className="mono">{scrubCursor + 1}</span> / <span className="mono">{events.length}</span></>
+                : <><span className="mono">{events.length}</span> events</>}
             </span>
             <input
               type="range"
+              className="canvas-scrubber"
+              aria-label="Timeline scrubber"
               min={0}
               max={events.length - 1}
               value={scrubCursor ?? events.length - 1}
@@ -889,26 +1124,26 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
               onMouseUp={() => {
                 if (scrubCursor === events.length - 1) setIsScrubbing(false);
               }}
-              style={{ flex: 1, accentColor: "var(--brand)" }}
             />
             {isScrubbing && (
-              <button onClick={() => { setIsScrubbing(false); setScrubCursor(null); }} style={{
-                fontSize: 11, padding: "3px 10px", borderRadius: "var(--r)",
-                border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer", color: "var(--brand)", fontWeight: 600, flexShrink: 0,
-              }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => { setIsScrubbing(false); setScrubCursor(null); }}
+                style={{ flexShrink: 0, color: "var(--brand)" }}
+              >
                 Live ▶
               </button>
             )}
             {/* event label at cursor */}
             {isScrubbing && scrubCursor !== null && events[scrubCursor] && (
-              <span style={{ fontSize: 11, color: "var(--ink-soft)", fontFamily: "var(--font-mono)", flexShrink: 0, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span className="mono small text-truncate" style={{ color: "var(--ink-soft)", flexShrink: 0, maxWidth: 220 }}>
                 {events[scrubCursor]!.type}{events[scrubCursor]!.nodeId ? ` · ${events[scrubCursor]!.nodeId}` : ""}
               </span>
             )}
-            <span style={{ fontSize: 10, color: "var(--ink-muted)", flexShrink: 0 }}>
-              <kbd style={{ fontFamily: "var(--font-mono)", background: "var(--surface-sunken)", border: "1px solid var(--line)", borderRadius: 3, padding: "1px 4px" }}>←</kbd>
+            <span className="micro" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: "var(--s1)", textTransform: "none", letterSpacing: 0 }}>
+              <kbd>←</kbd>
               {" / "}
-              <kbd style={{ fontFamily: "var(--font-mono)", background: "var(--surface-sunken)", border: "1px solid var(--line)", borderRadius: 3, padding: "1px 4px" }}>→</kbd>
+              <kbd>→</kbd>
               {" step"}
             </span>
           </div>
@@ -931,42 +1166,43 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
 
 // ── Canvas Node (SVG) ─────────────────────────────────────────────────────────
 
-function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showCost, nodeCost, isEntry, onClick }: {
+function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showHeat, nodeActivity, isEntry, onClick }: {
   node: ManifestNode;
   pos: NodePos;
   status: "running" | "done" | "idle";
   visits: number;
   isSelected: boolean;
   heatFraction: number;
-  showCost: boolean;
-  nodeCost: number;
+  showHeat: boolean;
+  nodeActivity: number;
   isEntry: boolean;
   onClick: () => void;
 }) {
   const { x, y, w, h } = pos;
   const r = 12;
 
-  const baseBg    = status === "running" ? "#FEF3E0" : status === "done" ? "#DCFCE7" : "#FFFFFF";
+  const baseBg    = status === "running" ? "var(--live-tint)" : status === "done" ? "var(--ok-tint)" : "var(--surface)";
   const heatRgba  = heatFraction > 0 ? `rgba(217,119,6,${Math.min(0.78, heatFraction * 0.85)})` : "transparent";
-  const border    = status === "running" ? "#D97706" : status === "done" ? "#16794C" : (isSelected || isEntry) ? "#0E7C75" : "#E7E3DC";
+  const border    = status === "running" ? "var(--live)" : status === "done" ? "var(--ok)" : (isSelected || isEntry) ? "var(--brand)" : "var(--line)";
   const bw        = status !== "idle" || isSelected || isEntry ? 2 : 1;
 
-  // Capability pills — up to 3, then "+N"
+  // Capability pills — up to 3, then "+N". Each pill: teal SVG glyph + label.
   const caps = node.capabilities.slice(0, 3);
   const extra = node.capabilities.length - caps.length;
   const PILL_H = 18;
   const PILL_PAD_X = 6;
+  const GLYPH = 11;
   const PILL_START_Y = y + 62;
 
   let pillX = x + 10;
-  const pills: Array<{ text: string; px: number; pw: number }> = [];
+  const pills: Array<{ name: string | null; text: string; px: number; pw: number }> = [];
   for (const c of caps) {
-    const text = `${capIcon(c.name)} ${c.name.length > 8 ? c.name.slice(0, 7) + "…" : c.name}`;
-    const pw = Math.min(72, text.length * 6.5 + PILL_PAD_X * 2);
-    pills.push({ text, px: pillX, pw });
+    const label = c.name.length > 8 ? c.name.slice(0, 7) + "…" : c.name;
+    const pw = Math.min(78, label.length * 6.5 + GLYPH + PILL_PAD_X * 2 + 3);
+    pills.push({ name: c.name, text: label, px: pillX, pw });
     pillX += pw + 5;
   }
-  if (extra > 0) pills.push({ text: `+${extra}`, px: pillX, pw: 26 });
+  if (extra > 0) pills.push({ name: null, text: `+${extra}`, px: pillX, pw: 26 });
 
   return (
     <g onClick={onClick} style={{ cursor: "pointer" }} role="button" aria-label={`Node ${node.id}`}>
@@ -1005,14 +1241,14 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showC
       )}
 
       {/* role — primary label, bold */}
-      <text x={x + 14} y={y + 20} fontSize={13} fontWeight={700}
+      <text x={x + 14} y={y + 20} fontSize={13} fontWeight={600}
         fill={status === "running" ? "var(--live)" : status === "done" ? "var(--ok)" : "var(--ink)"}
         dominantBaseline="middle">
         {node.role.length > 22 ? node.role.slice(0, 20) + "…" : node.role}
       </text>
 
       {/* node id — secondary, muted mono */}
-      <text x={x + 14} y={y + 38} fontSize={10} fill="var(--ink-muted)" dominantBaseline="middle" fontFamily="var(--font-mono)">
+      <text x={x + 14} y={y + 38} fontSize={11} fill="var(--ink-muted)" dominantBaseline="middle" fontFamily="var(--font-mono)">
         {node.id.length > 26 ? node.id.slice(0, 24) + "…" : node.id}
       </text>
 
@@ -1033,32 +1269,39 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showC
         ))}
       </g>
 
+      {/* activity badge — when the activity heat-map is on, show how many effects
+          ran at this node (no cost, ever). Top-right corner. */}
+      {showHeat && nodeActivity > 0 && (
+        <g>
+          <rect x={x + w - 52} y={y + 8} width={44} height={16} rx={8}
+            fill="rgba(217,119,6,0.14)" stroke="rgba(217,119,6,0.55)" strokeWidth={1} />
+          <text x={x + w - 30} y={y + 16} fontSize={10} fontWeight={600}
+            fill="rgb(180,83,9)" textAnchor="middle" dominantBaseline="middle">
+            {nodeActivity === 1 ? "1 step" : `${nodeActivity} steps`}
+          </text>
+        </g>
+      )}
+
       {/* status row */}
       <g>
         {status === "running" && (
           <>
-            <circle cx={x + 12} cy={y + h - 14} r={3} fill="var(--live)">
-              <animate attributeName="opacity" values="1;0.3;1" dur="1s" repeatCount="indefinite" />
+            <circle cx={x + 12} cy={y + h - 14} r={3} fill="var(--live)" aria-label="running">
+              <animate attributeName="opacity" values="1;0.3;1" dur="1.4s" repeatCount="indefinite" />
             </circle>
-            <text x={x + 20} y={y + h - 14} fontSize={10} fill="var(--live)" fontWeight={600} dominantBaseline="middle">running</text>
+            <text x={x + 20} y={y + h - 14} fontSize={11} fill="var(--live)" fontWeight={600} dominantBaseline="middle">running</text>
           </>
         )}
         {status === "done" && (
           <>
-            <text x={x + 10} y={y + h - 14} fontSize={11} fill="var(--ok)" dominantBaseline="middle">✓</text>
-            <text x={x + 22} y={y + h - 14} fontSize={10} fill="var(--ok)" fontWeight={600} dominantBaseline="middle">
+            <text x={x + 10} y={y + h - 14} fontSize={11} fill="var(--ok)" dominantBaseline="middle" aria-label="done">✓</text>
+            <text x={x + 22} y={y + h - 14} fontSize={11} fill="var(--ok)" fontWeight={600} dominantBaseline="middle">
               done{visits > 1 ? ` ×${visits}` : ""}
             </text>
           </>
         )}
         {status === "idle" && (
-          <text x={x + 12} y={y + h - 14} fontSize={10} fill="var(--ink-muted)" dominantBaseline="middle">waiting</text>
-        )}
-        {showCost && nodeCost > 0 && (
-          <text x={x + w - 10} y={y + h - 14} fontSize={10} fill="#D97706"
-            fontFamily="var(--font-mono)" fontWeight={600} textAnchor="end" dominantBaseline="middle">
-            {nodeCost}¢
-          </text>
+          <text x={x + 12} y={y + h - 14} fontSize={11} fill="var(--ink-muted)" dominantBaseline="middle">waiting</text>
         )}
       </g>
     </g>
@@ -1071,8 +1314,9 @@ function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
+      className="btn btn-secondary btn-sm"
       onClick={() => { void navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); }}
-      style={{ fontSize: 10, padding: "2px 7px", borderRadius: "var(--r)", border: "1px solid var(--line)", background: "var(--surface)", color: copied ? "var(--ok)" : "var(--ink-muted)", cursor: "pointer", transition: "color 150ms" }}
+      style={{ height: 24, padding: "0 var(--s2)", fontSize: 11, color: copied ? "var(--ok)" : "var(--ink-muted)" }}
     >
       {copied ? "Copied" : "Copy"}
     </button>
@@ -1082,20 +1326,14 @@ function CopyButton({ text }: { text: string }) {
 // ── Node detail drawer (right side) ──────────────────────────────────────────
 
 function CloseButton({ onClose }: { onClose: () => void }) {
-  const [hovered, setHovered] = useState(false);
   return (
     <button
       onClick={onClose}
       aria-label="Close"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      className="btn btn-ghost"
       style={{
-        background: hovered ? "var(--surface-sunken)" : "none",
-        border: "none", cursor: "pointer",
-        width: 28, height: 28, borderRadius: "var(--r)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        color: "var(--ink-muted)", fontSize: 16, transition: "background 120ms",
-        flexShrink: 0,
+        width: 28, height: 28, padding: 0, borderRadius: "var(--r)",
+        color: "var(--ink-muted)", fontSize: 16, flexShrink: 0,
       }}
     >✕</button>
   );
@@ -1122,11 +1360,10 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
     .filter(([k]) => !k.startsWith(`${node.id}.`) && !k.startsWith("_"))
     .map(([k, v]) => ({ key: k, value: v }));
 
-  // Per-cap costs
-  const perCapCosts = Object.entries(projection?.perCapSpentCents ?? liveProjection?.budget.perCapSpentCents ?? {})
+  // Per-capability activity — how many effects each capability ran at this node.
+  const perCapActivity = Object.entries(projection?.perCapActivity ?? {})
     .filter(([k]) => k.startsWith(`${node.id}:`))
-    .map(([k, v]) => ({ cap: k.slice(node.id.length + 1), cents: v as number }));
-  const totalCost = perCapCosts.reduce((s, c) => s + c.cents, 0);
+    .map(([k, v]) => ({ cap: k.slice(node.id.length + 1), count: v as number }));
 
   // Node events from ledger
   const nodeEvents = events.filter(e => e.nodeId === node.id);
@@ -1136,7 +1373,7 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
     .filter(e => e.type === "EffectResult")
     .map(e => {
       const p = e.payload as Record<string, unknown>;
-      return { cap: String(p["capabilityName"] ?? ""), output: p["output"], cost: Number(p["claimedCostCents"] ?? 0) };
+      return { cap: String(p["capabilityName"] ?? ""), output: p["output"] };
     });
 
   return (
@@ -1150,21 +1387,15 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
       <div style={{ padding: "var(--s4) var(--s5)", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}>
         <div style={{ minWidth: 0, flex: 1, marginRight: "var(--s3)" }}>
           {/* role is primary */}
-          <div style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", marginBottom: 2, wordBreak: "break-word" }}>{node.role}</div>
+          <div className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s1)", wordBreak: "break-word" }}>{node.role}</div>
           {/* id is secondary */}
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-muted)", marginBottom: "var(--s2)", wordBreak: "break-all" }}>{node.id}</div>
+          <div className="mono micro" style={{ color: "var(--ink-muted)", marginBottom: "var(--s2)", wordBreak: "break-all", textTransform: "none", letterSpacing: 0 }}>{node.id}</div>
           <div style={{ display: "flex", gap: "var(--s2)", flexWrap: "wrap" }}>
-            <span style={{
-              fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: "var(--r-pill)",
-              background: status === "running" ? "var(--live-tint)" : status === "done" ? "var(--ok-tint)" : "var(--surface-sunken)",
-              color: status === "running" ? "var(--live)" : status === "done" ? "var(--ok)" : "var(--ink-muted)",
-            }}>
+            <span className={status === "running" ? "badge badge-running" : status === "done" ? "badge badge-done" : "badge badge-neutral"}>
+              {status === "running" && <span className="dot" aria-hidden="true" />}
               {status}{ns?.visits ? ` · ${ns.visits}×` : ""}
             </span>
-            <span style={{
-              fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: "var(--r-pill)",
-              background: "var(--canvas)", color: "var(--ink-muted)",
-            }}>
+            <span className="badge badge-neutral">
               {node.autonomy}
             </span>
           </div>
@@ -1176,16 +1407,16 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
 
         {/* Capabilities */}
         <section>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: "var(--s3)" }}>Capabilities</div>
+          <div className="micro" style={{ marginBottom: "var(--s3)" }}>Capabilities</div>
           {node.capabilities.length === 0
-            ? <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>No capabilities</span>
+            ? <span className="small muted">No capabilities</span>
             : node.capabilities.map(c => (
-              <div key={c.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "var(--s2) 0", borderBottom: "1px solid var(--line)" }}>
-                <span style={{ fontSize: 13, display: "flex", alignItems: "center", gap: "var(--s2)" }}>
-                  <span>{capIcon(c.name)}</span>
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--brand)" }}>{c.name}</span>
+              <div key={c.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--s2)", padding: "var(--s2) 0", borderBottom: "1px solid var(--line)" }}>
+                <span className="small" style={{ display: "flex", alignItems: "center", gap: "var(--s2)", minWidth: 0 }}>
+                  <CapGlyphInline name={c.name} />
+                  <span className="mono text-truncate" style={{ color: "var(--brand)" }}>{c.name}</span>
                 </span>
-                <span style={{ fontSize: 11, color: "var(--ink-muted)" }}>{c.sideEffect} · {c.budgetCents}¢</span>
+                <span className="micro" style={{ flexShrink: 0, textTransform: "none", letterSpacing: 0 }}>{c.sideEffect}</span>
               </div>
             ))
           }
@@ -1194,16 +1425,16 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
         {/* Outputs from run state */}
         {nodeState.length > 0 && (
           <section>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: "var(--s3)" }}>Outputs</div>
+            <div className="micro" style={{ marginBottom: "var(--s3)" }}>Outputs</div>
             {nodeState.map(({ key, value }) => {
               const text = (() => { const s = String(value); try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; } })();
               return (
                 <div key={key} style={{ marginBottom: "var(--s3)", background: "var(--surface-sunken)", borderRadius: "var(--r)", padding: "var(--s3)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--s2)" }}>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--brand)" }}>{key}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--s2)", marginBottom: "var(--s2)" }}>
+                    <span className="mono micro text-truncate" style={{ color: "var(--brand)", textTransform: "none", letterSpacing: 0 }}>{key}</span>
                     <CopyButton text={text} />
                   </div>
-                  <pre style={{ margin: 0, fontSize: 11, color: "var(--ink)", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 200, overflowY: "auto", lineHeight: 1.5 }}>
+                  <pre style={{ margin: 0, fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", fontSize: 11, color: "var(--ink)", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 200, overflowY: "auto", lineHeight: 1.5 }}>
                     {text}
                   </pre>
                 </div>
@@ -1215,19 +1446,18 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
         {/* Effect results */}
         {effectOutputs.length > 0 && (
           <section>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: "var(--s3)" }}>Effect Results</div>
+            <div className="micro" style={{ marginBottom: "var(--s3)" }}>Effect Results</div>
             {effectOutputs.map((ef, i) => {
               const text = (() => { const s = typeof ef.output === "string" ? ef.output : JSON.stringify(ef.output, null, 2); try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; } })();
               return (
                 <div key={i} style={{ marginBottom: "var(--s3)", background: "var(--surface-sunken)", borderRadius: "var(--r)", padding: "var(--s3)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--s2)" }}>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--brand)" }}>{ef.cap}</span>
-                    <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center" }}>
-                      {ef.cost > 0 && <span style={{ fontSize: 10, color: "var(--live)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{ef.cost}¢</span>}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--s2)", marginBottom: "var(--s2)" }}>
+                    <span className="mono micro text-truncate" style={{ color: "var(--brand)", textTransform: "none", letterSpacing: 0 }}>{ef.cap}</span>
+                    <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center", flexShrink: 0 }}>
                       <CopyButton text={text} />
                     </div>
                   </div>
-                  <pre style={{ margin: 0, fontSize: 11, color: "var(--ink)", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 200, overflowY: "auto", lineHeight: 1.5 }}>
+                  <pre style={{ margin: 0, fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums", fontSize: 11, color: "var(--ink)", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 200, overflowY: "auto", lineHeight: 1.5 }}>
                     {text}
                   </pre>
                 </div>
@@ -1236,36 +1466,33 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
           </section>
         )}
 
-        {/* Cost breakdown */}
-        {perCapCosts.length > 0 && (
+        {/* Capabilities used by this node — with per-capability activity counts */}
+        {perCapActivity.length > 0 && (
           <section>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: "var(--s3)" }}>Cost</div>
-            {perCapCosts.map(({ cap, cents }) => (
-              <div key={cap} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
-                <span style={{ color: "var(--ink-soft)" }}>{cap}</span>
-                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--brand)" }}>{cents}¢</span>
+            <div className="micro" style={{ marginBottom: "var(--s3)" }}>Capabilities used</div>
+            {perCapActivity.map(({ cap, count }) => (
+              <div key={cap} className="small" style={{ display: "flex", alignItems: "center", gap: "var(--s2)", padding: "var(--s1) 0" }}>
+                <span className="status-dot done" aria-hidden="true" style={{ width: 6, height: 6 }} />
+                <span className="mono soft text-truncate" style={{ flex: 1 }}>{cap}</span>
+                <span className="micro" style={{ flexShrink: 0, textTransform: "none", letterSpacing: 0 }}>
+                  {count === 1 ? "1 step" : `${count} steps`}
+                </span>
               </div>
             ))}
-            {perCapCosts.length > 1 && (
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderTop: "1px solid var(--line)", marginTop: 4 }}>
-                <span style={{ fontWeight: 600 }}>Total</span>
-                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--ink)" }}>{totalCost}¢</span>
-              </div>
-            )}
           </section>
         )}
 
         {/* Ledger events */}
         {nodeEvents.length > 0 && (
           <section>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--ink-muted)", marginBottom: "var(--s3)" }}>Events ({nodeEvents.length})</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div className="micro" style={{ marginBottom: "var(--s3)" }}>Events ({nodeEvents.length})</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--s1)" }}>
               {nodeEvents.map(e => (
-                <div key={e.id} style={{ display: "flex", gap: "var(--s3)", fontSize: 11, padding: "3px 0", borderBottom: "1px solid var(--line)" }}>
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--ink-muted)", width: 24, flexShrink: 0 }}>#{e.offset}</span>
-                  <span style={{
-                    fontWeight: 600, fontSize: 10, flexShrink: 0,
-                    color: e.type === "NodeEntered" ? "var(--live)" : e.type === "NodeConcluded" ? "var(--ok)" : e.type.includes("Failed") ? "var(--danger)" : "var(--ink-soft)",
+                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: "var(--s3)", padding: "var(--s1) 0", borderBottom: "1px solid var(--line)" }}>
+                  <span className="mono micro" style={{ color: "var(--ink-muted)", width: 28, flexShrink: 0, textTransform: "none", letterSpacing: 0 }}>#{e.offset}</span>
+                  <span className="micro" style={{
+                    fontWeight: 600, flexShrink: 0, textTransform: "none", letterSpacing: 0,
+                    color: e.type === "NodeConcluded" ? "var(--ok)" : e.type.includes("Failed") ? "var(--danger)" : e.type === "NodeEntered" ? "var(--brand)" : "var(--ink-soft)",
                   }}>{e.type}</span>
                 </div>
               ))}
@@ -1277,23 +1504,24 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
         {globalState.length > 0 && (
           <section>
             <button
+              className="micro"
               onClick={() => setShowGlobal(s => !s)}
+              aria-expanded={showGlobal}
               style={{
                 width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: 0,
                 display: "flex", justifyContent: "space-between", alignItems: "center",
-                fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--ink-muted)",
                 marginBottom: showGlobal ? "var(--s3)" : 0,
               }}
             >
               Full run state ({globalState.length} keys)
-              <span style={{ fontSize: 10 }}>{showGlobal ? "▴" : "▾"}</span>
+              <span aria-hidden="true">{showGlobal ? "▴" : "▾"}</span>
             </button>
             {showGlobal && (
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
                 {globalState.map(({ key, value }) => (
                   <div key={key} style={{ background: "var(--surface-sunken)", borderRadius: "var(--r)", padding: "var(--s2) var(--s3)" }}>
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-muted)", marginBottom: 2 }}>{key}</div>
-                    <div style={{ fontSize: 11, color: "var(--ink-soft)", wordBreak: "break-word", maxHeight: 60, overflow: "hidden" }}>
+                    <div className="mono micro" style={{ color: "var(--ink-muted)", marginBottom: "var(--s1)", textTransform: "none", letterSpacing: 0 }}>{key}</div>
+                    <div className="small soft" style={{ wordBreak: "break-word", maxHeight: 60, overflow: "hidden" }}>
                       {String(value).slice(0, 300)}
                     </div>
                   </div>

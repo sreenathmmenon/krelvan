@@ -1,6 +1,6 @@
-# Genesis — Premortem (development checklist)
+# Krelvan — Premortem (development checklist)
 
-*Imagine it is two years out and Genesis failed. This enumerates the concrete,
+*Imagine it is two years out and Krelvan failed. This enumerates the concrete,
 specific, actionable ways it could go wrong — one guard (a test or design rule)
 per item. Use it as a living development checklist: every item is something to
 build a test or guard against, and to verify clean before calling a subsystem done.*
@@ -130,7 +130,7 @@ build a test or guard against, and to verify clean before calling a subsystem do
 
 ### `LED-19` — The genesis (first) event of a stream has prev_hash = null/empty, and verification special-cases it, but the special case can be exploited to inject a second 'genesis' mid-stream that resets the chain.
 - **Consequence:** Attacker forks the chain at an arbitrary point by writing a fake genesis; prefix before it is orphaned silently.
-- **Guard:** Genesis is uniquely identified by offset==0 only, and a signed stream-creation record binds stream_id to the genesis content address. Test: any event with offset>0 and empty prev_hash is rejected; only one offset==0 row per stream_id (unique constraint).
+- **Guard:** Krelvan is uniquely identified by offset==0 only, and a signed stream-creation record binds stream_id to the genesis content address. Test: any event with offset>0 and empty prev_hash is rejected; only one offset==0 row per stream_id (unique constraint).
 - **Status:** UNADDRESSED
 
 ### `LED-20` — Signature verification uses non-constant-time comparison or an algorithm-confusion-prone library that accepts 'alg: none' or downgraded algorithms encoded in the event itself.
@@ -418,9 +418,9 @@ build a test or guard against, and to verify clean before calling a subsystem do
 - **Guard:** Design rule: EffectRequested processing requires a single-holder lease keyed on the idempotency key (SELECT ... FOR UPDATE SKIP LOCKED or advisory lock). Test: start 2 workers, enqueue one request, assert exactly one EffectResult and exactly one external call (mock counts calls).
 - **Status:** UNADDRESSED
 
-### `DUR-11` — Idempotency dedup is enforced only inside Genesis's ledger, but the external system (Stripe, email provider) is not passed the idempotency key, so a Genesis-internal retry after a network timeout double-charges externally.
+### `DUR-11` — Idempotency dedup is enforced only inside Krelvan's ledger, but the external system (Stripe, email provider) is not passed the idempotency key, so a Krelvan-internal retry after a network timeout double-charges externally.
 - **Consequence:** Real-money double effects despite a clean internal ledger.
-- **Guard:** Design rule: the broker/plugin contract requires forwarding the Genesis idempotency key as the external Idempotency-Key header where supported; effect profile marks providers that cannot dedup as 'at-most-once-must-halt'. Test: simulate provider 200-after-timeout; assert no second call for dedup-capable providers and HALT for non-capable.
+- **Guard:** Design rule: the broker/plugin contract requires forwarding the Krelvan idempotency key as the external Idempotency-Key header where supported; effect profile marks providers that cannot dedup as 'at-most-once-must-halt'. Test: simulate provider 200-after-timeout; assert no second call for dedup-capable providers and HALT for non-capable.
 - **Status:** UNADDRESSED
 
 ### `DUR-12` — A parked branch's reserved budget is released on park (to free quota) but on resume the reserve is not re-acquired, or is re-acquired at a now-exhausted budget.
@@ -1734,11 +1734,11 @@ build a test or guard against, and to verify clean before calling a subsystem do
 ## IP / Legal / Licensing Hygiene
 
 ### `IP-01` — The NL->manifest compiler LLM emits a conditional-edge expression, retry/backoff scheduler, or consensus-voting topology that is a verbatim reproduction of a technique covered by an active software patent (e.g. a patented agent-orchestration or RAG-reranking method), because no patent-clearance gate exists between generation and persistence into the ledger.
-- **Consequence:** Genesis (and every self-hoster) ships infringing functionality; a patent holder issues cease-and-desist or sues, forcing a recall of the artifact and tainting the signed-ledger reproductions that now embed the infringing manifest hash.
+- **Consequence:** Krelvan (and every self-hoster) ships infringing functionality; a patent holder issues cease-and-desist or sues, forcing a recall of the artifact and tainting the signed-ledger reproductions that now embed the infringing manifest hash.
 - **Guard:** Maintain a curated denylist of patent-claim fingerprints (normalized algorithm signatures) and run every compiled manifest section through a structural-similarity check before it can be signed into the ledger; block + require human review on match, and record the clearance decision as a signed event.
 - **Status:** UNADDRESSED
 
-### `IP-02` — A built-in or community MCP plugin embeds source code copied from an AGPL-licensed project (e.g. an AGPL scraping or DB tool), and Genesis distributes it inside the single downloadable self-host artifact without offering corresponding source.
+### `IP-02` — A built-in or community MCP plugin embeds source code copied from an AGPL-licensed project (e.g. an AGPL scraping or DB tool), and Krelvan distributes it inside the single downloadable self-host artifact without offering corresponding source.
 - **Consequence:** AGPL Section 13 network-use clause triggers for every hosted/self-host operator; license violation forces source disclosure of the whole linked artifact or removal, and copyright holders can sue operators who never knew.
 - **Guard:** CI gate that runs an SPDX/license scanner (e.g. scancode/licensee) over every plugin and dependency; fail the build on GPL/AGPL/SSPL/BUSL/CC-BY-NC/CC-BY-SA and any license not on an explicit allowlist (MIT/BSD/Apache-2.0/ISC/MPL-2.0); require a recorded waiver for exceptions.
 - **Status:** UNADDRESSED
@@ -1749,7 +1749,7 @@ build a test or guard against, and to verify clean before calling a subsystem do
 - **Status:** UNADDRESSED
 
 ### `IP-04` — The LLM compiler reproduces, verbatim or near-verbatim, pseudocode or an algorithm from a research paper whose license is non-commercial or whose terms forbid implementation without attribution (e.g. CC-BY-NC, or a paper with a patent grant restriction).
-- **Consequence:** Genesis implements restrictively-licensed research; commercial use is barred, and the academic authors or their institution assert claims.
+- **Consequence:** Krelvan implements restrictively-licensed research; commercial use is barred, and the academic authors or their institution assert claims.
 - **Guard:** Design rule: the compiler is forbidden to ingest paper text/pseudocode into prompts; prompt-provenance logging captures all compiler inputs, and a periodic audit asserts no paper-derived content entered the generation path. Test: scan generated kernel/eval code for known paper-snippet hashes.
 - **Status:** UNADDRESSED
 
@@ -1758,22 +1758,22 @@ build a test or guard against, and to verify clean before calling a subsystem do
 - **Guard:** Every exported manifest carries a machine-readable provenance/attribution block listing compiler model+version and a disclaimer that generated content is not warranted clean; export is blocked until the user acknowledges the provenance record (signed event).
 - **Status:** UNADDRESSED
 
-### `IP-06` — Genesis uses the Anthropic/OpenAI API to GENERATE training data or to build a competing model/eval-distillation, violating provider ToS clauses that forbid using outputs to train competing models.
-- **Consequence:** Provider terminates API access for Genesis and all hosted users; potential breach-of-contract claim.
+### `IP-06` — Krelvan uses the Anthropic/OpenAI API to GENERATE training data or to build a competing model/eval-distillation, violating provider ToS clauses that forbid using outputs to train competing models.
+- **Consequence:** Provider terminates API access for Krelvan and all hosted users; potential breach-of-contract claim.
 - **Guard:** Explicit policy + code guard: distillation/memory-capture effects that persist LLM outputs are tagged with the source provider, and a lint rule forbids any pipeline that feeds provider outputs into model-training jobs; document the no-train-on-outputs rule in the effect-runner.
 - **Status:** UNADDRESSED
 
-### `IP-07` — The model-agnostic abstraction lets a user point Genesis at a provider whose ToS forbids the specific use (e.g. automated high-volume agents, or use in regulated domains), but Genesis surfaces no per-provider ToS constraint, so the manifest schedules disallowed usage.
-- **Consequence:** Provider bans the user; Genesis is seen as facilitating ToS violations across providers.
+### `IP-07` — The model-agnostic abstraction lets a user point Krelvan at a provider whose ToS forbids the specific use (e.g. automated high-volume agents, or use in regulated domains), but Krelvan surfaces no per-provider ToS constraint, so the manifest schedules disallowed usage.
+- **Consequence:** Provider bans the user; Krelvan is seen as facilitating ToS violations across providers.
 - **Guard:** Each model plugin ships a declarative ToS-constraint descriptor (rate caps, prohibited categories, no-PII flags); the kernel refuses to admit effects that violate the active provider's descriptor and records the rejection as a signed AdmissionDecision.
 - **Status:** UNADDRESSED
 
-### `IP-08` — Genesis bundles model weights or tokenizer files (for a 'local' embedded model) whose license forbids redistribution or commercial use (e.g. Llama community license restrictions, or a non-commercial embedding model).
+### `IP-08` — Krelvan bundles model weights or tokenizer files (for a 'local' embedded model) whose license forbids redistribution or commercial use (e.g. Llama community license restrictions, or a non-commercial embedding model).
 - **Consequence:** Redistribution of the self-host artifact violates the weight license; takedown of releases.
 - **Guard:** No model weights are bundled in the artifact by default; weights are fetched at runtime from the vendor with the user accepting the vendor license; CI asserts the release tarball contains zero weight/tokenizer blobs.
 - **Status:** UNADDRESSED
 
-### `IP-09` — The product name 'Genesis' (or logo/wordmark) collides with an existing registered trademark in the software/AI class, discovered only after launch and adoption.
+### `IP-09` — The product name 'Krelvan' (or logo/wordmark) collides with an existing registered trademark in the software/AI class, discovered only after launch and adoption.
 - **Consequence:** Forced rebrand of a now-adopted product; loss of domain, package names, and SEO; possible damages.
 - **Guard:** Pre-launch: clearance search across USPTO/EUIPO/WIPO in relevant Nice classes (9, 42) plus npm/PyPI/GitHub org name availability; record the cleared name + date; re-check before each major-market expansion.
 - **Status:** UNADDRESSED
@@ -1788,13 +1788,13 @@ build a test or guard against, and to verify clean before calling a subsystem do
 - **Guard:** Architectural invariant enforced by schema validation: ledger events store only hashes/encrypted-blob-references for any field classified as personal data; a CI test feeds known PII through a sample run and asserts no plaintext PII appears in serialized ledger bytes.
 - **Status:** UNADDRESSED
 
-### `IP-12` — Channel adapters (Telegram, email, etc.) ingest third-party messages and the untrusted-inbound content is later surfaced/redistributed by the agent, but Genesis stores and republishes copyrighted third-party content (forwarded articles, images) without rights.
+### `IP-12` — Channel adapters (Telegram, email, etc.) ingest third-party messages and the untrusted-inbound content is later surfaced/redistributed by the agent, but Krelvan stores and republishes copyrighted third-party content (forwarded articles, images) without rights.
 - **Consequence:** Copyright/DMCA claims against operators for storing and redistributing scraped or forwarded content.
 - **Guard:** Inbound content carries the untrusted-provenance tag AND a copyright-risk tag; effects that redistribute externally are gated and require an explicit operator policy; retention TTL enforced on inbound copyrighted blobs.
 - **Status:** UNADDRESSED
 
 ### `IP-13` — The deny-by-default plugin sandbox is bypassed by a plugin that statically links a GPL native library (e.g. a GPL PDF or crypto lib via FFI), creating a derivative work of the entire process.
-- **Consequence:** GPL copyleft propagates to the Genesis core process, forcing the whole runtime to be GPL — incompatible with the intended permissive distribution.
+- **Consequence:** GPL copyleft propagates to the Krelvan core process, forcing the whole runtime to be GPL — incompatible with the intended permissive distribution.
 - **Guard:** Plugins run as separate processes communicating only over the MCP wire protocol (no in-process linking); build gate forbids native FFI linking of any GPL-licensed shared object into the core; license scan covers native deps, not just JS/TS.
 - **Status:** UNADDRESSED
 
@@ -1808,7 +1808,7 @@ build a test or guard against, and to verify clean before calling a subsystem do
 - **Guard:** All shipped prompts live in-repo with a provenance header (author + 'original work' assertion); a scan compares prompt hashes against a corpus of known public prompt-leaks; PR template requires asserting prompts are original or properly licensed.
 - **Status:** UNADDRESSED
 
-### `IP-16` — Genesis copies UI/UX patterns, icons, or component code from a copyleft or proprietary design system (e.g. an icon set under CC-BY-ND, or paid Figma components used beyond license) into the canvas/monitor UI.
+### `IP-16` — Krelvan copies UI/UX patterns, icons, or component code from a copyleft or proprietary design system (e.g. an icon set under CC-BY-ND, or paid Figma components used beyond license) into the canvas/monitor UI.
 - **Consequence:** Design-asset license violation; asset vendor sends invoice or takedown.
 - **Guard:** Asset manifest tracks every icon/font/illustration with its license and source URL; CI fails if any asset lacks a license entry or uses a No-Derivatives/Non-Commercial license; fonts are self-hosted only if license permits embedding.
 - **Status:** UNADDRESSED
@@ -1818,22 +1818,22 @@ build a test or guard against, and to verify clean before calling a subsystem do
 - **Guard:** Pin and license-scan the adapter dependency; integration test runs the LangGraph adapter with network fully blocked and asserts zero outbound connections; the adapter is isolated so it can be dropped without core changes.
 - **Status:** UNADDRESSED
 
-### `IP-18` — Scoped-token broker mints tokens for third-party SaaS APIs and Genesis automates actions in ways the SaaS ToS prohibit (scraping, rate-limit evasion, ToS-forbidden automation of consumer accounts).
-- **Consequence:** SaaS providers ban users and pursue CFAA/ToS breach claims; Genesis labeled an abuse tool.
+### `IP-18` — Scoped-token broker mints tokens for third-party SaaS APIs and Krelvan automates actions in ways the SaaS ToS prohibit (scraping, rate-limit evasion, ToS-forbidden automation of consumer accounts).
+- **Consequence:** SaaS providers ban users and pursue CFAA/ToS breach claims; Krelvan labeled an abuse tool.
 - **Guard:** Each broker-integration declares the target API's automation policy; the kernel rate-limits and refuses actions flagged ToS-prohibited; a per-integration compliance descriptor is required before a broker connector can be registered.
 - **Status:** UNADDRESSED
 
-### `IP-19` — Telemetry, crash reports, or 'anonymous usage' from self-host instances transmit PII or content to Genesis servers without consent, breaking GDPR consent and the offline-first promise.
+### `IP-19` — Telemetry, crash reports, or 'anonymous usage' from self-host instances transmit PII or content to Krelvan servers without consent, breaking GDPR consent and the offline-first promise.
 - **Consequence:** Unlawful processing; loss of trust; the offline guarantee is provably false.
 - **Guard:** Telemetry is OFF by default and requires explicit opt-in recorded as a signed consent event; a network test asserts a default install makes zero outbound calls except user-configured providers; telemetry payloads are schema-validated to contain no free-text/PII fields.
 - **Status:** UNADDRESSED
 
-### `IP-20` — Cross-border transfer: a self-host operator in the EU configures a US-based model provider, and Genesis transfers personal data to the US with no SCCs/adequacy mechanism surfaced or recorded.
+### `IP-20` — Cross-border transfer: a self-host operator in the EU configures a US-based model provider, and Krelvan transfers personal data to the US with no SCCs/adequacy mechanism surfaced or recorded.
 - **Consequence:** Unlawful international transfer under GDPR Chapter V; regulator action against operators.
 - **Guard:** Each model/effect plugin declares its data-residency/processing region; the kernel warns and records a signed acknowledgement when an EU-tagged data subject's data would cross to a non-adequate region; provide a region-pinning policy that blocks such effects.
 - **Status:** UNADDRESSED
 
-### `IP-21` — Genesis copies API client code, SDK snippets, or example code from a provider's docs that are under a restrictive docs license (e.g. some docs are not Apache/MIT) into the core.
+### `IP-21` — Krelvan copies API client code, SDK snippets, or example code from a provider's docs that are under a restrictive docs license (e.g. some docs are not Apache/MIT) into the core.
 - **Consequence:** Provider-docs license infringement; subtle but real copyright claim.
 - **Guard:** Rule: no copy-paste from vendor docs into shipped code; client integrations are written from the OpenAPI spec or generated by a license-clean generator; PR review checklist item asserts integration code is not doc-derived.
 - **Status:** UNADDRESSED
@@ -1844,11 +1844,11 @@ build a test or guard against, and to verify clean before calling a subsystem do
 - **Status:** UNADDRESSED
 
 ### `IP-23` — Distillation (the 'captured non-deterministic effect') stores provider LLM outputs verbatim into semantic memory, and those outputs are themselves reproductions of copyrighted training data (e.g. song lyrics, article text), persisted and later re-served.
-- **Consequence:** Genesis becomes a redistribution vector for memorized copyrighted text; copyright claims against operators.
+- **Consequence:** Krelvan becomes a redistribution vector for memorized copyrighted text; copyright claims against operators.
 - **Guard:** Distillation outputs are tagged with provider+model provenance and a copyright-risk flag; a guard caps verbatim-length storage and runs a long-substring/known-corpus check before persisting; flagged content requires operator policy to retain.
 - **Status:** UNADDRESSED
 
-### `IP-24` — Patent marking / FOSS patent-grant mismatch: Genesis ships under MIT (no patent grant) but a contributor holds a patent reading on their contribution, and there is no contributor patent grant.
+### `IP-24` — Patent marking / FOSS patent-grant mismatch: Krelvan ships under MIT (no patent grant) but a contributor holds a patent reading on their contribution, and there is no contributor patent grant.
 - **Consequence:** A contributor (or their employer) later asserts a patent against users of code they themselves contributed; MIT gives users no defense.
 - **Guard:** Adopt Apache-2.0 (explicit patent grant + termination on litigation) for the core, or require a DCO+CLA with a patent license; CI checks every contribution is covered by the signed contributor agreement before merge.
 - **Status:** UNADDRESSED
@@ -1858,8 +1858,8 @@ build a test or guard against, and to verify clean before calling a subsystem do
 - **Guard:** Replay reads PII only through the live keystore; if a subject's key is crypto-shredded, replay substitutes a tombstone and records 'redacted-on-replay'; test: erase a subject, run verification replay, assert no plaintext of that subject appears and cost still reconciles.
 - **Status:** UNADDRESSED
 
-### `IP-26` — The local-root signing key is treated as proof of authenticity, but a self-host operator's key signs facts asserting compliance/consent that were never actually obtained (e.g. fabricated GDPR consent events), and Genesis presents these as authoritative.
-- **Consequence:** Forged consent/audit records mislead regulators and downstream parties; Genesis's 'trustworthy audit' claim is legally hollow and could be construed as facilitating fraud.
+### `IP-26` — The local-root signing key is treated as proof of authenticity, but a self-host operator's key signs facts asserting compliance/consent that were never actually obtained (e.g. fabricated GDPR consent events), and Krelvan presents these as authoritative.
+- **Consequence:** Forged consent/audit records mislead regulators and downstream parties; Krelvan's 'trustworthy audit' claim is legally hollow and could be construed as facilitating fraud.
 - **Guard:** Consent and other legally-significant events require a second, externally-anchored attestation (e.g. data-subject-side signature or notarized clock + assurance level), not just the local root key; UI/audit clearly marks single-key-signed legal claims as 'self-asserted, not independently verified'.
 - **Status:** UNADDRESSED
 
@@ -1868,17 +1868,17 @@ build a test or guard against, and to verify clean before calling a subsystem do
 - **Guard:** Manifest sections carry a data-classification field; the kernel refuses to admit effects touching special-category-tagged data unless an explicit lawful-basis policy is attached; a classifier flags inbound sensitive content and forces gating.
 - **Status:** UNADDRESSED
 
-### `IP-28` — Genesis re-implements a competitor's or prior-employer's proprietary agent-orchestration design that one of the founders/contributors had confidential access to, creating a trade-secret misappropriation claim.
+### `IP-28` — Krelvan re-implements a competitor's or prior-employer's proprietary agent-orchestration design that one of the founders/contributors had confidential access to, creating a trade-secret misappropriation claim.
 - **Consequence:** Trade-secret litigation; injunction halting the project; the most existential legal risk.
 - **Guard:** Contributor onboarding requires a signed clean-room/no-confidential-IP attestation; sensitive subsystems (kernel reducer, effect-profile model) are developed clean-room with documented independent provenance; maintain a design-decision log proving independent derivation.
 - **Status:** UNADDRESSED
 
-### `IP-29` — Community plugins in a marketplace carry no license metadata, and Genesis installs/executes them without recording or surfacing their license, so operators unknowingly run/redistribute non-redistributable or virally-licensed code.
-- **Consequence:** Operators inherit license violations from third-party plugins; Genesis is the distribution channel and shares liability.
+### `IP-29` — Community plugins in a marketplace carry no license metadata, and Krelvan installs/executes them without recording or surfacing their license, so operators unknowingly run/redistribute non-redistributable or virally-licensed code.
+- **Consequence:** Operators inherit license violations from third-party plugins; Krelvan is the distribution channel and shares liability.
 - **Guard:** Plugin registry rejects any plugin whose signed manifest lacks an SPDX license id; the installer displays the license and blocks install of denylisted licenses unless explicitly overridden; the license is recorded in the ledger at install time.
 - **Status:** UNADDRESSED
 
-### `IP-30` — DMCA/takedown unaddressed: as a plugin/manifest-sharing platform (hosted later), Genesis hosts user-uploaded content that infringes, with no registered DMCA agent or takedown workflow.
+### `IP-30` — DMCA/takedown unaddressed: as a plugin/manifest-sharing platform (hosted later), Krelvan hosts user-uploaded content that infringes, with no registered DMCA agent or takedown workflow.
 - **Consequence:** Loss of safe-harbor protection; direct liability for hosted infringing content.
 - **Guard:** Before any hosted sharing feature ships, register a DMCA agent, implement a notice-and-takedown endpoint with logged actions, and a repeat-infringer policy; gate the hosted-sharing feature flag on these existing.
 - **Status:** UNADDRESSED
@@ -2023,8 +2023,8 @@ build a test or guard against, and to verify clean before calling a subsystem do
 - **Guard:** Reframe every feature to a present pain: replay->'never get a surprise $400 bill', ledger->'know why your agent did that'. Test: each top feature page leads with a today-pain headline, validated by message-test survey (>=60% 'this is a problem I have now').
 - **Status:** UNADDRESSED
 
-### `ADO-26` — Competitor out-positions on simplicity: ships a 'one-line, no-config, hosted' agent builder that gets 80% of value with 5% of concepts, making Genesis look over-engineered.
-- **Consequence:** Genesis wins the architecture argument and loses the market; perceived as 'the enterprise-y, complicated one'.
+### `ADO-26` — Competitor out-positions on simplicity: ships a 'one-line, no-config, hosted' agent builder that gets 80% of value with 5% of concepts, making Krelvan look over-engineered.
+- **Consequence:** Krelvan wins the architecture argument and loses the market; perceived as 'the enterprise-y, complicated one'.
 - **Guard:** Maintain a 'concept budget' for the first-run path: count distinct new concepts a user must learn to ship agent #1; hard cap at 3. Onboarding test fails if >3 new terms appear before first success.
 - **Status:** UNADDRESSED
 
@@ -2088,7 +2088,7 @@ build a test or guard against, and to verify clean before calling a subsystem do
 - **Guard:** Treat compiler/eval-judge/distillation as distinct trust principals with separate credentials and provenance domains; bar any field touched by untrusted input from flowing into a different LLM role's context without an explicit re-gating event; red-team with a 3-hop injection corpus.
 - **Status:** UNADDRESSED
 
-### `XC-06` — Idempotency keys dedup Genesis-internal retries, and EffectResult records supervisor-observed real cost — but when an external provider returns a 5xx AFTER charging (Stripe charged, gateway timed out), the supervisor observes a transport failure and records EffectResult=failed, while the external system has a successful charge. The reconciliation loop never queries the provider's idempotency endpoint to detect the orphaned external success.
+### `XC-06` — Idempotency keys dedup Krelvan-internal retries, and EffectResult records supervisor-observed real cost — but when an external provider returns a 5xx AFTER charging (Stripe charged, gateway timed out), the supervisor observes a transport failure and records EffectResult=failed, while the external system has a successful charge. The reconciliation loop never queries the provider's idempotency endpoint to detect the orphaned external success.
 - **Consequence:** Ledger says 'no spend / failed', reality says 'charged'; cost-to-the-cent reconciliation is provably wrong against the outside world.
 - **Guard:** For irreversible external effects, EffectResult must be derived from a provider-side idempotent confirmation query (GET by idempotency key) on failure, not from the local transport result; chaos-test charge-then-timeout.
 - **Status:** UNADDRESSED
@@ -2198,7 +2198,7 @@ build a test or guard against, and to verify clean before calling a subsystem do
 - **Guard:** Append must distinguish 'wrote new' from 'collided with existing' and never hand a writer another principal's event identity; include writer-principal + offset + branch in the preimage so legitimate duplicates are distinct events; test a deliberate-collision write.
 - **Status:** UNADDRESSED
 
-### `XC-28` — The product promises model-agnosticism, but cost reserve-then-settle, determinism tagging, and the tokenizer-based pre-flight estimate all hardcode assumptions about a small set of providers' usage-reporting formats. Pointing Genesis at a new/self-hosted/OpenAI-compatible endpoint that reports usage differently (or not at all) makes the supervisor record cost=unknown, which the budget gate treats as 0, removing the ceiling entirely for that provider.
+### `XC-28` — The product promises model-agnosticism, but cost reserve-then-settle, determinism tagging, and the tokenizer-based pre-flight estimate all hardcode assumptions about a small set of providers' usage-reporting formats. Pointing Krelvan at a new/self-hosted/OpenAI-compatible endpoint that reports usage differently (or not at all) makes the supervisor record cost=unknown, which the budget gate treats as 0, removing the ceiling entirely for that provider.
 - **Consequence:** Model-agnostic claim creates an unbounded-spend hole for any provider with unfamiliar usage reporting.
 - **Guard:** Unknown/unparseable usage MUST fail closed (treat as max-possible cost or halt), never as 0; require an explicit, tested cost-adapter per provider before that provider is selectable; test an endpoint that returns no usage data.
 - **Status:** UNADDRESSED
@@ -2263,7 +2263,7 @@ build a test or guard against, and to verify clean before calling a subsystem do
 - **Guard:** Notary/time-attestation egress must use a dedicated, prioritized, plugin-inaccessible channel; detect and alarm on notary-heartbeat delay independent of plugin egress; test plugin-induced egress saturation vs notary liveness.
 - **Status:** UNADDRESSED
 
-### `XC-41` — Genesis is model-agnostic and lets operators point at any provider, but the cross-border data-transfer and provider-ToS constraints (IP-07/IP-20) are evaluated at compile time against the manifest, NOT at the per-EFFECT level. An untrusted-inbound task can, at runtime, cause a node to send EU personal data to a US/disallowed provider chosen by a fallback/model-routing rule that the compile-time check never saw.
+### `XC-41` — Krelvan is model-agnostic and lets operators point at any provider, but the cross-border data-transfer and provider-ToS constraints (IP-07/IP-20) are evaluated at compile time against the manifest, NOT at the per-EFFECT level. An untrusted-inbound task can, at runtime, cause a node to send EU personal data to a US/disallowed provider chosen by a fallback/model-routing rule that the compile-time check never saw.
 - **Consequence:** Runtime model-routing breaches data-residency/ToS even though the manifest passed compile-time legal checks — a legal hole at the integration seam between routing and compliance.
 - **Guard:** Per-effect, re-evaluate data-classification x destination-jurisdiction before egress; block disallowed routes at the effect-runner with a recorded compliance event; test a fallback-route that would send classified data to a disallowed region.
 - **Status:** UNADDRESSED

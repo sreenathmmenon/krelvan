@@ -4,12 +4,32 @@
   "description": "Krelvan \u2014 own, run, and trust your own AI agents. The ledger is the runtime.",
   "type": "module",
   "license": "Apache-2.0",
+  "bin": {
+    "krelvan": "bin/krelvan.mjs"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "src/",
+    "web/app/",
+    "web/components/",
+    "web/lib/",
+    "web/public/",
+    "web/package.json",
+    "web/next.config.mjs",
+    "web/tsconfig.json",
+    "capabilities/",
+    "tsconfig.json",
+    "README.md",
+    ".env.example"
+  ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/api/index.js",
+    "up": "node bin/krelvan.mjs up",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "demo:ledger": "tsx src/demo/ledger-inversion.ts",

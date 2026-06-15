@@ -2,525 +2,137 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  listAgents, listRuns, buildAgent, startRun, deleteAgent, explainRun, explainBuild, timeAgo,
-  type AgentRecord, type RunRecord, type BuildResult, type ManifestNode, type ManifestEdge,
+  listAgents, listRuns, buildAgent, startRun, explainRun, timeAgo,
+  type AgentRecord, type RunRecord, type BuildResult,
 } from "../lib/api";
+import {
+  AgentCard, BuildPreviewModal, MiniGraph, HeroAnimation, EXAMPLES, BUILD_STAGES,
+} from "./_builder";
 
-const EXAMPLES: { text: string; label: string; hero?: boolean }[] = [
-  {
-    text: "Search the web for the latest AI news and summarise the top 3 developments in a clear digest",
-    label: "Research digest",
-    hero: true,
-  },
-  {
-    text: "Fetch https://api.github.com/repos/vercel/next.js/releases and summarise what changed in the latest release",
-    label: "Release notes",
-  },
-  {
-    text: "Research the top 5 use cases for small language models in enterprise and rank them by business impact",
-    label: "Market research",
-  },
-  {
-    text: "Analyse the pros and cons of PostgreSQL vs MongoDB for a real-time analytics platform",
-    label: "Tech decision",
-  },
+// ── Krelvan landing — product-first debut ──────────────────────────────────────
+// The homepage IS the working product. On first paint a visitor lands on a dark
+// hero whose right side is a REAL run artifact (or a clearly-labelled live example
+// until a run exists), with a CTA that drops straight into the embedded builder one
+// screen below. Within seconds they can describe a goal, watch a real graph compile
+// in the BuildPreviewModal, run it, and open /runs/[id] to see the actual signed,
+// replayable record. We demonstrate ownership and proof by letting you DO and SEE
+// it — never by lecturing about internals. The builder data path is unchanged:
+// same buildAgent / startRun / explainRun as /dashboard; only the page IA + copy.
+
+// Pre-built example graph for the hero artifact when no real run exists yet.
+// Clearly labelled "live example" — never presented with fabricated proof fields.
+const EXAMPLE_NODES = [
+  { id: "entry", role: "intake", autonomy: "auto", capabilities: [{ name: "web_search", sideEffect: "read", budgetCents: 1 }] },
+  { id: "reason", role: "reason over findings", autonomy: "auto", capabilities: [{ name: "think", sideEffect: "none", budgetCents: 3 }] },
+  { id: "compose", role: "write the digest", autonomy: "auto", capabilities: [{ name: "compose", sideEffect: "none", budgetCents: 2 }] },
+];
+const EXAMPLE_EDGES = [
+  { from: "entry", to: "reason" },
+  { from: "reason", to: "compose" },
 ];
 
-const BUILD_STAGES = ["Proposing graph…", "Validating…", "Finalising agent…"];
+// ── Copyable one-command install (final CTA) ─────────────────────────────────
+const INSTALL_CMD = "git clone https://github.com/sreenathmmenon/krelvan && cd krelvan && npx krelvan";
 
-// ── Mini graph preview ────────────────────────────────────────────────────────
-
-interface MiniNodePos { x: number; y: number; }
-
-const MNW = 56;
-const MNH = 30;
-const MHG = 32;
-const MVG = 20;
-
-function miniLayout(nodes: ManifestNode[], edges: ManifestEdge[], entry: string): Map<string, MiniNodePos> {
-  const layer = new Map<string, number>();
-  const visited = new Set<string>();
-
-  function visit(id: string, depth: number) {
-    if (!visited.has(id) || (layer.get(id) ?? 0) < depth) {
-      layer.set(id, depth);
-      visited.add(id);
-      for (const e of edges) if (e.from === id) visit(e.to, depth + 1);
-    }
-  }
-  visit(entry, 0);
-  for (const n of nodes) if (!layer.has(n.id)) layer.set(n.id, 0);
-
-  const byLayer = new Map<number, string[]>();
-  for (const n of nodes) {
-    const l = layer.get(n.id)!;
-    if (!byLayer.has(l)) byLayer.set(l, []);
-    byLayer.get(l)!.push(n.id);
-  }
-
-  const positions = new Map<string, MiniNodePos>();
-  const maxLayer = Math.max(0, ...[...layer.values()]);
-  for (let l = 0; l <= maxLayer; l++) {
-    const col = byLayer.get(l) ?? [];
-    col.forEach((id, rowIdx) => {
-      positions.set(id, { x: l * (MNW + MHG), y: rowIdx * (MNH + MVG) });
+function InstallCommand() {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(() => {
+    void navigator.clipboard.writeText(INSTALL_CMD).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
     });
-  }
-  return positions;
-}
-
-function MiniGraph({ nodes, edges, entry }: { nodes: ManifestNode[]; edges: ManifestEdge[]; entry: string }) {
-  if (nodes.length === 0) return null;
-  const positions = miniLayout(nodes, edges, entry);
-
-  let maxX = 0, maxY = 0;
-  for (const p of positions.values()) {
-    maxX = Math.max(maxX, p.x + MNW);
-    maxY = Math.max(maxY, p.y + MNH);
-  }
-  const vw = maxX + MHG;
-  const vh = Math.max(maxY + MVG, 50);
-
-  return (
-    <div style={{ position: "relative" }}>
-      <svg
-        viewBox={`0 0 ${vw} ${vh}`}
-        width="100%"
-        style={{ display: "block", maxHeight: 70, overflow: "visible" }}
-        aria-hidden
-      >
-        <defs>
-          <marker id="mg-arrow" markerWidth="5" markerHeight="5" refX="4" refY="2" orient="auto">
-            <path d="M0,0 L0,4 L5,2 z" fill="var(--line-strong)" />
-          </marker>
-        </defs>
-        {edges.map((e, i) => {
-          const fp = positions.get(e.from);
-          const tp = positions.get(e.to);
-          if (!fp || !tp) return null;
-          const x1 = fp.x + MNW, y1 = fp.y + MNH / 2;
-          const x2 = tp.x, y2 = tp.y + MNH / 2;
-          const cx = (x1 + x2) / 2;
-          return (
-            <path key={i} d={`M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`}
-              fill="none" stroke="var(--line-strong)" strokeWidth={1.2}
-              markerEnd="url(#mg-arrow)" />
-          );
-        })}
-        {nodes.map(n => {
-          const p = positions.get(n.id);
-          if (!p) return null;
-          const isEntry = n.id === entry;
-          const caps = n.capabilities;
-          const dotColor = caps.some(c => c.name === "think") ? "var(--brand)"
-            : caps.some(c => c.name === "remember" || c.name === "recall") ? "var(--ok)"
-            : "var(--ink-muted)";
-          return (
-            <g key={n.id} transform={`translate(${p.x},${p.y})`}>
-              <rect width={MNW} height={MNH} rx={5}
-                fill="var(--surface)"
-                stroke={isEntry ? "var(--brand)" : "var(--line-strong)"}
-                strokeWidth={isEntry ? 1.8 : 1.2}
-              />
-              <circle cx={MNW / 2} cy={MNH / 2} r={4} fill={dotColor} opacity={0.7} />
-            </g>
-          );
-        })}
-      </svg>
-      {/* node count overlay */}
-      <div style={{
-        position: "absolute", bottom: 2, right: 4,
-        fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--ink-muted)",
-        background: "rgba(248,247,244,.8)", padding: "1px 4px", borderRadius: 3,
-      }}>
-        {nodes.length} node{nodes.length !== 1 ? "s" : ""}
-      </div>
-    </div>
-  );
-}
-
-// ── Build preview modal ───────────────────────────────────────────────────────
-
-const MFN_W = 140;
-const MFN_H = 64;
-const MFH_G = 64;
-const MFV_G = 44;
-
-function FullMiniGraph({ nodes, edges, entry }: { nodes: ManifestNode[]; edges: ManifestEdge[]; entry: string }) {
-  const positions = miniLayout(nodes.map(n => ({ ...n })), edges, entry);
-
-  let maxX = 0, maxY = 0;
-  for (const p of positions.values()) {
-    maxX = Math.max(maxX, p.x * (MFN_W / MNW) + MFN_W);
-    maxY = Math.max(maxY, p.y * (MFN_H / MNH) + MFN_H);
-  }
-
-  const scaledPositions = new Map<string, MiniNodePos>();
-  for (const [id, p] of positions.entries()) {
-    scaledPositions.set(id, {
-      x: p.x * (MFN_W + MFH_G) / (MNW + MHG),
-      y: p.y * (MFN_H + MFV_G) / (MNH + MVG),
-    });
-  }
-
-  const vw = maxX + MFH_G;
-  const vh = Math.max(maxY + MFV_G, 100);
-
-  const CAP_ICON: Record<string, string> = {
-    think: "🧠", recall: "📚", remember: "💾", llm_route: "🔀",
-    web_search: "🔍", compose: "✍️", telegram_send: "📨", http_get: "🌐",
-    email_send: "📧", slack_send: "💬", http_post: "📤", notify_webhook: "🔔",
-  };
-
-  return (
-    <svg viewBox={`0 0 ${vw} ${vh}`} width="100%" style={{ display: "block", maxHeight: 220 }} aria-hidden>
-      <defs>
-        <marker id="fp-arrow" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
-          <path d="M0,0 L0,6 L7,3 z" fill="var(--ink-muted)" />
-        </marker>
-      </defs>
-      {edges.map((e, i) => {
-        const fp = scaledPositions.get(e.from);
-        const tp = scaledPositions.get(e.to);
-        if (!fp || !tp) return null;
-        const x1 = fp.x + MFN_W, y1 = fp.y + MFN_H / 2;
-        const x2 = tp.x, y2 = tp.y + MFN_H / 2;
-        const cx = (x1 + x2) / 2;
-        return (
-          <path key={i} d={`M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`}
-            fill="none" stroke="var(--line-strong)" strokeWidth={1.5}
-            markerEnd="url(#fp-arrow)" />
-        );
-      })}
-      {nodes.map(n => {
-        const p = scaledPositions.get(n.id);
-        if (!p) return null;
-        const isEntry = n.id === entry;
-        const icons = n.capabilities.slice(0, 2).map(c => CAP_ICON[c.name] ?? "⚙️").join(" ");
-        return (
-          <g key={n.id} transform={`translate(${p.x},${p.y})`}>
-            <rect width={MFN_W} height={MFN_H} rx={7}
-              fill="var(--surface)"
-              stroke={isEntry ? "var(--brand)" : "var(--line-strong)"}
-              strokeWidth={isEntry ? 2 : 1.5}
-            />
-            {isEntry && <rect width={MFN_W} height={3} rx={1.5} fill="var(--brand)" />}
-            <text x={MFN_W / 2} y={22} textAnchor="middle" fontSize={11} fontWeight={600} fill="var(--ink)" fontFamily="var(--font-sans)">
-              {n.id.length > 14 ? n.id.slice(0, 13) + "…" : n.id}
-            </text>
-            <text x={MFN_W / 2} y={38} textAnchor="middle" fontSize={12} fill="var(--ink-muted)">
-              {icons || "○"}
-            </text>
-            <text x={MFN_W / 2} y={54} textAnchor="middle" fontSize={8.5} fill="var(--brand)" fontFamily="var(--font-mono)">
-              {n.capabilities.map(c => c.name).join(" · ")}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function BuildPreviewModal({ result, onRun, onDiscard }: { result: BuildResult; onRun: () => void; onDiscard: () => void }) {
-  const { agent, graph, attempts, warnings } = result;
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const [rationale, setRationale] = useState<string | null>(null);
-  const [rationaleLoading, setRationaleLoading] = useState(true);
-
-  useEffect(() => {
-    setRationaleLoading(true);
-    void explainBuild(agent.id)
-      .then(r => setRationale(r.rationale))
-      .catch(() => setRationale(null))
-      .finally(() => setRationaleLoading(false));
-  }, [agent.id]);
-
-  useEffect(() => {
-    closeButtonRef.current?.focus();
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onDiscard();
-      if (e.key === "Tab") {
-        const focusable = Array.from(
-          document.getElementById("build-preview-dialog")?.querySelectorAll<HTMLElement>(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-          ) ?? []
-        );
-        if (focusable.length === 0) return;
-        const first = focusable[0]!;
-        const last = focusable[focusable.length - 1]!;
-        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-      }
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onDiscard]);
-
-  return (
-    <div
-      style={{
-        position: "fixed", inset: 0, zIndex: 1000,
-        background: "rgba(17,32,31,.42)", backdropFilter: "blur(4px)",
-        display: "flex", alignItems: "center", justifyContent: "center", padding: "var(--s6)",
-      }}
-      onClick={e => { if (e.target === e.currentTarget) onDiscard(); }}
-    >
-      <div
-        id="build-preview-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="build-preview-title"
-        className="card"
-        style={{ maxWidth: 680, width: "100%", padding: "var(--s6)", animation: "fade-in 150ms ease forwards" }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "var(--s5)" }}>
-          <div>
-            <h2 id="build-preview-title" style={{ fontSize: 18, fontWeight: 700, marginBottom: "var(--s1)" }}>
-              Agent compiled — review before running
-            </h2>
-            <p className="soft small">
-              {agent.signed.manifest.name} · {graph.nodes.length} node{graph.nodes.length !== 1 ? "s" : ""} · {graph.edges.length} edge{graph.edges.length !== 1 ? "s" : ""} · {agent.signed.manifest.runBudgetCents}¢ budget
-            </p>
-          </div>
-          <button
-            ref={closeButtonRef}
-            onClick={onDiscard}
-            aria-label="Close"
-            style={{
-              border: "none", background: "none", cursor: "pointer",
-              color: "var(--ink-muted)", fontSize: 20, lineHeight: 1,
-              padding: "8px", borderRadius: "var(--r)", flexShrink: 0,
-              transition: "background 120ms",
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-sunken)")}
-            onMouseLeave={e => (e.currentTarget.style.background = "none")}
-          >
-            ×
-          </button>
-        </div>
-
-        {attempts > 1 && (
-          <div style={{ marginBottom: "var(--s4)", padding: "var(--s3) var(--s4)", background: "var(--live-tint)", borderRadius: "var(--r)", fontSize: 12, color: "var(--live)" }}>
-            Self-corrected: succeeded on attempt {attempts} of 3
-          </div>
-        )}
-
-        {warnings.map((w, i) => (
-          <div key={i} style={{ marginBottom: "var(--s3)", padding: "var(--s3) var(--s4)", background: "var(--brand-tint)", borderRadius: "var(--r)", fontSize: 12, color: "var(--brand)" }}>
-            {w}
-          </div>
-        ))}
-
-        <div style={{ background: "var(--graph-bg)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "var(--s4)", marginBottom: "var(--s4)", overflow: "auto" }}>
-          <FullMiniGraph nodes={graph.nodes} edges={graph.edges} entry={graph.entry} />
-        </div>
-
-        {/* architect's rationale — why this graph */}
-        <div style={{
-          marginBottom: "var(--s5)", padding: "var(--s4)",
-          background: "var(--brand-tint)", borderRadius: "var(--r)",
-          border: "1px solid rgba(14,124,117,.15)",
-          minHeight: 52, display: "flex", alignItems: "flex-start", gap: "var(--s3)",
-        }}>
-          <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>✦</span>
-          {rationaleLoading ? (
-            <span style={{ fontSize: 13, color: "var(--brand)", fontStyle: "italic" }}>Understanding the design…</span>
-          ) : rationale ? (
-            <p style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.65, margin: 0 }}>{rationale}</p>
-          ) : null}
-        </div>
-
-        <div style={{ marginBottom: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
-          {graph.nodes.map(n => (
-            <div key={n.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "var(--s2) var(--s3)", background: "var(--surface-sunken)", borderRadius: "var(--r)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", minWidth: 0 }}>
-                <span style={{ fontWeight: 600, fontSize: 12, color: "var(--ink)", flexShrink: 0 }}>{n.id}</span>
-                {n.id === graph.entry && <span style={{ fontSize: 10, padding: "2px 6px", background: "var(--brand-tint)", color: "var(--brand)", borderRadius: "var(--r-pill)", fontWeight: 600, flexShrink: 0 }}>entry</span>}
-                <span style={{ fontSize: 11, color: "var(--ink-soft)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.role.slice(0, 60)}{n.role.length > 60 ? "…" : ""}</span>
-              </div>
-              <div style={{ display: "flex", gap: "var(--s1)", flexWrap: "wrap", flexShrink: 0, marginLeft: "var(--s3)" }}>
-                {n.capabilities.map(c => (
-                  <span key={c.name} style={{ fontSize: 10, padding: "2px 6px", background: "var(--brand-tint)", color: "var(--brand)", borderRadius: "var(--r-pill)" }}>{c.name}</span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ display: "flex", gap: "var(--s3)", justifyContent: "flex-end", alignItems: "center" }}>
-          <button className="btn btn-secondary" onClick={onDiscard}>Discard</button>
-          <button className="btn btn-primary btn-lg" onClick={onRun}>
-            Run now
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-// ── Agent card ────────────────────────────────────────────────────────────────
-
-function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
-  agent: AgentRecord;
-  agentRuns: RunRecord[];
-  onRun: () => void;
-  onDelete: () => void;
-  summary?: string | null;
-}) {
-  const lastRun = agentRuns[0];
-  const runningCount = agentRuns.filter(r => r.status === "running").length;
-  const status = runningCount > 0 ? "running" : lastRun?.status ?? "idle";
-  const nodes = agent.signed.manifest.nodes ?? [];
-  const edges = agent.signed.manifest.edges ?? [];
-  const [confirmRun, setConfirmRun] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function handleRunClick(e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirmRun) {
-      setConfirmRun(true);
-      confirmTimerRef.current = setTimeout(() => setConfirmRun(false), 3000);
-    } else {
-      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
-      setConfirmRun(false);
-      onRun();
-    }
-  }
-
-  function handleDeleteClick(e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      deleteTimerRef.current = setTimeout(() => setConfirmDelete(false), 3000);
-    } else {
-      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
-      setConfirmDelete(false);
-      setDeleting(true);
-      deleteAgent(agent.id).then(onDelete).catch(() => setDeleting(false));
-    }
-  }
-
-  useEffect(() => () => {
-    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
-    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
   }, []);
-
   return (
-    <a href={`/agents/${agent.id}`} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
-      <div
-        className="card"
-        style={{ padding: "var(--s5)", minHeight: 200, display: "flex", flexDirection: "column", gap: "var(--s4)", cursor: "pointer", transition: "box-shadow 140ms ease, transform 140ms ease" }}
-        onMouseEnter={e => { e.currentTarget.style.boxShadow = "var(--shadow-md)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
-        onMouseLeave={e => { e.currentTarget.style.boxShadow = "var(--shadow-sm)"; e.currentTarget.style.transform = "translateY(0)"; }}
+    <div className="install-cmd" role="group" aria-label="One-command install">
+      <span className="install-cmd__prompt" aria-hidden="true">$</span>
+      <code className="install-cmd__code">{INSTALL_CMD}</code>
+      <button
+        type="button"
+        className="install-cmd__copy"
+        data-copied={copied}
+        onClick={copy}
+        aria-label={copied ? "Command copied to clipboard" : "Copy install command"}
       >
-        {/* header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s2)" }}>
-          <span style={{ fontWeight: 700, fontSize: 13, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-            {agent.signed.manifest.name}
-          </span>
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexShrink: 0 }}>
-            <a
-              href={`/canvas/${agent.id}`}
-              onClick={e => e.stopPropagation()}
-              title="Open canvas"
-              style={{ fontSize: 11, color: "var(--brand)", fontWeight: 600, padding: "2px 7px", background: "var(--brand-tint)", borderRadius: "var(--r-pill)", textDecoration: "none", lineHeight: 1.6 }}
-            >
-              Canvas ↗
-            </a>
-            <span className={`badge badge-${status === "completed" ? "done" : status === "running" ? "running" : "neutral"}`}>
-              {status === "running" && <span className="dot" />}{status}
+        {copied ? "✓ Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
+// ── Hero artifact: a REAL run (signed · N events · cost), or a labelled example ──
+// When a completed run exists we render its honest header and link to /runs/[id].
+// Until then we show the pre-built example graph self-running, clearly framed as a
+// "live example" — no invented field names, no fabricated proof.
+function HeroArtifact({ run }: { run: RunRecord | null }) {
+  if (run) {
+    return (
+      <a
+        href={`/runs/${run.runId}`}
+        className="dark-device"
+        style={{ display: "block", padding: "var(--s5)", textDecoration: "none" }}
+        aria-label={`Open the signed record for ${run.manifestName}`}
+      >
+        <div className="micro" style={{ marginBottom: "var(--s3)" }}>A real run · {timeAgo(run.createdAt)}</div>
+        <div
+          className="dark-surface-2"
+          style={{ borderRadius: "var(--r)", padding: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}
+        >
+          <div className="dark-ink" style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-0.01em" }}>
+            {run.manifestName}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap" }}>
+            <span className="dark-verify-seal__mark" aria-hidden="true">✓</span>
+            <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>signed</span>
+            <span className="dark-ink-muted" aria-hidden="true">·</span>
+            <span className="dark-ink-soft mono" style={{ fontSize: 13 }}>
+              {run.status === "completed" ? "finished" : run.status}
             </span>
           </div>
+          <div className="dark-ink-muted small" style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
+            <span>Every step is recorded and can be replayed.</span>
+          </div>
         </div>
+        <div className="dark-teal mono" style={{ marginTop: "var(--s4)", fontSize: 12, fontWeight: 600 }}>
+          Open this record →
+        </div>
+      </a>
+    );
+  }
 
-        {/* mini graph */}
-        {nodes.length > 0 && (
-          <div style={{
-            background: "var(--graph-bg)", borderRadius: 6,
-            border: "1px solid var(--line)", padding: "var(--s3)",
-            overflow: "hidden", maxHeight: 90,
-          }}>
-            <MiniGraph nodes={nodes} edges={edges} entry={agent.signed.manifest.entry} />
-          </div>
-        )}
-
-        {/* summary or intent */}
-        {summary ? (
-          <div style={{ flex: 1 }}>
-            <p className="small" style={{ lineHeight: 1.5, color: "var(--ink-soft)", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>
-              {summary}
-            </p>
-            {lastRun && (
-              <a
-                href={`/runs/${lastRun.runId}?tab=explain`}
-                onClick={e => e.stopPropagation()}
-                style={{ fontSize: 11, color: "var(--brand)", fontWeight: 500, display: "inline-block", marginTop: 4 }}
-              >
-                View reasoning trace →
-              </a>
-            )}
-          </div>
-        ) : (
-          <p className="small soft" style={{ lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", flex: 1 }}>
-            {summary === null ? (
-              <span style={{ color: "var(--ink-muted)", fontStyle: "italic" }}>Generating summary…</span>
-            ) : agent.signed.provenance.intent}
-          </p>
-        )}
-
-        {/* footer */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            {lastRun && <div className="small muted">{timeAgo(lastRun.createdAt)}</div>}
-            {lastRun?.spentCents != null && <div className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{lastRun.spentCents}¢ last run</div>}
-          </div>
-          <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center" }}>
-            <button
-              onClick={handleDeleteClick}
-              disabled={deleting || status === "running"}
-              className="btn btn-sm"
-              style={{
-                fontSize: 11,
-                background: confirmDelete ? "var(--danger-tint)" : "transparent",
-                color: confirmDelete ? "var(--danger)" : "var(--ink-muted)",
-                border: confirmDelete ? "1px solid var(--danger)" : "1px solid var(--line)",
-                transition: "background 150ms, color 150ms, border-color 150ms",
-                minWidth: 60,
-                opacity: (deleting || status === "running") ? 0.4 : 1,
-              }}
-            >
-              {deleting ? "…" : confirmDelete ? "Sure?" : "Delete"}
-            </button>
-            <button
-              onClick={handleRunClick}
-              className="btn btn-sm"
-              style={{
-                fontSize: 11,
-                background: confirmRun ? "var(--live-tint)" : "var(--brand)",
-                color: confirmRun ? "var(--live)" : "white",
-                border: confirmRun ? "1px solid var(--live)" : "none",
-                transition: "background 150ms, color 150ms",
-                minWidth: 72,
-              }}
-            >
-              {confirmRun ? "Confirm?" : "Run now"}
-            </button>
-          </div>
+  // No real run yet → labelled live example (the pre-built research-digest graph).
+  return (
+    <div className="dark-device" style={{ padding: "var(--s5)" }}>
+      <div className="micro" style={{ marginBottom: "var(--s3)" }}>Live example · research digest</div>
+      <div
+        className="dark-surface-2"
+        style={{ borderRadius: "var(--r)", padding: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}
+      >
+        <div style={{ background: "var(--dark-node-fill)", borderRadius: "var(--r)", padding: "var(--s5)", border: "1px solid var(--dark-line)" }}>
+          <MiniGraph nodes={EXAMPLE_NODES} edges={EXAMPLE_EDGES} entry="entry" variant="dark" maxHeight={120} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap" }}>
+          <span className="dark-verify-seal__mark" aria-hidden="true">✓</span>
+          <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>signed</span>
+          <span className="dark-ink-muted" aria-hidden="true">·</span>
+          <span className="dark-ink-soft mono" style={{ fontSize: 13 }}>3 steps</span>
+        </div>
+        <div className="dark-ink-muted small">
+          Build your own below — your real runs show up here.
         </div>
       </div>
-    </a>
+    </div>
   );
 }
 
-// ── Home page ─────────────────────────────────────────────────────────────────
+function focusBuilder() {
+  const section = document.getElementById("builder");
+  section?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const ta = section?.querySelector<HTMLTextAreaElement>("textarea");
+  // focus after the smooth scroll begins so it doesn't jump the page
+  window.setTimeout(() => ta?.focus({ preventScroll: true }), 320);
+}
 
-export default function Home() {
+export default function Landing() {
   const router = useRouter();
   const [intent, setIntent] = useState("");
   const [building, setBuilding] = useState(false);
@@ -531,7 +143,6 @@ export default function Home() {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [composeFocused, setComposeFocused] = useState(false);
-  // runId → summary text (null = generating, string = done, key absent = not started)
   const [summaries, setSummaries] = useState<Record<string, string | null>>({});
   const fetchingSummaries = useRef<Set<string>>(new Set());
 
@@ -544,7 +155,7 @@ export default function Home() {
     finally { setLoading(false); }
   }, []);
 
-  // Auto-fetch summaries for completed runs whose agents still exist
+  // Auto-fetch one-line summaries for completed runs (same as the workspace)
   useEffect(() => {
     for (const run of runs) {
       if (run.status !== "completed") continue;
@@ -570,7 +181,7 @@ export default function Home() {
     return () => clearInterval(t);
   }, [reload]);
 
-  // Cycle build stage messages while building
+  // Cycle build-stage messages while building (same cadence as the workspace)
   useEffect(() => {
     if (!building) { setBuildStage(0); return; }
     const t = setInterval(() => setBuildStage(s => (s + 1) % BUILD_STAGES.length), 3500);
@@ -602,7 +213,6 @@ export default function Home() {
     try {
       const run = await startRun(agentId);
       await reload();
-      // Go straight to the run's Output tab — shows results as they arrive
       router.push(`/runs/${run.runId}`);
     } catch (err) {
       setBuildError((err as Error).message);
@@ -611,12 +221,37 @@ export default function Home() {
   }
 
   const running = runs.filter(r => r.status === "running").length;
-  const totalSpent = runs.reduce((s, r) => s + (r.spentCents ?? 0), 0);
   const recentRuns = runs.slice(0, 6);
+  const hasData = agents.length > 0 || runs.length > 0;
+
+  // Most recent completed run — the real artifact for the hero + the proof block.
+  // runs come newest-first from the API, so the first completed one is the latest.
+  const latestCompleted = runs.find(r => r.status === "completed") ?? null;
+
+  // For the "here's a real agent" block: the agent behind that run + its summary.
+  const proofAgent = latestCompleted
+    ? agents.find(a => a.id === latestCompleted.agentId) ?? null
+    : null;
+  const proofSummary = latestCompleted ? (summaries[latestCompleted.runId] ?? null) : null;
+
+  // 6-bucket run-volume sparkline: count runs per day over the last 6 days,
+  // normalized to bar heights. Purely derived from `runs` — no new data path.
+  const sparkBuckets = (() => {
+    const day = 86_400_000;
+    const now = Date.now();
+    const counts = [0, 0, 0, 0, 0, 0];
+    for (const r of runs) {
+      const t = r.createdAt;
+      if (!Number.isFinite(t)) continue;
+      const idx = 5 - Math.floor((now - t) / day);
+      if (idx >= 0 && idx < 6) counts[idx]! += 1;
+    }
+    const max = Math.max(1, ...counts);
+    return counts.map(c => Math.max(0.12, c / max));
+  })();
 
   return (
-    <div style={{ minHeight: "100vh" }}>
-
+    <div>
       {buildResult && (
         <BuildPreviewModal
           result={buildResult}
@@ -625,242 +260,421 @@ export default function Home() {
         />
       )}
 
-      {/* ── composer hero ── */}
-      <section style={{ background: "var(--canvas)", paddingTop: "var(--s9)", paddingBottom: "var(--s8)" }}>
-        <div className="container" style={{ maxWidth: 680, textAlign: "center" }}>
-          <p className="micro" style={{ marginBottom: "var(--s4)" }}>Your AI agent workspace</p>
-          <h1 style={{ fontSize: 36, fontWeight: 700, letterSpacing: "-.03em", lineHeight: 1.15, marginBottom: "var(--s4)", color: "var(--ink)" }}>
-            Describe a goal.<br />
-            <span style={{ color: "var(--brand)" }}>Get a working agent.</span>
-          </h1>
-          <p className="soft" style={{ fontSize: 16, maxWidth: "44ch", margin: "0 auto var(--s7)", lineHeight: 1.7 }}>
-            Type what you want to know or do. Krelvan builds, runs, and shows you the reasoning — in seconds.
-          </p>
-
-          <form
-            onSubmit={(e) => void handleBuild(e)}
-            style={{
-              background: "var(--surface)",
-              border: `1.5px solid ${composeFocused ? "var(--brand)" : "var(--line-strong)"}`,
-              borderRadius: 16, padding: "var(--s5)",
-              boxShadow: composeFocused ? `var(--shadow-md), 0 0 0 4px var(--brand-ring)` : "var(--shadow-sm)",
-              textAlign: "left",
-              transition: "border-color 150ms, box-shadow 150ms",
-            }}
-          >
-            <textarea
-              value={intent}
-              onChange={e => { setIntent(e.target.value); if (buildError) setBuildError(null); }}
-              onFocus={() => setComposeFocused(true)}
-              onBlur={() => setComposeFocused(false)}
-              placeholder="e.g. Review this contract and tell me what we should negotiate before signing"
-              rows={4}
-              style={{
-                width: "100%", resize: "none", border: "none", outline: "none",
-                fontFamily: "var(--font-sans)", fontSize: 15, color: "var(--ink)",
-                background: "transparent", lineHeight: 1.65, marginBottom: "var(--s4)",
-              }}
-            />
-
-            {/* suggestion tiles */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "var(--s2)", marginBottom: "var(--s4)" }}>
-              {/* hero tile — full width */}
-              <button
-                type="button"
-                onClick={() => setIntent(EXAMPLES[0].text)}
-                style={{
-                  gridColumn: "1 / -1", textAlign: "left", cursor: "pointer",
-                  background: "var(--brand-tint)", border: "1px solid rgba(14,124,117,.2)",
-                  borderRadius: "var(--r)", padding: "var(--s3) var(--s4)",
-                  display: "flex", flexDirection: "column", gap: 4,
-                  transition: "background 120ms, border-color 120ms",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = "rgba(14,124,117,.1)"; e.currentTarget.style.borderColor = "var(--brand)"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "var(--brand-tint)"; e.currentTarget.style.borderColor = "rgba(14,124,117,.2)"; }}
+      {/* ════════════ 1 · DARK HERO ════════════ */}
+      <section className="hero-dark" style={{ minHeight: "88vh", display: "flex", alignItems: "center", paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
+        <div className="container" style={{ position: "relative", zIndex: 1, width: "100%" }}>
+          <div className="hero-grid">
+            {/* left — payoff + CTAs (42%) */}
+            <div>
+              <p className="micro" style={{ marginBottom: "var(--s4)" }}>Build it. Run it. Own it.</p>
+              <h1
+                className="dark-ink"
+                style={{ fontSize: "clamp(32px, 5vw, 46px)", lineHeight: 1.08, fontWeight: 300, letterSpacing: "-0.025em", marginBottom: "var(--s5)" }}
               >
-                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--brand)", textTransform: "uppercase", letterSpacing: ".07em" }}>{EXAMPLES[0].label}</span>
-                <span style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.55 }}>{EXAMPLES[0].text}</span>
-              </button>
-              {/* 3 regular tiles */}
-              {EXAMPLES.slice(1).map(ex => (
-                <button
-                  key={ex.label}
-                  type="button"
-                  onClick={() => setIntent(ex.text)}
-                  style={{
-                    textAlign: "left", cursor: "pointer",
-                    background: "var(--surface-sunken)", border: "1px solid var(--line)",
-                    borderRadius: "var(--r)", padding: "var(--s3) var(--s3)",
-                    display: "flex", flexDirection: "column", gap: 3,
-                    transition: "background 120ms, border-color 120ms, box-shadow 120ms",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = "var(--surface)"; e.currentTarget.style.borderColor = "var(--line-strong)"; e.currentTarget.style.boxShadow = "var(--shadow-sm)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "var(--surface-sunken)"; e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.boxShadow = "none"; }}
-                >
-                  <span style={{ fontSize: 9, fontWeight: 700, color: "var(--ink-muted)", textTransform: "uppercase", letterSpacing: ".07em" }}>{ex.label}</span>
-                  <span style={{ fontSize: 12, color: "var(--ink-soft)", lineHeight: 1.55 }}>{ex.text}</span>
+                Your own AI agents. Built in seconds, <span className="dark-teal">running on your machine</span>.
+              </h1>
+              <p className="dark-ink-soft body-lg" style={{ maxWidth: "50ch", marginBottom: "var(--s7)" }}>
+                Describe a goal in plain English and Krelvan builds the agent, shows you
+                the plan, and runs it — keeping a record of every step you can open and
+                replay. No cloud. No lock-in. Yours to keep.
+              </p>
+              <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap" }}>
+                <button className="btn btn-dark-primary btn-lg" onClick={focusBuilder}>
+                  Build an agent
                 </button>
-              ))}
-            </div>
-
-            {buildError && (
-              <div
-                role="alert"
-                style={{ marginBottom: "var(--s4)", padding: "var(--s3) var(--s4)", background: "var(--danger-tint)", borderRadius: "var(--r)", fontSize: 13, color: "var(--danger)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s2)" }}
-              >
-                <span>{buildError}</span>
-                <button
-                  onClick={() => setBuildError(null)}
-                  aria-label="Dismiss error"
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontSize: 16, lineHeight: 1, flexShrink: 0, padding: "0 2px" }}
-                >×</button>
-              </div>
-            )}
-
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "var(--s4)", borderTop: "1px solid var(--line)" }}>
-              <div style={{ fontSize: 12, color: "var(--ink-muted)", minHeight: 18 }}>
-                {building && (
-                  <span style={{ animation: "fade-in 300ms ease forwards" }}>
-                    {BUILD_STAGES[buildStage]}
-                  </span>
+                {latestCompleted ? (
+                  <a href={`/runs/${latestCompleted.runId}`} className="btn btn-dark-ghost btn-lg">
+                    See a real run
+                  </a>
+                ) : (
+                  <button className="btn btn-dark-ghost btn-lg" onClick={focusBuilder}>
+                    Try an example
+                  </button>
                 )}
               </div>
-              <button
-                type="submit"
-                className="btn btn-primary btn-lg"
-                disabled={!intent.trim() || building}
-                style={{ minWidth: 140 }}
-              >
-                {building ? "Building…" : "Build agent →"}
-              </button>
             </div>
-          </form>
+
+            {/* right — animated "agent runs → ledger signs it" loop. When the user
+                already has a real completed run, show THAT (real proof beats a demo);
+                otherwise the self-running animation. */}
+            <div style={{ animation: "fade-in 400ms var(--ease) forwards" }}>
+              {latestCompleted ? <HeroArtifact run={latestCompleted} /> : <HeroAnimation />}
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ── stat strip ── */}
-      <div style={{ borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)", background: "var(--surface)" }}>
-        <div className="container">
-          <div style={{ display: "flex", gap: "var(--s8)", padding: "var(--s4) 0", flexWrap: "wrap", alignItems: "center" }}>
-            {agents.length === 0 && runs.length === 0 && !loading ? (
-              <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>No agents yet — build your first one above ↑</span>
-            ) : (
-              [
-                { label: "agents",       value: String(agents.length), live: false },
-                { label: "running now",  value: String(running),       live: running > 0 },
-                { label: "total runs",   value: String(runs.length),   live: false },
-                { label: "total spent",  value: `${totalSpent}¢`,      live: false },
-              ].map(s => (
-                <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
-                  {s.live && <span className="status-dot running" />}
-                  <span className="mono" style={{ fontSize: 15, fontWeight: 600, color: s.live ? "var(--live)" : "var(--ink)" }}>{s.value}</span>
-                  <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>{s.label}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
+      {/* ════════════ 2 · EMBEDDED LIVE BUILDER ════════════ */}
+      {/* The exact workspace composer + BuildPreviewModal + stat strip + agents/runs.
+          Same data path (buildAgent / startRun / explainRun) as /dashboard.
+          This is the dominant first-interaction zone, right under the hero. */}
+      <section id="builder" className="builder-zone" style={{ scrollMarginTop: "var(--s6)" }}>
+        <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s8)", textAlign: "center" }}>
+          <h2 className="h1" style={{ marginBottom: "var(--s3)" }}>Build and run an agent in seconds.</h2>
+          <p className="body-lg soft" style={{ maxWidth: "48ch", margin: "0 auto var(--s6)" }}>
+            Describe what you want done. Krelvan plans the agent, shows it to you, and runs it on your own machine.
+          </p>
 
-      {/* ── agents + activity ── */}
-      <section className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s9)" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: "var(--s7)", alignItems: "start" }}>
-
-          {/* agent cards */}
-          <div>
-            <h2 style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-muted)", marginBottom: "var(--s5)", letterSpacing: ".06em", textTransform: "uppercase" }}>Your agents</h2>
-
-            {loading && <p className="soft small">Loading…</p>}
-
-            {!loading && agents.length === 0 && (
-              <div style={{ padding: "var(--s9)", textAlign: "center", border: "1.5px dashed var(--line-strong)", borderRadius: "var(--r-lg)", background: "var(--surface)" }}>
-                <div style={{ fontSize: 32, marginBottom: "var(--s5)", opacity: 0.5 }}>✦</div>
-                <p style={{ fontSize: 16, fontWeight: 600, marginBottom: "var(--s3)", color: "var(--ink)" }}>Build your first agent</p>
-                <p className="soft" style={{ fontSize: 14, maxWidth: "34ch", margin: "0 auto var(--s6)", lineHeight: 1.65 }}>Describe a goal above. Your first agent compiles in ~30 seconds and is ready to run immediately.</p>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => { const ta = document.querySelector<HTMLTextAreaElement>("textarea"); ta?.focus(); ta?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
-                >
-                  Describe a goal →
-                </button>
+          {/* composer — elevated build box */}
+          <div style={{ maxWidth: 700, margin: "0 auto" }}>
+            <form
+              onSubmit={(e) => void handleBuild(e)}
+              className={`build-box${composeFocused ? " is-focused" : ""}`}
+            >
+              {/* labelled top row — frames the box as a real tool, not a bare field */}
+              <div className="build-box__head">
+                <span className="build-box__badge" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none">
+                    <path d="M8 1.6l1.7 4.7L14.4 8l-4.7 1.7L8 14.4l-1.7-4.7L1.6 8l4.7-1.7L8 1.6z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+                  </svg>
+                </span>
+                <span className="micro" style={{ color: "var(--ink-soft)" }}>Describe your agent</span>
               </div>
-            )}
 
-            {agents.length > 0 && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--s5)" }}>
-                {agents.map(a => {
-                  const agentRuns = runs.filter(r => r.agentId === a.id);
-                  const lastCompletedRun = agentRuns.find(r => r.status === "completed");
-                  const cardSummary = lastCompletedRun ? (summaries[lastCompletedRun.runId] ?? null) : undefined;
-                  return (
-                  <AgentCard
-                    key={a.id}
-                    agent={a}
-                    agentRuns={agentRuns}
-                    summary={cardSummary}
-                    onRun={() => { void startRun(a.id).then(r => { void reload(); router.push(`/runs/${r.runId}`); }); }}
-                    onDelete={() => { void reload(); }}
-                  />
-                  );
-                })}
-                <a
-                  href="#"
-                  onClick={e => { e.preventDefault(); const ta = document.querySelector<HTMLTextAreaElement>("textarea"); ta?.focus(); ta?.scrollIntoView({ behavior: "smooth", block: "center" }); }}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    minHeight: 200, border: "1.5px dashed var(--line-strong)", borderRadius: "var(--r)",
-                    color: "var(--ink-muted)", fontSize: 13, fontWeight: 500, gap: "var(--s2)",
-                    textDecoration: "none", transition: "border-color 120ms, color 120ms",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--brand)"; e.currentTarget.style.color = "var(--brand)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line-strong)"; e.currentTarget.style.color = "var(--ink-muted)"; }}
-                >
-                  <span style={{ fontSize: 20, lineHeight: 1 }}>+</span> New agent
-                </a>
-              </div>
-            )}
-          </div>
+              <textarea
+                value={intent}
+                onChange={e => { setIntent(e.target.value); if (buildError) setBuildError(null); }}
+                onFocus={() => setComposeFocused(true)}
+                onBlur={() => setComposeFocused(false)}
+                placeholder="e.g. Review this contract and tell me what we should negotiate before signing"
+                aria-label="Describe a goal"
+                rows={3}
+                className="input build-box__textarea"
+              />
 
-          {/* recent runs */}
-          <div>
-            <h2 style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-muted)", marginBottom: "var(--s5)", letterSpacing: ".06em", textTransform: "uppercase" }}>Recent runs</h2>
-            {recentRuns.length === 0 && <p className="soft small">No runs yet.</p>}
-            {recentRuns.length > 0 && (
-              <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                {recentRuns.map((r, i) => (
-                  <a
-                    key={r.runId}
-                    href={`/runs/${r.runId}`}
-                    style={{
-                      display: "flex", gap: "var(--s3)", padding: "var(--s3) var(--s4)",
-                      borderTop: i === 0 ? "none" : "1px solid var(--line)",
-                      textDecoration: "none", color: "var(--ink)",
-                      transition: "background 100ms",
-                    }}
-                    onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-hover)")}
-                    onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                  >
-                    <span className={`status-dot ${r.status === "completed" ? "done" : r.status === "failed" ? "failed" : r.status === "running" ? "running" : "paused"}`} style={{ marginTop: 5, flexShrink: 0 }} />
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.manifestName}</div>
-                      <div style={{ display: "flex", gap: "var(--s3)", marginTop: 1 }}>
-                        <span className="small muted">{timeAgo(r.createdAt)}</span>
-                        {r.spentCents != null && r.spentCents > 0 && (
-                          <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{r.spentCents}¢</span>
-                        )}
-                      </div>
-                    </div>
-                  </a>
+              {/* example chips — compact, single row, scrollable */}
+              <div className="build-box__examples">
+                <span className="micro build-box__examples-label">Try:</span>
+                {EXAMPLES.map(ex => (
+                  <button key={ex.label} type="button" className="build-chip" onClick={() => setIntent(ex.text)}>
+                    {ex.label}
+                  </button>
                 ))}
               </div>
-            )}
-            <div style={{ marginTop: "var(--s3)" }}>
-              <a href="/runs" className="small" style={{ color: "var(--brand)" }}>All runs →</a>
+
+              {buildError && (
+                <div role="alert" className="state-error" style={{ margin: "var(--s4) 0 0", justifyContent: "space-between" }}>
+                  <span>{buildError}</span>
+                  <button
+                    onClick={() => setBuildError(null)}
+                    aria-label="Dismiss error"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontSize: 16, lineHeight: 1, flexShrink: 0, padding: "0 var(--s1)" }}
+                  >×</button>
+                </div>
+              )}
+
+              <div className="build-box__foot">
+                <div className="small" style={{ color: "var(--ink-muted)", minHeight: 18, textAlign: "left" }}>
+                  {building
+                    ? <span key={buildStage} style={{ animation: "fade-in 150ms ease forwards" }}>{BUILD_STAGES[buildStage]}</span>
+                    : <span>You review the plan before anything runs.</span>}
+                </div>
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-lg"
+                  disabled={!intent.trim() || building}
+                  style={{ minWidth: 150 }}
+                >
+                  {building ? "Building…" : "Build agent →"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        {/* ════════════ 3 · PROOF STRIP + YOUR AGENTS + RECENT RUNS ════════════ */}
+        {/* Marketing homepage: this workspace band only renders for RETURNING users who
+            already have agents/runs (it gives them a quick jump-back-in). First-time
+            visitors (empty) never see an empty dashboard mid-scroll — the page flows
+            hero → builder → real-agent proof → install. The full workspace lives at
+            /dashboard. */}
+        {hasData && (<>
+        <div className="container" style={{ paddingBottom: "var(--s4)" }}>
+          {agents.length === 0 && runs.length === 0 && !loading ? (
+            <div className="stat-strip" style={{ padding: "var(--s5) var(--s6)" }}>
+              <span className="small muted">No agents yet — build your first one above ↑</span>
+            </div>
+          ) : (
+            <div className="stat-strip">
+              {[
+                { label: "agents",      value: String(agents.length), live: false },
+                { label: "running now", value: String(running),       live: running > 0 },
+                { label: "total runs",  value: String(runs.length),   live: false },
+              ].map(s => (
+                <div key={s.label} className={`stat-cell${s.live ? " is-live" : ""}`}>
+                  <span className="stat-value">{s.value}</span>
+                  <span className="stat-label">{s.label}</span>
+                </div>
+              ))}
+              <div className="stat-cell">
+                <div className="stat-spark" aria-hidden="true">
+                  {sparkBuckets.map((h, i) => (
+                    <span key={i} style={{ height: `${Math.round(h * 100)}%`, animationDelay: `${i * 60}ms` }} />
+                  ))}
+                </div>
+                <span className="stat-label">last 6 days</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* agents + recent runs */}
+        <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s9)" }}>
+          <div className="builder-grid">
+            {/* agent cards */}
+            <div>
+              <h3 className="micro" style={{ marginBottom: "var(--s5)" }}>Your agents</h3>
+
+              {loading && (
+                <div className="state-loading">
+                  <span className="spinner" aria-hidden="true" />
+                  <span>Loading agents…</span>
+                </div>
+              )}
+
+              {!loading && agents.length === 0 && (
+                <div style={{ padding: "var(--s9)", textAlign: "center", border: "1px dashed var(--line-strong)", borderRadius: "var(--r-lg)", background: "var(--surface)" }}>
+                  <div aria-hidden="true" style={{ fontSize: 32, marginBottom: "var(--s5)", opacity: 0.5 }}>✦</div>
+                  <p className="h3" style={{ marginBottom: "var(--s3)", color: "var(--ink)" }}>Build your first agent</p>
+                  <p className="body-lg soft" style={{ maxWidth: "34ch", margin: "0 auto var(--s6)" }}>
+                    Describe a goal above. Your first agent compiles in ~<span className="mono">30</span> seconds and is ready to run immediately.
+                  </p>
+                  <button className="btn btn-primary" onClick={focusBuilder}>
+                    Describe a goal →
+                  </button>
+                </div>
+              )}
+
+              {agents.length > 0 && (
+                <div className="builder-agents">
+                  {agents.map(a => {
+                    const agentRuns = runs.filter(r => r.agentId === a.id);
+                    const lastCompletedRun = agentRuns.find(r => r.status === "completed");
+                    const cardSummary = lastCompletedRun ? (summaries[lastCompletedRun.runId] ?? null) : undefined;
+                    return (
+                      <AgentCard
+                        key={a.id}
+                        agent={a}
+                        agentRuns={agentRuns}
+                        summary={cardSummary}
+                        onRun={() => { void startRun(a.id).then(r => { void reload(); router.push(`/runs/${r.runId}`); }); }}
+                        onDelete={() => { void reload(); }}
+                      />
+                    );
+                  })}
+                  <a
+                    href="#builder"
+                    onClick={e => { e.preventDefault(); focusBuilder(); }}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      minHeight: 200, border: "1px dashed var(--line-strong)", borderRadius: "var(--r)",
+                      color: "var(--ink-muted)", fontSize: 13, fontWeight: 500, gap: "var(--s2)",
+                      textDecoration: "none", transition: "border-color 120ms, color 120ms",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--brand)"; e.currentTarget.style.color = "var(--brand)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line-strong)"; e.currentTarget.style.color = "var(--ink-muted)"; }}
+                  >
+                    <span style={{ fontSize: 20, lineHeight: 1 }}>+</span> New agent
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {/* recent runs */}
+            <div>
+              <h3 className="micro" style={{ marginBottom: "var(--s5)" }}>Recent runs</h3>
+              {recentRuns.length === 0 && (
+                <div className="state-empty">
+                  <span className="small">No runs yet.</span>
+                </div>
+              )}
+              {recentRuns.length > 0 && (
+                <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                  {recentRuns.map((r, i) => (
+                    <a
+                      key={r.runId}
+                      href={`/runs/${r.runId}`}
+                      style={{
+                        display: "flex", gap: "var(--s3)", padding: "var(--s3) var(--s4)",
+                        borderTop: i === 0 ? "none" : "1px solid var(--line)",
+                        textDecoration: "none", color: "var(--ink)",
+                        transition: "background 100ms",
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-hover)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <span className={`status-dot ${r.status === "completed" ? "done" : r.status === "failed" ? "failed" : r.status === "running" ? "running" : "paused"}`} style={{ marginTop: "var(--s1)", flexShrink: 0 }} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div className="small text-truncate" style={{ fontWeight: 500 }}>{r.manifestName}</div>
+                        <div style={{ display: "flex", gap: "var(--s3)", marginTop: "var(--s1)" }}>
+                          <span className="small muted">{timeAgo(r.createdAt)}</span>
+                        </div>
+                        {/* mini ledger strip — signed/replayable tag (no cost shown) */}
+                        {(r.status === "completed" || r.status === "failed") && (
+                          <div className="run-ledger-strip">
+                            <span className="run-ledger-strip__seal" aria-hidden="true">✓</span>
+                            <span className="run-ledger-strip__tag">signed · replayable</span>
+                          </div>
+                        )}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
+              <div style={{ marginTop: "var(--s3)" }}>
+                <a href="/runs" className="small" style={{ color: "var(--brand)" }}>All runs →</a>
+              </div>
             </div>
           </div>
+        </div>
+        </>)}
+      </section>
 
+      {/* ════════════ 4 · HERE'S A REAL AGENT ════════════ */}
+      {/* Built from ACTUAL agent/run data when available, else the labelled example.
+          Concrete, replayable, owned — not a feature grid. */}
+      <section style={{ background: "var(--canvas)", borderTop: "1px solid var(--line)" }}>
+        <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
+          <h2 className="h1" style={{ marginBottom: "var(--s3)", maxWidth: "26ch" }}>
+            A real agent. A real run. Proof you can open.
+          </h2>
+          <p className="body-lg soft" style={{ maxWidth: "52ch", marginBottom: "var(--s7)" }}>
+            {latestCompleted
+              ? "This one ran on this machine. Open it and replay every step."
+              : "Build one below and it shows up here — the graph it compiled, every step it took, and a record you can open."}
+          </p>
+
+          {latestCompleted && proofAgent ? (
+            <div className="card" style={{ padding: "var(--s6)", maxWidth: 720, display: "flex", flexDirection: "column", gap: "var(--s5)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s3)", flexWrap: "wrap" }}>
+                <div>
+                  <div className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s1)" }}>{proofAgent.signed.manifest.name}</div>
+                  <div className="small muted">{timeAgo(latestCompleted.createdAt)}</div>
+                </div>
+                <span
+                  className="mono"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "var(--s1) var(--s3)", borderRadius: "var(--r-pill)", background: "var(--brand-tint)", color: "var(--brand)", fontSize: 12, fontWeight: 600 }}
+                >
+                  <span aria-hidden="true">✓</span> signed
+                </span>
+              </div>
+
+              <div style={{ background: "var(--graph-bg)", borderRadius: "var(--r)", border: "1px solid var(--line)", padding: "var(--s4)", overflow: "hidden", maxHeight: 110 }}>
+                <MiniGraph
+                  nodes={proofAgent.signed.manifest.nodes}
+                  edges={proofAgent.signed.manifest.edges}
+                  entry={proofAgent.signed.manifest.entry}
+                />
+              </div>
+
+              {proofSummary && (
+                <p className="small" style={{ lineHeight: 1.6, color: "var(--ink-soft)", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>
+                  {proofSummary}
+                </p>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--s4)", flexWrap: "wrap" }}>
+                <span className="mono" style={{ fontSize: 13, color: "var(--brand)", fontWeight: 600 }}>✓ signed · replayable</span>
+                <a href={`/runs/${latestCompleted.runId}`} className="btn btn-primary">View this run →</a>
+              </div>
+            </div>
+          ) : (
+            <div className="card" style={{ padding: "var(--s6)", maxWidth: 720, display: "flex", flexDirection: "column", gap: "var(--s5)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s3)", flexWrap: "wrap" }}>
+                <div>
+                  <div className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s1)" }}>Research digest</div>
+                  <div className="small muted">Example</div>
+                </div>
+                <span
+                  className="mono"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "var(--s1) var(--s3)", borderRadius: "var(--r-pill)", background: "var(--brand-tint)", color: "var(--brand)", fontSize: 12, fontWeight: 600 }}
+                >
+                  <span aria-hidden="true">✓</span> signed
+                </span>
+              </div>
+              <div style={{ background: "var(--graph-bg)", borderRadius: "var(--r)", border: "1px solid var(--line)", padding: "var(--s4)", overflow: "hidden", maxHeight: 110 }}>
+                <MiniGraph nodes={EXAMPLE_NODES} edges={EXAMPLE_EDGES} entry="entry" />
+              </div>
+              <p className="small soft" style={{ lineHeight: 1.6 }}>
+                Search the web, reason over the findings, and write a clear digest — three signed steps.
+              </p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--s4)", flexWrap: "wrap" }}>
+                <span className="mono" style={{ fontSize: 13, color: "var(--brand)", fontWeight: 600 }}>✓ signed · replayable</span>
+                <button className="btn btn-primary" onClick={focusBuilder}>Build this →</button>
+              </div>
+            </div>
+          )}
         </div>
       </section>
+
+      {/* ════════════ 5 · FINAL CTA (dark) ════════════ */}
+      {/* Build-on-Krelvan — the platform-base value prop: eliminated decisions. */}
+      <section style={{ background: "var(--canvas)", borderTop: "1px solid var(--line)" }}>
+        <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
+          <p className="micro" style={{ marginBottom: "var(--s3)" }}>Build on it</p>
+          <h2 className="h1" style={{ marginBottom: "var(--s3)", maxWidth: "24ch" }}>
+            The value isn&apos;t features. It&apos;s <span style={{ color: "var(--brand)" }}>eliminated decisions</span>.
+          </h2>
+          <p className="body-lg soft" style={{ maxWidth: "60ch", marginBottom: "var(--s7)" }}>
+            Memory, approval flows, audit, agent coordination, failure-reasoning — solved.
+            You build the domain logic and the client workflow. Ship agentic solutions in
+            days, not months.
+          </p>
+          <div className="build-on-grid">
+            {[
+              { k: "Memory", v: "Episodic, semantic and trust-aware — right by default." },
+              { k: "Approval flows", v: "Standard human-in-the-loop pause / approve / resume." },
+              { k: "Audit by default", v: "Every step signed to a tamper-evident record." },
+              { k: "Agent coordination", v: "Sub-agent delegation with supervisor co-sign." },
+              { k: "Failure-reasoning", v: "It reasons about why a run failed — and how to fix it." },
+              { k: "Capability ecosystem", v: "Install a connector; it works in any agent." },
+            ].map(c => (
+              <div key={c.k} className="card" style={{ padding: "var(--s5)" }}>
+                <div className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s2)", display: "flex", alignItems: "center", gap: "var(--s2)" }}>
+                  <span aria-hidden="true" style={{ color: "var(--brand)", display: "inline-flex" }}>
+                    <svg viewBox="0 0 16 16" width="16" height="16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </span>
+                  {c.k}
+                </div>
+                <p className="small soft" style={{ margin: 0, lineHeight: 1.55 }}>{c.v}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="hero-dark" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
+        <div className="container" style={{ position: "relative", zIndex: 1, textAlign: "center" }}>
+          <p className="micro" style={{ marginBottom: "var(--s4)" }}>Self-hosted</p>
+          <h2 className="dark-ink display" style={{ marginBottom: "var(--s4)" }}>
+            Run it on your <span className="dark-teal">own machine</span>.
+          </h2>
+          <p className="dark-ink-soft body-lg" style={{ maxWidth: "54ch", margin: "0 auto var(--s6)" }}>
+            Download it and run it yourself — for you, your team, or your clients.
+            Your keys, your data, your infrastructure. Use it however you need.
+          </p>
+          <div style={{ marginBottom: "var(--s6)" }}>
+            <InstallCommand />
+            <p className="dark-ink-muted small" style={{ marginTop: "var(--s3)" }}>
+              Boots the API and web UI on <span className="mono">localhost:3100</span> · or run{" "}
+              <span className="mono">docker compose up</span>
+            </p>
+          </div>
+          <p className="dark-ink-soft body-lg" style={{ maxWidth: "54ch", margin: "0 auto var(--s6)" }}>
+            When someone asks what your agent did, you hand them a signed record —
+            not a vendor&apos;s word.
+          </p>
+          <div style={{ display: "flex", gap: "var(--s3)", justifyContent: "center", flexWrap: "wrap" }}>
+            <a href="https://github.com/sreenathmmenon/krelvan" className="btn btn-dark-primary btn-lg">
+              View on GitHub
+            </a>
+            <button className="btn btn-dark-ghost btn-lg" onClick={focusBuilder}>
+              Try the builder
+            </button>
+          </div>
+        </div>
+      </section>
+
     </div>
   );
 }
