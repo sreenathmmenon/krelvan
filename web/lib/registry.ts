@@ -132,6 +132,94 @@ input:
     required: true
 `,
   },
+  {
+    name: "slack.notify", title: "Slack notify", oneLiner: "Post a message to a Slack channel via an Incoming Webhook.",
+    category: "Messaging", sideEffect: "message-human", tier: "official", author: "Krelvan", kind: "yaml",
+    secretRefs: ["slack-webhook"],
+    sourceUrl: "https://github.com/sreenathmmenon/krelvan-registry",
+    yaml: `name: slack.notify
+description: Post a message to a Slack channel via an Incoming Webhook URL.
+sideEffect: message-human
+estimateCents: 0
+http:
+  url: "{{secret:slack-webhook}}"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+  body:
+    text: "{{input.message}}"
+input:
+  message:
+    type: string
+    required: true
+    description: The message text to post.
+successCodes:
+  - 200
+`,
+  },
+  {
+    name: "webhook.post", title: "Webhook POST", oneLiner: "POST a JSON message to any webhook URL you control.",
+    category: "Messaging", sideEffect: "message-human", tier: "official", author: "Krelvan", kind: "yaml",
+    secretRefs: ["webhook-url"],
+    sourceUrl: "https://github.com/sreenathmmenon/krelvan-registry",
+    yaml: `name: webhook.post
+description: POST a JSON payload to a webhook URL (Zapier-free; your own endpoint).
+sideEffect: message-human
+estimateCents: 0
+http:
+  url: "{{secret:webhook-url}}"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+  body:
+    event: "{{input.event}}"
+    message: "{{input.message}}"
+input:
+  event:
+    type: string
+    description: Optional event name/type.
+  message:
+    type: string
+    required: true
+    description: The payload message.
+successCodes:
+  - 200
+  - 201
+  - 202
+  - 204
+`,
+  },
+  {
+    name: "github.dispatch", title: "Trigger GitHub Actions", oneLiner: "Kick off a GitHub Actions workflow via repository_dispatch.",
+    category: "Automation", sideEffect: "write-irreversible", tier: "official", author: "Krelvan", kind: "yaml",
+    secretRefs: ["github-token"],
+    sourceUrl: "https://github.com/sreenathmmenon/krelvan-registry",
+    yaml: `name: github.dispatch
+description: Trigger a GitHub Actions workflow via the repository_dispatch API.
+sideEffect: write-irreversible
+estimateCents: 0
+http:
+  url: "https://api.github.com/repos/{{input.repo}}/dispatches"
+  method: POST
+  headers:
+    Accept: "application/vnd.github+json"
+    Authorization: "Bearer {{secret:github-token}}"
+    User-Agent: "krelvan"
+  body:
+    event_type: "{{input.event_type}}"
+input:
+  repo:
+    type: string
+    required: true
+    description: "owner/name of the repository."
+  event_type:
+    type: string
+    required: true
+    description: The repository_dispatch event type your workflow listens for.
+successCodes:
+  - 204
+`,
+  },
 
   // ── Official Deploy capabilities (ship a site/app via a provider deploy hook) ─
   // Each is a real, working trigger: you create a deploy/build hook in the provider

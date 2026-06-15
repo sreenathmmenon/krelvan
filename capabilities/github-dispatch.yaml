@@ -1,0 +1,24 @@
+name: github.dispatch
+description: Trigger a GitHub Actions workflow via the repository_dispatch API.
+sideEffect: write-irreversible
+estimateCents: 0
+http:
+  url: "https://api.github.com/repos/{{input.repo}}/dispatches"
+  method: POST
+  headers:
+    Accept: "application/vnd.github+json"
+    Authorization: "Bearer {{secret:github-token}}"
+    User-Agent: "krelvan"
+  body:
+    event_type: "{{input.event_type}}"
+input:
+  repo:
+    type: string
+    required: true
+    description: "owner/name of the repository."
+  event_type:
+    type: string
+    required: true
+    description: The repository_dispatch event type your workflow listens for.
+successCodes:
+  - 204

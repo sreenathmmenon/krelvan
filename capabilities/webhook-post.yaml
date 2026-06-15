@@ -1,0 +1,25 @@
+name: webhook.post
+description: POST a JSON payload to a webhook URL (your own endpoint).
+sideEffect: message-human
+estimateCents: 0
+http:
+  url: "{{secret:webhook-url}}"
+  method: POST
+  headers:
+    Content-Type: "application/json"
+  body:
+    event: "{{input.event}}"
+    message: "{{input.message}}"
+input:
+  event:
+    type: string
+    description: Optional event name/type.
+  message:
+    type: string
+    required: true
+    description: The payload message.
+successCodes:
+  - 200
+  - 201
+  - 202
+  - 204
