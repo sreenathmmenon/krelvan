@@ -6,7 +6,7 @@ import {
   type AgentRecord, type RunRecord, type BuildResult,
 } from "../lib/api";
 import {
-  AgentCard, BuildPreviewModal, MiniGraph, HeroAnimation, EXAMPLES, BUILD_STAGES,
+  BuildPreviewModal, MiniGraph, HeroAnimation, EXAMPLES, BUILD_STAGES,
 } from "./_builder";
 
 // ── Krelvan landing — product-first debut ──────────────────────────────────────
@@ -220,35 +220,9 @@ export default function Landing() {
     }
   }
 
-  const running = runs.filter(r => r.status === "running").length;
-  const recentRuns = runs.slice(0, 6);
-  const hasData = agents.length > 0 || runs.length > 0;
-
-  // Most recent completed run — the real artifact for the hero + the proof block.
+  // Most recent completed run — the real artifact for the hero + the latest-run highlight.
   // runs come newest-first from the API, so the first completed one is the latest.
   const latestCompleted = runs.find(r => r.status === "completed") ?? null;
-
-  // For the "here's a real agent" block: the agent behind that run + its summary.
-  const proofAgent = latestCompleted
-    ? agents.find(a => a.id === latestCompleted.agentId) ?? null
-    : null;
-  const proofSummary = latestCompleted ? (summaries[latestCompleted.runId] ?? null) : null;
-
-  // 6-bucket run-volume sparkline: count runs per day over the last 6 days,
-  // normalized to bar heights. Purely derived from `runs` — no new data path.
-  const sparkBuckets = (() => {
-    const day = 86_400_000;
-    const now = Date.now();
-    const counts = [0, 0, 0, 0, 0, 0];
-    for (const r of runs) {
-      const t = r.createdAt;
-      if (!Number.isFinite(t)) continue;
-      const idx = 5 - Math.floor((now - t) / day);
-      if (idx >= 0 && idx < 6) counts[idx]! += 1;
-    }
-    const max = Math.max(1, ...counts);
-    return counts.map(c => Math.max(0.12, c / max));
-  })();
 
   return (
     <div>
@@ -269,14 +243,13 @@ export default function Landing() {
               <p className="micro" style={{ marginBottom: "var(--s4)" }}>Build it. Run it. Own it.</p>
               <h1
                 className="dark-ink"
-                style={{ fontSize: "clamp(32px, 5vw, 46px)", lineHeight: 1.08, fontWeight: 300, letterSpacing: "-0.025em", marginBottom: "var(--s5)" }}
+                style={{ fontSize: "clamp(40px, 5.5vw, 64px)", lineHeight: 1.05, fontWeight: 600, letterSpacing: "-0.03em", marginBottom: "var(--s5)" }}
               >
                 Your own AI agents. Built in seconds, <span className="dark-teal">running on your machine</span>.
               </h1>
-              <p className="dark-ink-soft body-lg" style={{ maxWidth: "50ch", marginBottom: "var(--s7)" }}>
-                Describe a goal in plain English and Krelvan builds the agent, shows you
-                the plan, and runs it — keeping a record of every step you can open and
-                replay. No cloud. No lock-in. Yours to keep.
+              <p className="dark-ink-soft body-lg" style={{ maxWidth: "52ch", marginBottom: "var(--s7)" }}>
+                Describe a goal in plain English; Krelvan builds the agent, runs it on your
+                machine, and keeps a signed record of every step you can open and replay.
               </p>
               <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap" }}>
                 <button className="btn btn-dark-primary btn-lg" onClick={focusBuilder}>
@@ -382,232 +355,38 @@ export default function Landing() {
           </div>
         </div>
 
-        {/* ════════════ 3 · PROOF STRIP + YOUR AGENTS + RECENT RUNS ════════════ */}
-        {/* Marketing homepage: this workspace band only renders for RETURNING users who
-            already have agents/runs (it gives them a quick jump-back-in). First-time
-            visitors (empty) never see an empty dashboard mid-scroll — the page flows
-            hero → builder → real-agent proof → install. The full workspace lives at
-            /dashboard. */}
-        {hasData && (<>
-        <div className="container" style={{ paddingBottom: "var(--s4)" }}>
-          {agents.length === 0 && runs.length === 0 && !loading ? (
-            <div className="stat-strip" style={{ padding: "var(--s5) var(--s6)" }}>
-              <span className="small muted">No agents yet — build your first one above ↑</span>
-            </div>
-          ) : (
-            <div className="stat-strip">
-              {[
-                { label: "agents",      value: String(agents.length), live: false },
-                { label: "running now", value: String(running),       live: running > 0 },
-                { label: "total runs",  value: String(runs.length),   live: false },
-              ].map(s => (
-                <div key={s.label} className={`stat-cell${s.live ? " is-live" : ""}`}>
-                  <span className="stat-value">{s.value}</span>
-                  <span className="stat-label">{s.label}</span>
+        {/* ════════════ 3 · LATEST-RUN HIGHLIGHT (returning users only) ════════════ */}
+        {/* The homepage is NOT the workspace. The full agent grid, stats, and recent-runs
+            panel live only at /dashboard. Here, a returning visitor sees a single
+            real-run highlight as proof, with one link into the workspace. */}
+        {latestCompleted && (
+          <div className="container" style={{ paddingTop: "var(--s4)", paddingBottom: "var(--s9)" }}>
+            <a
+              href={`/runs/${latestCompleted.runId}`}
+              className="card card-hover ledger-artifact"
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                gap: "var(--s5)", padding: "var(--s5) var(--s6)", maxWidth: 720, margin: "0 auto",
+                textDecoration: "none", flexWrap: "wrap",
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div className="micro" style={{ marginBottom: "var(--s2)" }}>Your latest run</div>
+                <div className="h3" style={{ color: "var(--ink)" }}>{latestCompleted.manifestName}</div>
+                <div className="small muted" style={{ marginTop: "var(--s1)" }}>
+                  {timeAgo(latestCompleted.createdAt)} · <span className="mono" style={{ color: "var(--brand)", fontWeight: 600 }}>✓ signed · replayable</span>
                 </div>
-              ))}
-              <div className="stat-cell">
-                <div className="stat-spark" aria-hidden="true">
-                  {sparkBuckets.map((h, i) => (
-                    <span key={i} style={{ height: `${Math.round(h * 100)}%`, animationDelay: `${i * 60}ms` }} />
-                  ))}
-                </div>
-                <span className="stat-label">last 6 days</span>
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* agents + recent runs */}
-        <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s9)" }}>
-          <div className="builder-grid">
-            {/* agent cards */}
-            <div>
-              <h3 className="micro" style={{ marginBottom: "var(--s5)" }}>Your agents</h3>
-
-              {loading && (
-                <div className="state-loading">
-                  <span className="spinner" aria-hidden="true" />
-                  <span>Loading agents…</span>
-                </div>
-              )}
-
-              {!loading && agents.length === 0 && (
-                <div style={{ padding: "var(--s9)", textAlign: "center", border: "1px dashed var(--line-strong)", borderRadius: "var(--r-lg)", background: "var(--surface)" }}>
-                  <div aria-hidden="true" style={{ fontSize: 32, marginBottom: "var(--s5)", opacity: 0.5 }}>✦</div>
-                  <p className="h3" style={{ marginBottom: "var(--s3)", color: "var(--ink)" }}>Build your first agent</p>
-                  <p className="body-lg soft" style={{ maxWidth: "34ch", margin: "0 auto var(--s6)" }}>
-                    Describe a goal above. Your first agent compiles in ~<span className="mono">30</span> seconds and is ready to run immediately.
-                  </p>
-                  <button className="btn btn-primary" onClick={focusBuilder}>
-                    Describe a goal →
-                  </button>
-                </div>
-              )}
-
-              {agents.length > 0 && (
-                <div className="builder-agents">
-                  {agents.map(a => {
-                    const agentRuns = runs.filter(r => r.agentId === a.id);
-                    const lastCompletedRun = agentRuns.find(r => r.status === "completed");
-                    const cardSummary = lastCompletedRun ? (summaries[lastCompletedRun.runId] ?? null) : undefined;
-                    return (
-                      <AgentCard
-                        key={a.id}
-                        agent={a}
-                        agentRuns={agentRuns}
-                        summary={cardSummary}
-                        onRun={() => { void startRun(a.id).then(r => { void reload(); router.push(`/runs/${r.runId}`); }); }}
-                        onDelete={() => { void reload(); }}
-                      />
-                    );
-                  })}
-                  <a
-                    href="#builder"
-                    onClick={e => { e.preventDefault(); focusBuilder(); }}
-                    style={{
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      minHeight: 200, border: "1px dashed var(--line-strong)", borderRadius: "var(--r)",
-                      color: "var(--ink-muted)", fontSize: 13, fontWeight: 500, gap: "var(--s2)",
-                      textDecoration: "none", transition: "border-color 120ms, color 120ms",
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--brand)"; e.currentTarget.style.color = "var(--brand)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line-strong)"; e.currentTarget.style.color = "var(--ink-muted)"; }}
-                  >
-                    <span style={{ fontSize: 20, lineHeight: 1 }}>+</span> New agent
-                  </a>
-                </div>
-              )}
-            </div>
-
-            {/* recent runs */}
-            <div>
-              <h3 className="micro" style={{ marginBottom: "var(--s5)" }}>Recent runs</h3>
-              {recentRuns.length === 0 && (
-                <div className="state-empty">
-                  <span className="small">No runs yet.</span>
-                </div>
-              )}
-              {recentRuns.length > 0 && (
-                <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                  {recentRuns.map((r, i) => (
-                    <a
-                      key={r.runId}
-                      href={`/runs/${r.runId}`}
-                      style={{
-                        display: "flex", gap: "var(--s3)", padding: "var(--s3) var(--s4)",
-                        borderTop: i === 0 ? "none" : "1px solid var(--line)",
-                        textDecoration: "none", color: "var(--ink)",
-                        transition: "background 100ms",
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-hover)")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                    >
-                      <span className={`status-dot ${r.status === "completed" ? "done" : r.status === "failed" ? "failed" : r.status === "running" ? "running" : "paused"}`} style={{ marginTop: "var(--s1)", flexShrink: 0 }} />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div className="small text-truncate" style={{ fontWeight: 500 }}>{r.manifestName}</div>
-                        <div style={{ display: "flex", gap: "var(--s3)", marginTop: "var(--s1)" }}>
-                          <span className="small muted">{timeAgo(r.createdAt)}</span>
-                        </div>
-                        {/* mini ledger strip — signed/replayable tag (no cost shown) */}
-                        {(r.status === "completed" || r.status === "failed") && (
-                          <div className="run-ledger-strip">
-                            <span className="run-ledger-strip__seal" aria-hidden="true">✓</span>
-                            <span className="run-ledger-strip__tag">signed · replayable</span>
-                          </div>
-                        )}
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              )}
-              <div style={{ marginTop: "var(--s3)" }}>
-                <a href="/runs" className="small" style={{ color: "var(--brand)" }}>All runs →</a>
-              </div>
+              <span className="btn btn-secondary">Open this record →</span>
+            </a>
+            <div style={{ textAlign: "center", marginTop: "var(--s4)" }}>
+              <a href="/dashboard" className="small" style={{ color: "var(--brand)" }}>Go to your workspace →</a>
             </div>
           </div>
-        </div>
-        </>)}
+        )}
       </section>
 
-      {/* ════════════ 4 · HERE'S A REAL AGENT ════════════ */}
-      {/* Built from ACTUAL agent/run data when available, else the labelled example.
-          Concrete, replayable, owned — not a feature grid. */}
-      <section style={{ background: "var(--canvas)", borderTop: "1px solid var(--line)" }}>
-        <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
-          <h2 className="h1" style={{ marginBottom: "var(--s3)", maxWidth: "26ch" }}>
-            A real agent. A real run. Proof you can open.
-          </h2>
-          <p className="body-lg soft" style={{ maxWidth: "52ch", marginBottom: "var(--s7)" }}>
-            {latestCompleted
-              ? "This one ran on this machine. Open it and replay every step."
-              : "Build one below and it shows up here — the graph it compiled, every step it took, and a record you can open."}
-          </p>
-
-          {latestCompleted && proofAgent ? (
-            <div className="card" style={{ padding: "var(--s6)", maxWidth: 720, display: "flex", flexDirection: "column", gap: "var(--s5)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s3)", flexWrap: "wrap" }}>
-                <div>
-                  <div className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s1)" }}>{proofAgent.signed.manifest.name}</div>
-                  <div className="small muted">{timeAgo(latestCompleted.createdAt)}</div>
-                </div>
-                <span
-                  className="mono"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "var(--s1) var(--s3)", borderRadius: "var(--r-pill)", background: "var(--brand-tint)", color: "var(--brand)", fontSize: 12, fontWeight: 600 }}
-                >
-                  <span aria-hidden="true">✓</span> signed
-                </span>
-              </div>
-
-              <div style={{ background: "var(--graph-bg)", borderRadius: "var(--r)", border: "1px solid var(--line)", padding: "var(--s4)", overflow: "hidden", maxHeight: 110 }}>
-                <MiniGraph
-                  nodes={proofAgent.signed.manifest.nodes}
-                  edges={proofAgent.signed.manifest.edges}
-                  entry={proofAgent.signed.manifest.entry}
-                />
-              </div>
-
-              {proofSummary && (
-                <p className="small" style={{ lineHeight: 1.6, color: "var(--ink-soft)", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>
-                  {proofSummary}
-                </p>
-              )}
-
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--s4)", flexWrap: "wrap" }}>
-                <span className="mono" style={{ fontSize: 13, color: "var(--brand)", fontWeight: 600 }}>✓ signed · replayable</span>
-                <a href={`/runs/${latestCompleted.runId}`} className="btn btn-primary">View this run →</a>
-              </div>
-            </div>
-          ) : (
-            <div className="card" style={{ padding: "var(--s6)", maxWidth: 720, display: "flex", flexDirection: "column", gap: "var(--s5)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s3)", flexWrap: "wrap" }}>
-                <div>
-                  <div className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s1)" }}>Research digest</div>
-                  <div className="small muted">Example</div>
-                </div>
-                <span
-                  className="mono"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "var(--s1) var(--s3)", borderRadius: "var(--r-pill)", background: "var(--brand-tint)", color: "var(--brand)", fontSize: 12, fontWeight: 600 }}
-                >
-                  <span aria-hidden="true">✓</span> signed
-                </span>
-              </div>
-              <div style={{ background: "var(--graph-bg)", borderRadius: "var(--r)", border: "1px solid var(--line)", padding: "var(--s4)", overflow: "hidden", maxHeight: 110 }}>
-                <MiniGraph nodes={EXAMPLE_NODES} edges={EXAMPLE_EDGES} entry="entry" />
-              </div>
-              <p className="small soft" style={{ lineHeight: 1.6 }}>
-                Search the web, reason over the findings, and write a clear digest — three signed steps.
-              </p>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--s4)", flexWrap: "wrap" }}>
-                <span className="mono" style={{ fontSize: 13, color: "var(--brand)", fontWeight: 600 }}>✓ signed · replayable</span>
-                <button className="btn btn-primary" onClick={focusBuilder}>Build this →</button>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* ════════════ 5 · FINAL CTA (dark) ════════════ */}
+      {/* ════════════ 4 · FINAL CTA (dark) ════════════ */}
       {/* Build-on-Krelvan — the platform-base value prop: eliminated decisions. */}
       <section style={{ background: "var(--canvas)", borderTop: "1px solid var(--line)" }}>
         <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>

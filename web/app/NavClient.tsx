@@ -142,7 +142,7 @@ export default function NavClient() {
             </span>
           )}
           <a
-            href="/"
+            href="/dashboard"
             className={`btn btn-sm nav-cta ${darkMode ? "btn-dark-primary" : "btn-primary"}`}
             onClick={focusCompose}
           >
@@ -210,7 +210,7 @@ export default function NavClient() {
                 </a>
               );
             })}
-            <a href="/" className="btn btn-primary nav-mobile__cta" onClick={focusCompose}>
+            <a href="/dashboard" className="btn btn-primary nav-mobile__cta" onClick={focusCompose}>
               Build agent →
             </a>
           </nav>
