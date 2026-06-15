@@ -15,6 +15,7 @@ const NAV_LINKS = [
 ];
 const MORE_LINKS = [
   { label: "MCP servers",  href: "/mcp" },
+  { label: "Secrets",      href: "/secrets" },
   { label: "Approvals",    href: "/approvals" },
 ];
 

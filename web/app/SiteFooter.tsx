@@ -31,6 +31,7 @@ export default function SiteFooter() {
             <p className="micro" style={{ marginBottom: "var(--s3)" }}>Workspace</p>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
               <li><a href="/mcp" className="small" style={{ color: "var(--ink-soft)" }}>MCP servers</a></li>
+              <li><a href="/secrets" className="small" style={{ color: "var(--ink-soft)" }}>Secrets</a></li>
               <li><a href="/approvals" className="small" style={{ color: "var(--ink-soft)" }}>Approvals</a></li>
               <li><a href="/capabilities" className="small" style={{ color: "var(--ink-soft)" }}>Marketplace</a></li>
               <li><a href="https://github.com/sreenathmmenon/krelvan" className="small" style={{ color: "var(--ink-soft)" }}>Download</a></li>

@@ -394,6 +394,36 @@ export async function deleteSchedule(id: string): Promise<void> {
   await apiFetch(`/api/schedules/${id}`, { method: "DELETE" });
 }
 
+// ── Secrets (customer-managed) ──────────────────────────────────────────────────
+
+export interface SecretMeta {
+  name: string;
+  preview: string;   // masked — never the full value
+  updatedAt: number;
+}
+
+export interface RequiredSecret {
+  name: string;
+  capability: string;
+  set: boolean;
+}
+
+export async function listSecrets(): Promise<{ secrets: SecretMeta[]; required: RequiredSecret[] }> {
+  return apiFetch<{ secrets: SecretMeta[]; required: RequiredSecret[] }>("/api/secrets");
+}
+
+export async function setSecret(name: string, value: string): Promise<SecretMeta> {
+  const r = await apiFetch<{ ok: boolean; secret: SecretMeta }>(`/api/secrets/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
+  });
+  return r.secret;
+}
+
+export async function deleteSecret(name: string): Promise<void> {
+  await apiFetch(`/api/secrets/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
 // ── Agent Memory ──────────────────────────────────────────────────────────────
 
 export type Provenance = "owner" | "tool-observed" | "channel" | "agent" | "memory";
