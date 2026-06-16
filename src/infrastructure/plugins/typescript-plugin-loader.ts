@@ -1,20 +1,26 @@
 /**
  * TypeScriptPluginLoader — PluginLoaderStrategy for kind='typescript'.
  *
- * Security model: TypeScript plugins are user-supplied JS executed in a
- * worker_threads Worker, NOT in the main Node.js process. The Worker:
- *   - shares no memory with the main thread (no SharedArrayBuffer exposed)
- *   - communicates only via a typed MessageChannel protocol
- *   - is terminated after each invoke() call completes (no persistent state)
- *   - is subject to a configurable timeout (default 10 s)
+ * IMPORTANT — this is THREAD ISOLATION, **NOT a security sandbox.** A TypeScript
+ * plugin runs in a worker_threads Worker, which still has the full Node API: it can
+ * use `fs`, open network sockets, and spawn processes. It is therefore UNTRUSTED CODE
+ * and enabling one is gated behind KRELVAN_ALLOW_UNTRUSTED_PLUGINS (see
+ * lifecycle-service). A real sandbox (subprocess + Node permission model, or microVM)
+ * is on the roadmap — see docs/SANDBOX_PLAN.md.
  *
- * The worker receives the absolute source path (already hash-verified by the
- * lifecycle service before this loader is called), imports the module, and
- * proxies invoke() calls over postMessage. Secrets are passed as a plain
- * Record<string, string> over the channel — never exposed in a shared memory
- * buffer.
+ * What this loader DOES enforce today:
+ *   - the Worker shares no memory with the main thread (crash/state isolation)
+ *   - a memory ceiling (resourceLimits) so a plugin can't exhaust host RAM
+ *   - a per-invoke timeout (default 10 s) so a plugin can't hang the host
+ *   - a SCRUBBED env (scrubbedWorkerEnv) so the plugin canNOT read Krelvan's secrets
+ *     (auth token, ledger signing secrets, provider keys) from process.env
+ *   - secrets a capability legitimately needs arrive per-invoke over the channel —
+ *     only the refs that capability declares, never the whole secret store
  *
- * Limitations:
+ * What it does NOT yet enforce: filesystem/network/process confinement of the plugin
+ * code itself. Until the sandbox ships, treat TS plugins as code you fully trust.
+ *
+ * Notes:
  *   - The plugin must be a pre-compiled .js file (not .ts source).
  *   - Node module cache inside the Worker is isolated from the main thread.
  *   - Top-level side effects in the plugin module run when the Worker starts
@@ -122,6 +128,26 @@ const INVOKE_TIMEOUT_MS = 10_000;
 const PLUGIN_MAX_MEMORY_MB = Math.max(32, Number(process.env["KRELVAN_PLUGIN_MAX_MEMORY_MB"]) || 128);
 
 /**
+ * Build a minimal, secret-free env for a plugin Worker. Plugins must NEVER see
+ * Krelvan's secrets — the parent env holds the auth token, ledger signing secrets,
+ * LLM API keys, and every customer secret. We pass only the handful of OS/tooling vars
+ * a Node module needs to resolve and import, and explicitly nothing matching a
+ * secret/credential pattern.
+ */
+function scrubbedWorkerEnv(): Record<string, string> {
+  // Allowlist of safe, non-secret vars needed for module resolution / tooling.
+  const ALLOW = new Set(["PATH", "HOME", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "TZ", "NODE_PATH", "NODE_OPTIONS"]);
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v === undefined) continue;
+    if (ALLOW.has(k)) out[k] = v;
+    // never pass anything that looks like a secret/credential or any KRELVAN_* config
+    // (KRELVAN_* may carry signing secrets, the auth token, provider keys, etc.)
+  }
+  return out;
+}
+
+/**
  * A CapabilityPlugin that proxies all invoke() calls to an isolated Worker.
  * The Worker is spawned once per plugin enable() and kept alive for the
  * lifetime of the enabled plugin (terminated on disable/uninstall).
@@ -224,6 +250,13 @@ export class TypeScriptPluginLoader implements PluginLoaderStrategy {
     return new Promise<CapabilityPlugin>((resolve, reject) => {
       const worker = new Worker(WORKER_BOOTSTRAP, {
         eval: true,
+        // SECURITY: do NOT inherit the parent's process.env — it contains Krelvan's
+        // auth token, ledger signing secrets, LLM API keys, and customer secrets, and
+        // a plugin could read them all via process.env. Hand the worker a SCRUBBED env
+        // with only what a module needs to import/run (PATH for native module resolution,
+        // and the things tsx needs). Secrets a capability legitimately needs still arrive
+        // per-invoke over the message channel (only the refs that capability declares).
+        env: scrubbedWorkerEnv(),
         workerData: {
           sourcePath: record.sourcePath,
           __workerScript: workerScript,

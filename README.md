@@ -101,7 +101,7 @@ The hard infrastructure is solved so you only build domain logic:
 | **Memory** | Episodic + semantic + trust-aware, with provenance — right by default. |
 | **Human-in-the-loop** | Standard pause / approve / resume via an autonomy gradient (suggest · act-with-veto · full). |
 | **Audit by default** | Every decision, tool call, and step signed to a tamper-evident record. |
-| **Capabilities & trust** | Deny-by-default admission; plugins are sandboxed and never self-sign their results. |
+| **Capabilities & trust** | Deny-by-default admission; capabilities declare a side-effect class and gate for approval; the supervisor co-signs results (plugins never self-sign). Declarative (YAML) + MCP capabilities are safe by construction; running untrusted TypeScript plugins is gated behind an explicit opt-in until a real code sandbox ships. |
 | **Agent coordination** | Sub-agent delegation with supervisor co-sign. |
 | **Failure-reasoning** | Reason about *why* a run failed and how to fix it — not just retry. |
 | **Capability ecosystem** | Install a connector; it works in any agent. |
