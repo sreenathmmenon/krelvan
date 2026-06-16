@@ -51,8 +51,8 @@ import { TypeScriptPluginLoader } from "../infrastructure/plugins/typescript-plu
 import type { SecretBrokerPort, OwnerId, PluginInstallResult, PluginEnableResult, PluginDisableResult, PluginUninstallResult } from "../core/plugins/ports.js";
 import { parseOwnerId } from "../core/plugins/ports.js";
 import { join, resolve as resolvePath } from "node:path";
-import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, copyFileSync, unlinkSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, copyFileSync, unlinkSync, chmodSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
 import type { NewEvent } from "../core/ledger/event.js";
 
 const log = getLogger("runtime");
@@ -61,6 +61,33 @@ function atomicWrite(dest: string, content: string): void {
   const tmp = `${dest}.tmp`;
   writeFileSync(tmp, content, "utf8");
   renameSync(tmp, dest);
+}
+
+/**
+ * Load (or generate-and-persist) a per-install ledger signing secret. The ledger's
+ * tamper-evidence is only as strong as this secret, so it must NOT be a shared repo
+ * constant — each install gets its own random secret, stored chmod 600 in the data dir.
+ * An explicit env override (KRELVAN_LEDGER_OWNER_SECRET / _SUPERVISOR_SECRET) wins, for
+ * reproducible/multi-node deploys. Deterministic for tests via the seed param.
+ */
+function loadOrCreateSigningSecret(dataDir: string, role: "owner" | "supervisor"): string {
+  const envKey = role === "owner" ? "KRELVAN_LEDGER_OWNER_SECRET" : "KRELVAN_LEDGER_SUPERVISOR_SECRET";
+  const fromEnv = process.env[envKey];
+  if (fromEnv && fromEnv.trim()) return fromEnv.trim();
+
+  const file = join(dataDir, `signing-${role}.key`);
+  if (existsSync(file)) {
+    try {
+      const s = readFileSync(file, "utf8").trim();
+      if (s) return s;
+    } catch { /* fall through to regenerate */ }
+  }
+  const secret = createHash("sha256").update(`${role}:${randomBytes(32).toString("hex")}`).digest("hex");
+  try {
+    writeFileSync(file, secret, "utf8");
+    try { chmodSync(file, 0o600); } catch { /* best-effort */ }
+  } catch { /* if we can't persist, the secret rotates on restart — still better than a constant */ }
+  return secret;
 }
 
 // ── HITL approval record ───────────────────────────────────────────────────────
@@ -481,8 +508,10 @@ export class KrelvanRuntime {
     mkdirSync(config.dataDir, { recursive: true });
 
     this.ring = new HmacKeyring();
-    this.ownerSigner = this.ring.addKey("owner", "krelvan-owner-secret", { epoch: 1, validFrom: 0, validUntil: null });
-    this.supervisorSigner = this.ring.addKey("supervisor", "krelvan-sup-secret", { epoch: 1, validFrom: 0, validUntil: null });
+    // Per-install random signing secrets (not a shared repo constant) — see
+    // loadOrCreateSigningSecret. This is what makes the ledger's tamper-evidence real.
+    this.ownerSigner = this.ring.addKey("owner", loadOrCreateSigningSecret(config.dataDir, "owner"), { epoch: 1, validFrom: 0, validUntil: null });
+    this.supervisorSigner = this.ring.addKey("supervisor", loadOrCreateSigningSecret(config.dataDir, "supervisor"), { epoch: 1, validFrom: 0, validUntil: null });
 
     this.store = new SqliteLedgerStore(join(config.dataDir, "ledger.db"));
     this.agentRegistry = new AgentRegistry(config.dataDir);
