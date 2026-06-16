@@ -142,7 +142,7 @@ Point an install at your own fork with
 
 | Layer | Where | Proven by |
 |---|---|---|
-| **Ledger** | `src/core/ledger/` | canonicalization, content-addressing, hash-chaining, signed events, CAS append (no forks), `verify()` catches every corruption |
+| **Ledger** | `src/core/ledger/` | canonicalization, content-addressing, hash-chaining, signed events (HMAC by default; **opt-in Ed25519 = non-repudiable**, verifiable from the public key alone), CAS append (no forks), `verify()` catches every corruption |
 | **Manifest + safe expr** | `src/core/manifest/` | structural validation; conditional edges are a typed AST — never `eval` |
 | **Capability plane** | `src/core/capability/` | deny-by-default, autonomy gradient, supervisor co-sign |
 | **Pure kernel + engine** | `src/core/kernel/` | pure `decide()`; 3-event effect protocol; crash-hole HALT; resume |
@@ -156,7 +156,7 @@ Point an install at your own fork with
 ```bash
 npm install
 npm run typecheck    # strict TS, clean
-npm test             # 214 / 217 pass (3 are live-model API tests that need a key)
+npm test             # 223 / 226 pass (3 are live-model API tests that need a key)
 npm run demo:ledger  # canvas + audit all fold from one log
 npm run demo:resume  # kill mid-run, resume — each irreversible effect runs EXACTLY once
 npm run demo:e2e     # a real 3-agent pipeline drives itself off the ledger
@@ -169,7 +169,7 @@ npm run demo:live    # (needs KRELVAN_ANTHROPIC_KEY) a real model proposes a wor
 
 ## Status — honest
 
-**Built & verified** (typecheck clean · 214/217 tests · web build green):
+**Built & verified** (typecheck clean · 223/226 tests · web build green):
 - Ledger + SQLite durable store (real on-disk crash/resume)
 - Identity, secrets & time (key rotation/revocation, secret broker, monotonic clock)
 - Capability plane (deny-by-default, autonomy gradient, supervisor co-sign)
@@ -183,8 +183,15 @@ npm run demo:live    # (needs KRELVAN_ANTHROPIC_KEY) a real model proposes a wor
 - **Failure-reasoning + auto-retry-with-fix** — diagnose a failed run from the ledger, rebuild a corrected agent, re-run
 - **7 LLM providers** behind one client (Anthropic/OpenAI/Gemini/Groq/Mistral/Ollama/OpenAI-compatible)
 
-**Not yet built:** PostgreSQL multi-tenant store adapter; asymmetric (ed25519) publisher
-signing for third-party marketplace trust. Tracked in `docs/PREMORTEM.md`.
+**Asymmetric ledger signing (ed25519) — built, opt-in.** Set `KRELVAN_LEDGER_SIGNING=ed25519`
+and the ledger is signed with per-install Ed25519 keys. The **public** keys are published at
+`GET /api/ledger/keys` (no auth) so an auditor, regulator, or counterparty can **independently
+verify the entire ledger without any secret — and cannot forge an entry**. That is the step from
+tamper-*evident* (HMAC, the default) to tamper-evident **and non-repudiable**. The private key
+never leaves the signer.
+
+**Not yet built:** PostgreSQL multi-tenant store adapter; asymmetric *publisher* signing for
+third-party marketplace trust (distinct from ledger signing above). Tracked in `docs/PREMORTEM.md`.
 
 ---
 

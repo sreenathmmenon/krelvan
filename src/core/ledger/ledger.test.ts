@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 
 import { canonicalize, CanonicalError } from "./canonical.js";
 import { contentAddress } from "./crypto.js";
-import { HmacKeyring } from "./crypto.js";
+import { HmacKeyring, Ed25519Keyring, generateEd25519Keypair } from "./crypto.js";
 import { computeId, determinismOk, preimageBytes, type EventScope, type LedgerEvent } from "./event.js";
 import { InMemoryLedgerStore, verify, type Checkpoint } from "./store.js";
 
@@ -196,6 +196,23 @@ test("LED-05 concurrent appends produce no offset gaps or dups", async () => {
   assert.ok(v.ok, v.ok ? "" : v.error.message);
   // offsets are exactly 0..49
   events.forEach((e, i) => assert.equal(e.offset, i));
+});
+
+test("LED-09 a real ledger signed with Ed25519 verifies with the public key ALONE (non-repudiable)", async () => {
+  // Sign a real append-chain with the asymmetric adapter…
+  const signerRing = new Ed25519Keyring();
+  const { privateKeyPem } = generateEd25519Keypair();
+  const signer = signerRing.addKey("owner", privateKeyPem, { epoch: 1, validFrom: 0, validUntil: null });
+  const store = new InMemoryLedgerStore();
+  await store.append({ type: "RunStarted", scope: scope(), payload: {}, author: "owner" }, { ts: tick(), signer });
+  await store.append({ type: "NodeEntered", scope: scope({ nodeId: "n1" }), payload: {}, author: "owner" }, { ts: tick(), signer });
+  const events = await store.read("t1");
+
+  // …and verify the whole chain with a ring that holds ONLY the published public key.
+  const auditor = new Ed25519Keyring();
+  auditor.addPublicKey("owner", signerRing.exportPublicKey("owner", 1), { epoch: 1, validFrom: 0, validUntil: null });
+  const v = verify(events, auditor);
+  assert.ok(v.ok, v.ok ? "" : v.error.message);
 });
 
 // ── verify(): tamper / corruption detection ─────────────────────────────────────

@@ -130,6 +130,9 @@ export type AuthOutcome =
 export function authenticate(req: IncomingMessage, url: URL, state: AuthState): AuthOutcome {
   // public allowlist — read-only, no data exposure
   if (url.pathname === "/api/health") return { ok: true };
+  // Ledger signing PUBLIC keys: publishable by design so an external auditor can verify
+  // the ledger without a token. Public-key material only — never a secret.
+  if (url.pathname === "/api/ledger/keys") return { ok: true };
 
   const ip = clientIp(req);
   const now = Date.now();

@@ -13,7 +13,16 @@
  *    key valid at the event's notarized time.
  */
 
-import { createHash, createHmac } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  generateKeyPairSync,
+  sign as cryptoSign,
+  verify as cryptoVerify,
+  createPublicKey,
+  createPrivateKey,
+  type KeyObject,
+} from "node:crypto";
 
 /** Hash algorithm tag. Self-describing so we can migrate without ambiguity (LED-04). */
 const HASH_ALGO = "sha256";
@@ -131,6 +140,110 @@ export class HmacKeyring implements Verifier {
       return { ok: false, reason: "bad_signature" };
     }
     return { ok: true };
+  }
+}
+
+/**
+ * Asymmetric Ed25519 signer/verifier registry — the NON-REPUDIABLE adapter.
+ *
+ * Unlike HmacKeyring (where the verify key IS the sign key, so anyone who can verify can
+ * also forge), Ed25519 signatures can be verified with ONLY the public key. The private
+ * key never has to leave the signer. A third party — a regulator, an auditor, a
+ * counterparty — can be handed the public key and independently verify the ledger without
+ * ever being able to forge an entry. That is the difference between tamper-EVIDENT and
+ * tamper-EVIDENT + NON-REPUDIABLE.
+ *
+ * Same Signer/Verifier/Signature port as HmacKeyring — a drop-in swap. `Signature.value`
+ * holds the Ed25519 signature (hex); keyId/epoch/signedAt/validity windows are identical
+ * (LED-08/09 preserved). Node built-in crypto only — no third-party dependency.
+ */
+export class Ed25519Keyring implements Verifier {
+  private readonly keys = new Map<string, { publicKey: KeyObject; privateKey?: KeyObject; desc: KeyDescriptor }>();
+
+  /**
+   * Register a keypair and return a Signer bound to it. `privateKeyPem` is a PKCS#8 PEM;
+   * the matching public key is derived from it.
+   */
+  addKey(keyId: string, privateKeyPem: string, desc: Omit<KeyDescriptor, "keyId">): Signer {
+    const privateKey = createPrivateKey(privateKeyPem);
+    const publicKey = createPublicKey(privateKey);
+    assertEd25519(privateKey, keyId);
+    const descriptor: KeyDescriptor = { keyId, ...desc };
+    this.keys.set(mapKey(keyId, desc.epoch), { publicKey, privateKey, desc: descriptor });
+    return {
+      descriptor,
+      sign(contentAddr: string, signedAt: number): Signature {
+        // Ed25519 signs the message directly (no pre-hash / digest algorithm).
+        const value = cryptoSign(null, Buffer.from(contentAddr, "utf8"), privateKey).toString("hex");
+        return { keyId, epoch: desc.epoch, signedAt, value };
+      },
+    };
+  }
+
+  /**
+   * Register a VERIFY-ONLY public key (SPKI PEM). This is the whole point of the
+   * asymmetric adapter: an auditor loads only public keys and can verify the entire
+   * ledger without ever holding a secret — forgery is impossible for them.
+   */
+  addPublicKey(keyId: string, publicKeyPem: string, desc: Omit<KeyDescriptor, "keyId">): void {
+    const publicKey = createPublicKey(publicKeyPem);
+    assertEd25519(publicKey, keyId);
+    this.keys.set(mapKey(keyId, desc.epoch), { publicKey, desc: { keyId, ...desc } });
+  }
+
+  /** Export a key epoch's public half as SPKI PEM — safe to hand to a third party. */
+  exportPublicKey(keyId: string, epoch: number): string {
+    const entry = this.keys.get(mapKey(keyId, epoch));
+    if (!entry) throw new Error(`cannot export unknown key ${keyId}#${epoch}`);
+    return entry.publicKey.export({ type: "spki", format: "pem" }).toString();
+  }
+
+  /** Rotation/revocation: close (or reopen) a key epoch's validity window (LED-08). */
+  setValidUntil(keyId: string, epoch: number, validUntil: number | null): void {
+    const entry = this.keys.get(mapKey(keyId, epoch));
+    if (!entry) throw new Error(`cannot set window for unknown key ${keyId}#${epoch}`);
+    entry.desc.validUntil = validUntil;
+  }
+
+  verify(
+    contentAddr: string,
+    sig: Signature,
+  ): { ok: true } | { ok: false; reason: "unknown_key" | "wrong_epoch" | "out_of_window" | "bad_signature" } {
+    const entry = this.keys.get(mapKey(sig.keyId, sig.epoch));
+    if (!entry) {
+      const anyEpoch = [...this.keys.values()].some((e) => e.desc.keyId === sig.keyId);
+      return { ok: false, reason: anyEpoch ? "wrong_epoch" : "unknown_key" };
+    }
+    const { publicKey, desc } = entry;
+    if (sig.signedAt < desc.validFrom || (desc.validUntil !== null && sig.signedAt >= desc.validUntil)) {
+      return { ok: false, reason: "out_of_window" };
+    }
+    let sigBytes: Buffer;
+    try { sigBytes = Buffer.from(sig.value, "hex"); } catch { return { ok: false, reason: "bad_signature" }; }
+    // Ed25519 signatures are exactly 64 bytes; reject anything malformed before verify.
+    if (sigBytes.length !== 64) return { ok: false, reason: "bad_signature" };
+    let valid = false;
+    try {
+      valid = cryptoVerify(null, Buffer.from(contentAddr, "utf8"), publicKey, sigBytes);
+    } catch {
+      return { ok: false, reason: "bad_signature" };
+    }
+    return valid ? { ok: true } : { ok: false, reason: "bad_signature" };
+  }
+}
+
+/** Generate a fresh Ed25519 keypair as { privateKey: PKCS#8 PEM, publicKey: SPKI PEM }. */
+export function generateEd25519Keypair(): { privateKeyPem: string; publicKeyPem: string } {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  return {
+    privateKeyPem: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+    publicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
+  };
+}
+
+function assertEd25519(key: KeyObject, keyId: string): void {
+  if (key.asymmetricKeyType !== "ed25519") {
+    throw new Error(`key '${keyId}' is not an Ed25519 key (got ${key.asymmetricKeyType ?? "unknown"})`);
   }
 }
 

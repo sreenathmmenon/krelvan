@@ -183,6 +183,7 @@ function jsonError(res: ServerResponse, status: number, message: string): void {
 export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
   const routes: Route[] = [
     { method: "GET",    pattern: ["api", "health"],                  handler: handleHealth },
+    { method: "GET",    pattern: ["api", "ledger", "keys"],          handler: (q, r) => handleLedgerKeys(q, r, runtime) },
     { method: "GET",    pattern: ["api", "agents"],                  handler: (q, r) => handleListAgents(q, r, runtime) },
     { method: "POST",   pattern: ["api", "agents"],                  handler: (q, r) => handleCreateAgent(q, r, runtime) },
     { method: "POST",   pattern: ["api", "agents", "build"],         handler: (q, r) => handleBuildAgent(q, r, runtime) },
@@ -266,6 +267,14 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
 }
 
 // ── handlers ──────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/ledger/keys — publish the ledger signing public keys (ed25519 mode) so a
+ * third party can independently verify the ledger. Public-key material only; no secret.
+ */
+async function handleLedgerKeys(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  json(res, 200, rt.getLedgerSigningInfo());
+}
 
 async function handleHealth(_req: IncomingMessage, res: ServerResponse): Promise<void> {
   json(res, 200, { ok: true, ts: Date.now() });

@@ -14,7 +14,7 @@
  * takes its dependencies as arguments.
  */
 
-import { HmacKeyring, contentAddress } from "../core/ledger/crypto.js";
+import { HmacKeyring, Ed25519Keyring, generateEd25519Keypair, contentAddress, type Signer, type Verifier } from "../core/ledger/crypto.js";
 import { SqliteLedgerStore } from "../core/ledger/sqlite-store.js";
 import { Engine } from "../core/kernel/engine.js";
 import { Supervisor, type CapabilityPlugin, type SupervisorSnapshotHandle } from "../core/capability/capability.js";
@@ -101,6 +101,39 @@ function loadOrCreateSigningSecret(dataDir: string, role: "owner" | "supervisor"
     try { chmodSync(file, 0o600); } catch { /* best-effort */ }
   } catch { /* if we can't persist, the secret rotates on restart — still better than a constant */ }
   return secret;
+}
+
+/**
+ * Load (or create) a per-install Ed25519 PKCS#8 private key PEM for a signing role.
+ * The private key (chmod 600) and its public SPKI PEM are persisted side by side; the
+ * public key is safe to publish so a third party can independently verify the ledger.
+ * Env override: KRELVAN_LEDGER_OWNER_PRIVKEY / KRELVAN_LEDGER_SUPERVISOR_PRIVKEY (PEM).
+ */
+function loadOrCreateSigningKeypair(dataDir: string, role: "owner" | "supervisor"): string {
+  const envKey = role === "owner" ? "KRELVAN_LEDGER_OWNER_PRIVKEY" : "KRELVAN_LEDGER_SUPERVISOR_PRIVKEY";
+  const fromEnv = process.env[envKey];
+  if (fromEnv && fromEnv.includes("PRIVATE KEY")) return fromEnv;
+
+  const privFile = join(dataDir, `signing-${role}-ed25519.key`);
+  const pubFile = join(dataDir, `signing-${role}-ed25519.pub`);
+  if (existsSync(privFile)) {
+    try {
+      const pem = readFileSync(privFile, "utf8").trim();
+      if (pem.includes("PRIVATE KEY")) return pem;
+    } catch { /* fall through to regenerate */ }
+  }
+  const { privateKeyPem, publicKeyPem } = generateEd25519Keypair();
+  try {
+    writeFileSync(privFile, privateKeyPem, "utf8");
+    try { chmodSync(privFile, 0o600); } catch { /* best-effort */ }
+    writeFileSync(pubFile, publicKeyPem, "utf8"); // public half is publishable for third-party verify
+  } catch { /* if we can't persist, the keypair rotates on restart — still asymmetric & per-install */ }
+  return privateKeyPem;
+}
+
+/** Which ledger-signing adapter to use. Asymmetric Ed25519 is opt-in for back-compat. */
+function useAsymmetricSigning(): boolean {
+  return process.env["KRELVAN_LEDGER_SIGNING"]?.toLowerCase() === "ed25519";
 }
 
 // ── HITL approval record ───────────────────────────────────────────────────────
@@ -497,9 +530,9 @@ export class KrelvanRuntime {
   readonly secretStore: SecretStore;
   readonly scheduler: Scheduler;
   readonly compiler: Compiler;
-  private readonly ring: HmacKeyring;
-  private readonly ownerSigner: ReturnType<HmacKeyring["addKey"]>;
-  private readonly supervisorSigner: ReturnType<HmacKeyring["addKey"]>;
+  private readonly ring: Verifier;
+  private readonly ownerSigner: Signer;
+  private readonly supervisorSigner: Signer;
   private readonly config: RuntimeConfig;
   private readonly anthropicApiKey: string | null;
   private readonly llmProvider: string;
@@ -520,11 +553,23 @@ export class KrelvanRuntime {
     this.config = config;
     mkdirSync(config.dataDir, { recursive: true });
 
-    this.ring = new HmacKeyring();
-    // Per-install random signing secrets (not a shared repo constant) — see
-    // loadOrCreateSigningSecret. This is what makes the ledger's tamper-evidence real.
-    this.ownerSigner = this.ring.addKey("owner", loadOrCreateSigningSecret(config.dataDir, "owner"), { epoch: 1, validFrom: 0, validUntil: null });
-    this.supervisorSigner = this.ring.addKey("supervisor", loadOrCreateSigningSecret(config.dataDir, "supervisor"), { epoch: 1, validFrom: 0, validUntil: null });
+    // Ledger signing adapter. Default: per-install HMAC (tamper-evident). Opt-in
+    // KRELVAN_LEDGER_SIGNING=ed25519 → asymmetric, NON-REPUDIABLE: the public key is
+    // published so an auditor/regulator/counterparty can verify the ledger without ever
+    // being able to forge it. Both are per-install (never a shared repo constant).
+    const window_ = { epoch: 1, validFrom: 0, validUntil: null };
+    if (useAsymmetricSigning()) {
+      const ring = new Ed25519Keyring();
+      this.ownerSigner = ring.addKey("owner", loadOrCreateSigningKeypair(config.dataDir, "owner"), window_);
+      this.supervisorSigner = ring.addKey("supervisor", loadOrCreateSigningKeypair(config.dataDir, "supervisor"), window_);
+      this.ring = ring;
+      log.info({ signing: "ed25519", ownerPub: ring.exportPublicKey("owner", 1).split("\n")[1]?.slice(0, 16) }, "ledger signing: asymmetric Ed25519 (non-repudiable)");
+    } else {
+      const ring = new HmacKeyring();
+      this.ownerSigner = ring.addKey("owner", loadOrCreateSigningSecret(config.dataDir, "owner"), window_);
+      this.supervisorSigner = ring.addKey("supervisor", loadOrCreateSigningSecret(config.dataDir, "supervisor"), window_);
+      this.ring = ring;
+    }
 
     this.store = new SqliteLedgerStore(join(config.dataDir, "ledger.db"));
     this.agentRegistry = new AgentRegistry(config.dataDir);
@@ -650,6 +695,25 @@ export class KrelvanRuntime {
 
     // Start the scheduler — arms all enabled schedules persisted from last run
     this.scheduler.start();
+  }
+
+  /**
+   * Ledger signing info for verification clients. In ed25519 mode this returns the
+   * PUBLIC keys (SPKI PEM) so a third party can independently verify the ledger without
+   * any secret. In HMAC mode there is no publishable key (the verify key is the secret),
+   * so only the algorithm is reported.
+   */
+  getLedgerSigningInfo(): { algorithm: "ed25519" | "hmac-sha256"; nonRepudiable: boolean; keys: { keyId: string; epoch: number; publicKeyPem: string }[] } {
+    if (this.ring instanceof Ed25519Keyring) {
+      const ring = this.ring;
+      const keys = (["owner", "supervisor"] as const).map((keyId) => ({
+        keyId,
+        epoch: 1,
+        publicKeyPem: ring.exportPublicKey(keyId, 1),
+      }));
+      return { algorithm: "ed25519", nonRepudiable: true, keys };
+    }
+    return { algorithm: "hmac-sha256", nonRepudiable: false, keys: [] };
   }
 
   // ── Plugin management public API ───────────────────────────────────────────
