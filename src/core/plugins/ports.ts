@@ -104,7 +104,7 @@ export type PluginInstallResult =
 
 export type PluginEnableResult =
   | { ok: true; record: PluginRecord }
-  | { ok: false; error: "NOT_FOUND" | "ALREADY_ENABLED" | "MISSING_SECRETS" | "LOAD_FAILED" | "SOURCE_CHANGED"; detail: string };
+  | { ok: false; error: "NOT_FOUND" | "ALREADY_ENABLED" | "MISSING_SECRETS" | "LOAD_FAILED" | "SOURCE_CHANGED" | "UNTRUSTED_BLOCKED"; detail: string };
 
 export type PluginDisableResult =
   | { ok: true; record: PluginRecord }

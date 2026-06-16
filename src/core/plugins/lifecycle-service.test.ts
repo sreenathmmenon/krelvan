@@ -4,6 +4,10 @@
  * Uses an in-memory SQLite DB and a stub factory to avoid real Worker threads.
  */
 
+// These tests exercise the trusted-plugin lifecycle (TS plugins, stub factory), so
+// they opt into untrusted-plugin execution. Production gates this behind the operator.
+process.env["KRELVAN_ALLOW_UNTRUSTED_PLUGINS"] = "1";
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { tmpdir } from "node:os";
@@ -369,4 +373,31 @@ test("activator: missing source file → plugin disabled on startup", async () =
   // Record should now be 'disabled' in DB
   const rec = repository.get("deleted-plugin");
   assert.equal(rec?.kind, "disabled", "plugin should be disabled in DB after source file missing");
+});
+
+test("SECURITY: a typescript plugin is BLOCKED from enabling without the opt-in", async () => {
+  const dir = join(tmpdir(), `gen-lc-${randomBytes(4).toString("hex")}`);
+  mkdirSync(dir, { recursive: true });
+  const filePath = writePluginFile(dir, "untrusted-plugin");
+  const db = makeTestDb();
+  const { lifecycle } = makeRig(db, dir);
+  const owner = parseOwnerId("owner-demo");
+
+  await lifecycle.install(filePath, "1.0.0", owner);
+
+  // Temporarily turn OFF the opt-in (this file sets it globally for the other tests).
+  const prev = process.env["KRELVAN_ALLOW_UNTRUSTED_PLUGINS"];
+  delete process.env["KRELVAN_ALLOW_UNTRUSTED_PLUGINS"];
+  try {
+    const blocked = await lifecycle.enable("untrusted-plugin", owner);
+    assert.equal(blocked.ok, false, "enable must be blocked without the opt-in");
+    assert.equal(!blocked.ok && blocked.error, "UNTRUSTED_BLOCKED");
+  } finally {
+    if (prev !== undefined) process.env["KRELVAN_ALLOW_UNTRUSTED_PLUGINS"] = prev;
+  }
+
+  // With the opt-in, the same plugin enables.
+  process.env["KRELVAN_ALLOW_UNTRUSTED_PLUGINS"] = "1";
+  const allowed = await lifecycle.enable("untrusted-plugin", owner);
+  assert.equal(allowed.ok, true, `enable should succeed with opt-in: ${!allowed.ok ? allowed.detail : ""}`);
 });

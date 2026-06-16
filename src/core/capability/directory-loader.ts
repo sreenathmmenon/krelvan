@@ -146,13 +146,34 @@ export function loadCapabilityDirectory(
  * or can read process.env directly (since it runs in a worker thread in production,
  * but in dev/tsx mode it runs in-process).
  */
+// The JS/TS capabilities Krelvan ships with (first-party, safe to import in-process).
+// Anything else is treated as untrusted (see loadJsCapabilities).
+const BUNDLED_JS_CAPABILITIES = new Set(["text-transform"]);
+
+function isBundledCapability(modulePath: string): boolean {
+  const base = modulePath.split("/").pop()?.replace(/\.(js|ts|mjs|cjs)$/, "") ?? "";
+  return BUNDLED_JS_CAPABILITIES.has(base);
+}
+
 export async function loadJsCapabilities(
   modulePaths: string[],
 ): Promise<{ loaded: LoadedCapability[]; errors: Array<{ file: string; error: string }> }> {
   const loaded: LoadedCapability[] = [];
   const errors: Array<{ file: string; error: string }> = [];
 
+  // SECURITY: these JS/TS files are imported IN-PROCESS with full host privileges —
+  // this is arbitrary code execution. We only auto-load files Krelvan SHIPS with
+  // (bundled first-party capabilities). Any other .js/.ts dropped into the
+  // capabilities dir is untrusted and is skipped unless the operator explicitly
+  // opts in via KRELVAN_ALLOW_UNTRUSTED_PLUGINS=1.
+  const allowUntrusted = process.env["KRELVAN_ALLOW_UNTRUSTED_PLUGINS"] === "1";
+
   for (const modulePath of modulePaths) {
+    if (!allowUntrusted && !isBundledCapability(modulePath)) {
+      errors.push({ file: modulePath, error: "untrusted JS/TS capability skipped — runs in-process with full host access. Set KRELVAN_ALLOW_UNTRUSTED_PLUGINS=1 to allow (only for code you trust)." });
+      log.warn({ file: modulePath }, "skipped untrusted in-process JS/TS capability (set KRELVAN_ALLOW_UNTRUSTED_PLUGINS=1 to allow)");
+      continue;
+    }
     try {
       const mod = await import(modulePath) as Record<string, unknown>;
       const candidate = mod["default"] ?? Object.values(mod)[0];

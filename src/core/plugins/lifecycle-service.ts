@@ -206,6 +206,19 @@ export class PluginLifecycleService implements PluginLifecyclePort {
       };
     }
 
+    // SECURITY: a 'typescript' plugin is arbitrary code. The worker it runs in is
+    // thread isolation, NOT a security sandbox — an enabled TS plugin has full host
+    // access. So enabling one is gated behind an explicit operator opt-in; without it,
+    // only declarative (YAML) and MCP capabilities run. (Removed once a real sandbox
+    // ships — see docs/SANDBOX_PLAN.md.)
+    if (existing.pluginKind === "typescript" && process.env["KRELVAN_ALLOW_UNTRUSTED_PLUGINS"] !== "1") {
+      return {
+        ok: false,
+        error: "UNTRUSTED_BLOCKED",
+        detail: `Plugin '${name}' runs untrusted code (TypeScript/JS) with full host access — not yet sandboxed. Enable only code you trust by setting KRELVAN_ALLOW_UNTRUSTED_PLUGINS=1.`,
+      };
+    }
+
     // Validate secrets before loading
     if (existing.secretRefs.length > 0) {
       const validation = this.deps.broker.validateRefs(existing.secretRefs);

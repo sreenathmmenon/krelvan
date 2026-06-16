@@ -117,6 +117,10 @@ export function hasTeardown(p: unknown): p is TeardownablePlugin {
 
 const INVOKE_TIMEOUT_MS = 10_000;
 
+// Per-plugin memory ceiling (V8 heap). A malicious plugin that tries to allocate
+// past this is aborted by V8 rather than taking down the host. Override via env.
+const PLUGIN_MAX_MEMORY_MB = Math.max(32, Number(process.env["KRELVAN_PLUGIN_MAX_MEMORY_MB"]) || 128);
+
 /**
  * A CapabilityPlugin that proxies all invoke() calls to an isolated Worker.
  * The Worker is spawned once per plugin enable() and kept alive for the
@@ -223,6 +227,15 @@ export class TypeScriptPluginLoader implements PluginLoaderStrategy {
         workerData: {
           sourcePath: record.sourcePath,
           __workerScript: workerScript,
+        },
+        // Memory ceiling — a runaway/malicious plugin cannot exhaust host RAM.
+        // V8 aborts the worker (emits an 'error') if it exceeds the heap cap;
+        // combined with the per-invoke timeout, this bounds CPU and memory.
+        // Override with KRELVAN_PLUGIN_MAX_MEMORY_MB (default 128).
+        resourceLimits: {
+          maxOldGenerationSizeMb: PLUGIN_MAX_MEMORY_MB,
+          maxYoungGenerationSizeMb: Math.min(32, PLUGIN_MAX_MEMORY_MB),
+          codeRangeSizeMb: 16,
         },
       });
 
