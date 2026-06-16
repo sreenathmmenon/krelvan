@@ -48,12 +48,16 @@ COPY --from=web-build /app/web/public ./web/public
 
 # Persisted data lives here (mount a volume).
 ENV KRELVAN_DATA_DIR=/data
-ENV PORT=3201
-ENV KRELVAN_WEB_PORT=3100
+# Port model: the PUBLIC web UI binds to $PORT (a single-port PaaS injects this; we
+# default it to 3100 for plain `docker run`). The API runs on an internal fixed port
+# that only the web's same-origin proxy reaches over localhost.
+ENV PORT=3100
+ENV KRELVAN_API_PORT=3201
 # Builds are already done in the image; the launcher just starts both processes.
 ENV KRELVAN_SKIP_BUILD=1
 RUN mkdir -p /data
 
-EXPOSE 3201 3100
+# Public web port (a PaaS overrides $PORT); the API port is internal-only.
+EXPOSE 3100
 
 CMD ["node", "bin/krelvan.mjs", "up"]

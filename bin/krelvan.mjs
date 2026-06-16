@@ -54,8 +54,15 @@ const WEB = join(ROOT, "web");
   }
 })();
 
-const API_PORT = process.env.PORT ?? "3201";
-const WEB_PORT = process.env.KRELVAN_WEB_PORT ?? "3100";
+// Port model — works on a single-port PaaS (Railway/Render/Fly) AND locally.
+// The PUBLIC face is the WEB UI: on a PaaS it must bind to the injected $PORT, since
+// that's where public traffic + the healthcheck go. The API runs on a fixed INTERNAL
+// port that only the web's same-origin proxy reaches over localhost (never exposed).
+//   - $PORT (PaaS-injected)        -> web UI port            (public)
+//   - KRELVAN_WEB_PORT             -> web UI port override   (default 3100 locally)
+//   - KRELVAN_API_PORT             -> internal API port      (default 3201)
+const API_PORT = process.env.KRELVAN_API_PORT ?? "3201";
+const WEB_PORT = process.env.PORT ?? process.env.KRELVAN_WEB_PORT ?? "3100";
 const DATA_DIR = process.env.KRELVAN_DATA_DIR ?? join(ROOT, "data");
 const SKIP_BUILD = process.env.KRELVAN_SKIP_BUILD === "1";
 
@@ -226,7 +233,9 @@ async function up() {
     );
     // Web talks to the API through its same-origin proxy; the token + API origin are
     // SERVER-ONLY env (no NEXT_PUBLIC_), so the token never reaches the browser.
-    startProcess("web", nextBin, ["start", "-p", WEB_PORT], {
+    // Bind the web to 0.0.0.0 so a PaaS (Railway/Render/Fly) can route public traffic
+    // to it. The API stays on loopback (internal-only); only the web proxy reaches it.
+    startProcess("web", nextBin, ["start", "-p", WEB_PORT, "-H", "0.0.0.0"], {
       cwd: WEB,
       env: { ...process.env, KRELVAN_API_ORIGIN: apiOrigin, KRELVAN_AUTH_TOKEN: AUTH_TOKEN },
     });
