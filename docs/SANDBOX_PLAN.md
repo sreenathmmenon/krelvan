@@ -146,10 +146,24 @@ attempts secret-read, process-spawn, network-exfil, and a fork-bomb/CPU-spin —
   and folds that into the supervisor-attested cost. Verified: 7 broker unit tests + 3 e2e
   sandbox tests (off-allowlist DENIED in a real child; no secret visible in the child;
   scrubbed env even against a raw socket). Zero new dependencies.
-  - *Honest residual:* a determined plugin can still open a **raw** socket the broker
-    doesn't mediate — but with the scrubbed env + broker-only secret delivery it has
-    **nothing worth exfiltrating**. Pinning raw sockets entirely needs a network namespace /
-    microVM (B3, hosted tier).
+  Redirects are followed **manually** (`redirect:'manual'`): every hop is re-checked
+  against the allowlist **and** the SSRF guard before it's followed, hops are capped, and
+  a **cross-host redirect drops the injected credential** — so an allowlisted host can't
+  `302` to a metadata/private IP and leak the secret (the SSRF-via-redirect bypass a
+  security panel found in the first cut; now covered by 3 tests).
+  - *Honest residual (1) — DNS rebinding:* `fetch` re-resolves DNS for the actual
+    connection, so a host that changes its answer between `assertPublicUrl()` and connect
+    has a narrow TOCTOU window. We re-resolve on every hop to narrow it; fully closing it
+    needs IP-pinning at the socket (a custom dispatcher) or a network namespace.
+  - *Honest residual (2) — raw socket:* a determined plugin can still open a raw socket
+    the broker doesn't mediate. With the scrubbed env + broker-only secret delivery it has
+    **no credential to exfiltrate**, though the EffectCall input / response bodies are in
+    its address space. Full pinning needs a network namespace / microVM (B3, hosted tier).
+  - *Not yet wired end-to-end:* `egressHosts` is honored by the loader/broker but the
+    install path does not yet populate it, so brokered egress is **fail-closed** (empty
+    allowlist ⇒ all egress denied) until an install-time egress declaration + host→secret
+    binding ships. Safe today; the secret-injection path is proven in tests, not yet
+    reachable from the marketplace install flow.
 
 ---
 

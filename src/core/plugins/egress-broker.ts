@@ -16,6 +16,17 @@
  *   4. MEASURED           — bytes in/out + wall time are recorded, so a networked
  *                           plugin's cost is supervisor-attested, not self-reported.
  *
+ * Redirects are followed MANUALLY (redirect:'manual'): each hop is re-checked against
+ * the allowlist AND the SSRF guard before it's followed, and a cross-host redirect drops
+ * the injected credential — so an allowlisted host cannot 302 to a metadata/private IP
+ * and leak the secret (SSRF-via-redirect). Hops are capped at MAX_REDIRECTS.
+ *
+ * Residual (honest): fetch re-resolves DNS for the actual connection, so a DNS-rebinding
+ * host that changes its answer between our assertPublicUrl() check and fetch's connect
+ * could still reach a private IP (a TOCTOU window). We narrow it by re-resolving on every
+ * hop; fully closing it needs IP-pinning at the socket (a custom dispatcher) or a network
+ * namespace — the hosted tier. Documented in docs/SANDBOX_PLAN.md.
+ *
  * The credential-stays-in-the-broker pattern mirrors SecretBroker.mint (identity.ts):
  * the plugin proves intent (a destination it's allowed to reach); the broker holds the
  * real secret and applies it at the egress boundary.
@@ -32,6 +43,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_BYTES = 131_072; // 128 KiB
 const MAX_MAX_BYTES = 1_048_576; // 1 MiB hard ceiling on a brokered response
+const MAX_REDIRECTS = 3; // each hop is re-allowlisted + re-SSRF-checked; cap the chain
 
 /** A request the child plugin asks the parent to perform on its behalf. */
 export interface EgressRequest {
@@ -149,20 +161,72 @@ export class EgressBroker {
     const bodyOut = typeof req.body === "string" ? req.body : undefined;
     measured0.bytesOut = bodyOut ? Buffer.byteLength(bodyOut) : 0;
 
-    // ── 4. fetch (measured) ────────────────────────────────────────────────────
+    // ── 4. fetch (measured) — MANUAL redirects ─────────────────────────────────
+    // We do NOT use fetch's default redirect:'follow'. A 302 from an allowlisted host
+    // could otherwise point at 169.254.169.254 / a private IP and fetch would follow it
+    // WITH the injected credential attached — a textbook SSRF-via-redirect credential
+    // leak. Instead we follow manually: every hop is re-checked against the allowlist
+    // AND the SSRF guard, and on a CROSS-HOST hop the injected credential is dropped.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const doFetch = this.deps.fetchImpl ?? fetch;
     let resp: Response;
     try {
-      resp = await doFetch(u.toString(), {
-        method,
-        headers,
-        ...(bodyOut !== undefined && method !== "GET" && method !== "HEAD" ? { body: bodyOut } : {}),
-        signal: controller.signal,
-      });
+      let currentUrl = u.toString();
+      let currentHost = host;
+      let hopHeaders = headers;
+      let hops = 0;
+      for (;;) {
+        resp = await doFetch(currentUrl, {
+          method,
+          headers: hopHeaders,
+          redirect: "manual", // never auto-follow; we vet each hop ourselves
+          ...(bodyOut !== undefined && method !== "GET" && method !== "HEAD" ? { body: bodyOut } : {}),
+          signal: controller.signal,
+        });
+
+        // Not a redirect → this is the final response.
+        if (resp.status < 300 || resp.status >= 400) break;
+        const location = resp.headers.get("location");
+        if (!location) break; // 3xx with no Location — treat as final
+
+        if (++hops > MAX_REDIRECTS) {
+          clearTimeout(timer);
+          measured0.ms = this.deps.now() - started;
+          throw new EgressDenied(`egress: too many redirects (>${MAX_REDIRECTS})`);
+        }
+
+        // Resolve the redirect target relative to the current URL, then RE-VET it.
+        let next: URL;
+        try { next = new URL(location, currentUrl); } catch { throw new EgressDenied("egress: invalid redirect target"); }
+        const nextHost = next.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+
+        if (!this.deps.allowlist.has(nextHost)) {
+          throw new EgressDenied(`egress: redirect to off-allowlist host '${nextHost}' blocked`);
+        }
+        try {
+          await assertPublicUrl(next.toString()); // re-resolves DNS + blocks private/metadata on EVERY hop
+        } catch (e) {
+          const msg = e instanceof SsrfError ? e.message : String(e);
+          throw new EgressDenied(`egress: redirect ${msg}`);
+        }
+
+        // Cross-host redirect → DROP the injected credential (and any auth header) so a
+        // secret minted for host A never travels to host B, even if B is allowlisted.
+        if (nextHost !== currentHost) {
+          const stripped: Record<string, string> = {};
+          for (const [k, v] of Object.entries(hopHeaders)) {
+            if (k.toLowerCase() === "authorization" || k.toLowerCase() === "cookie") continue;
+            stripped[k] = v;
+          }
+          hopHeaders = stripped;
+        }
+        currentUrl = next.toString();
+        currentHost = nextHost;
+      }
     } catch (e) {
       clearTimeout(timer);
+      if (e instanceof EgressDenied) throw e; // a redirect that fails re-vetting is a denial, not a soft error
       const msg = (e as Error).message ?? String(e);
       measured0.ms = this.deps.now() - started;
       log.warn({ host, err: msg }, "egress: brokered fetch failed");

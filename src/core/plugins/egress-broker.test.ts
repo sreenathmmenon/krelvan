@@ -96,3 +96,52 @@ test("MEASURED + CAPPED: response is size-capped and bytes/time are measured", a
   assert.equal(res.measured.bytesIn, 500_000, "measured bytesIn reflects the full response, not the truncated slice");
   assert.equal(typeof res.measured.ms, "number");
 });
+
+/** A fetch stub that emits a redirect (302 → Location) on the first call, then a 200. */
+function redirectFetch(location: string) {
+  const seen: { url: string; headers: Record<string, string> }[] = [];
+  let n = 0;
+  const impl = (async (url: string | URL | Request, init?: RequestInit) => {
+    const h: Record<string, string> = {};
+    for (const [k, v] of Object.entries((init?.headers ?? {}) as Record<string, string>)) h[k.toLowerCase()] = v;
+    seen.push({ url: String(url), headers: h });
+    if (n++ === 0) return new Response("", { status: 302, headers: { location } });
+    return new Response(`{"ok":true}`, { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  return { impl, seen };
+}
+
+test("REDIRECT BYPASS BLOCKED: a 302 to a metadata IP is rejected, not followed", async () => {
+  // The classic SSRF-via-redirect: allowlisted host 302s to the cloud-metadata IP.
+  const { impl, seen } = redirectFetch("http://169.254.169.254/latest/meta-data/");
+  const b = broker(["api.example.com"], impl, { host: "api.example.com", value: "real-key" });
+  await assert.rejects(
+    b.request({ url: "https://api.example.com/start" }),
+    (e) => e instanceof EgressDenied && /redirect/.test(e.message),
+    "a redirect to a private/metadata IP must be blocked",
+  );
+  assert.equal(seen.length, 1, "the broker must NOT have followed the redirect");
+});
+
+test("REDIRECT BYPASS BLOCKED: a 302 to an off-allowlist host is rejected", async () => {
+  const { impl, seen } = redirectFetch("https://attacker.example/steal");
+  const b = broker(["api.example.com"], impl, { host: "api.example.com", value: "real-key" });
+  await assert.rejects(
+    b.request({ url: "https://api.example.com/start" }),
+    (e) => e instanceof EgressDenied && /off-allowlist|allowlist/.test(e.message),
+    "a redirect to an off-allowlist host must be blocked",
+  );
+  assert.equal(seen.length, 1, "the broker must NOT have followed the off-allowlist redirect");
+});
+
+test("CROSS-HOST REDIRECT: the injected credential is DROPPED on a hop to a different allowlisted host", async () => {
+  // Both hosts allowlisted, but the secret is minted for host A only. On the cross-host
+  // hop the broker must NOT forward host A's Authorization to host B.
+  const { impl, seen } = redirectFetch("https://b.example.com/next");
+  const b = broker(["a.example.com", "b.example.com"], impl, { host: "a.example.com", value: "secret-for-A" });
+  const res = await b.request({ url: "https://a.example.com/start" });
+  assert.equal(res.ok, true);
+  assert.equal(seen.length, 2, "the broker should have followed the in-allowlist redirect");
+  assert.equal(seen[0]!.headers["authorization"], "Bearer secret-for-A", "hop 1 carries host A's credential");
+  assert.equal(seen[1]!.headers["authorization"], undefined, "hop 2 (different host) must NOT carry host A's credential");
+});
