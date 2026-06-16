@@ -3,7 +3,12 @@
  * All data the UI shows comes from here; nothing is hardcoded.
  */
 
-export const API_BASE = process.env["NEXT_PUBLIC_API_URL"] ?? "http://localhost:3201";
+// Same-origin proxy path (default). The browser calls /proxy/api/... on the web
+// origin; the Next server-side proxy (app/proxy/[...path]) forwards to the real API
+// and injects the bearer token, so the token never reaches the browser and there is
+// no cross-origin/CORS surface. Override with NEXT_PUBLIC_API_URL only for direct
+// (token-in-browser) setups.
+export const API_BASE = process.env["NEXT_PUBLIC_API_URL"] ?? "/proxy";
 
 export interface ManifestNode {
   id: string;

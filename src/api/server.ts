@@ -44,6 +44,12 @@ import { getLogger } from "../core/observability/logger.js";
 import type { KrelvanRuntime } from "./runtime.js";
 import type { Manifest } from "../core/manifest/manifest.js";
 import { getLLMClient } from "../adapters/llm-client.js";
+import { authenticate, type AuthState } from "./auth.js";
+
+// The single allowed CORS origin (the web UI). Override via KRELVAN_WEB_ORIGIN.
+// We never use "*" — a wildcard with credentials is unsafe and the wildcard alone
+// invites cross-site calls from any page. Same-origin proxy callers send no Origin.
+const CORS_ORIGIN = process.env["KRELVAN_WEB_ORIGIN"] ?? "http://localhost:3100";
 
 const log = getLogger("api");
 
@@ -160,7 +166,11 @@ function indexOf(haystack: Buffer, needle: Buffer, start = 0): number {
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   const data = JSON.stringify(body, null, 2);
-  res.writeHead(status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+  res.writeHead(status, {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": CORS_ORIGIN,
+    "Vary": "Origin",
+  });
   res.end(data);
 }
 
@@ -170,7 +180,7 @@ function jsonError(res: ServerResponse, status: number, message: string): void {
 
 // ── server factory ────────────────────────────────────────────────────────────
 
-export function createApiServer(runtime: KrelvanRuntime) {
+export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
   const routes: Route[] = [
     { method: "GET",    pattern: ["api", "health"],                  handler: handleHealth },
     { method: "GET",    pattern: ["api", "agents"],                  handler: (q, r) => handleListAgents(q, r, runtime) },
@@ -215,11 +225,13 @@ export function createApiServer(runtime: KrelvanRuntime) {
   ];
 
   const server = createServer(async (req, res) => {
+    // CORS preflight — public, returns the allowlisted origin + the headers we accept.
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": CORS_ORIGIN,
         "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Vary": "Origin",
       });
       res.end();
       return;
@@ -228,6 +240,13 @@ export function createApiServer(runtime: KrelvanRuntime) {
     const url = new URL(req.url ?? "/", `http://localhost`);
     const path = url.pathname;
     const method = req.method ?? "GET";
+
+    // ── Authentication gate (before routing) ──────────────────────────────────
+    const authResult = authenticate(req, url, auth);
+    if (!authResult.ok) {
+      jsonError(res, authResult.status, authResult.message);
+      return;
+    }
 
     const match = matchRoute(routes, method, path);
     if (!match) {

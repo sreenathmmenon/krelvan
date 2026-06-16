@@ -28,7 +28,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -130,28 +131,13 @@ async function ensureBuilt() {
 
   // 3. Web build → web/.next
   //
-  // NEXT_PUBLIC_API_URL is inlined into the bundle at BUILD time, so a build is
-  // only valid for the API port it was built against. We record that port in a
-  // sentinel and rebuild when it changes — this keeps the UI pointed at the
-  // right API even when PORT is overridden.
-  const wantApiUrl = `http://localhost:${API_PORT}`;
-  const sentinel = join(WEB, ".next", ".krelvan-api-url");
-  let builtFor = null;
-  if (existsSync(sentinel)) {
-    try { builtFor = readFileSync(sentinel, "utf8").trim(); } catch { builtFor = null; }
-  }
-  const needBuild = !existsSync(join(WEB, ".next")) || builtFor !== wantApiUrl;
+  // The UI talks to the API via a SAME-ORIGIN proxy at runtime (app/proxy/[...path]),
+  // so there is no build-time API URL to inline — the build is portable across ports
+  // and the API origin is read from server env at start. Just build if not present.
+  const needBuild = !existsSync(join(WEB, ".next"));
   if (needBuild) {
-    if (builtFor && builtFor !== wantApiUrl) {
-      log(`web UI was built for ${builtFor}; rebuilding for ${wantApiUrl}…`);
-    } else {
-      log("building web UI (next build)…");
-    }
-    await run(NPM, ["run", "build"], {
-      cwd: WEB,
-      env: { ...process.env, NEXT_PUBLIC_API_URL: wantApiUrl },
-    });
-    writeFileSync(sentinel, wantApiUrl, "utf8");
+    log("building web UI (next build)…");
+    await run(NPM, ["run", "build"], { cwd: WEB, env: { ...process.env } });
   } else {
     log("web UI already built (web/.next) — skipping");
   }
@@ -206,25 +192,43 @@ async function up() {
     !!(process.env.KRELVAN_LLM_API_KEY || process.env.KRELVAN_ANTHROPIC_KEY) ||
     process.env.KRELVAN_LLM_PROVIDER === "ollama";
 
-  log(`starting API on http://localhost:${API_PORT}  (data: ${DATA_DIR})`);
+  // ── Auth: derive ONE shared token and give it to both processes ────────────
+  // The launcher owns the plaintext so it can hand it to the web proxy (which
+  // injects it server-side). If the user set KRELVAN_AUTH_TOKEN we honor it; else
+  // we reuse a persisted launcher token, else mint a new one. The API receives the
+  // same token via env (its initAuth env-precedence path), so both agree.
+  const tokenFile = join(DATA_DIR, "launcher.token");
+  let AUTH_TOKEN = process.env.KRELVAN_AUTH_TOKEN;
+  if (!AUTH_TOKEN) {
+    if (existsSync(tokenFile)) {
+      try { AUTH_TOKEN = readFileSync(tokenFile, "utf8").trim(); } catch { AUTH_TOKEN = ""; }
+    }
+    if (!AUTH_TOKEN) {
+      AUTH_TOKEN = randomBytes(32).toString("base64url");
+      try { writeFileSync(tokenFile, AUTH_TOKEN, "utf8"); chmodSync(tokenFile, 0o600); } catch { /* best-effort */ }
+    }
+  }
+  const apiOrigin = `http://localhost:${API_PORT}`;
+
+  log(`starting API on ${apiOrigin}  (data: ${DATA_DIR})`);
   startProcess("api", process.execPath, [join(ROOT, "dist", "api", "index.js")], {
     cwd: ROOT,
-    env: { ...process.env, PORT: API_PORT, KRELVAN_DATA_DIR: DATA_DIR },
+    env: { ...process.env, PORT: API_PORT, KRELVAN_DATA_DIR: DATA_DIR, KRELVAN_AUTH_TOKEN: AUTH_TOKEN },
   });
 
   if (!apiOnly) {
     log(`starting web UI on http://localhost:${WEB_PORT}…`);
-    // Invoke the local `next` binary directly so the port we pass is the only
-    // one (the web package's start script bakes in -p 3100).
     const nextBin = join(
       WEB,
       "node_modules",
       ".bin",
       process.platform === "win32" ? "next.cmd" : "next",
     );
+    // Web talks to the API through its same-origin proxy; the token + API origin are
+    // SERVER-ONLY env (no NEXT_PUBLIC_), so the token never reaches the browser.
     startProcess("web", nextBin, ["start", "-p", WEB_PORT], {
       cwd: WEB,
-      env: { ...process.env, NEXT_PUBLIC_API_URL: `http://localhost:${API_PORT}` },
+      env: { ...process.env, KRELVAN_API_ORIGIN: apiOrigin, KRELVAN_AUTH_TOKEN: AUTH_TOKEN },
     });
   }
 

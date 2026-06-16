@@ -19,10 +19,11 @@
  * Data is persisted to ./data/ (ledger.db + JSON registries).
  */
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { KrelvanRuntime } from "./runtime.js";
 import { createApiServer } from "./server.js";
+import { initAuth } from "./auth.js";
 import { getLogger } from "../core/observability/logger.js";
 
 // Load .env file before reading process.env — Node built-ins only, no third-party dotenv.
@@ -46,6 +47,12 @@ const log = getLogger("main");
 const PORT = Number(process.env["PORT"] ?? 3200);
 const DATA_DIR = process.env["KRELVAN_DATA_DIR"] ?? "./data";
 const CAPABILITIES_DIR = process.env["KRELVAN_CAPABILITIES_DIR"] ?? "./capabilities";
+
+// Security: bind to loopback by default. Exposing to the network is a deliberate act
+// (KRELVAN_HOST=0.0.0.0), and we refuse to start exposed without an auth token set,
+// so an instance can never be open-to-the-world by accident.
+const HOST = process.env["KRELVAN_HOST"] ?? "127.0.0.1";
+const isLoopback = HOST === "127.0.0.1" || HOST === "::1" || HOST === "localhost";
 
 // LLM config — new unified vars take precedence; KRELVAN_ANTHROPIC_KEY is legacy fallback
 const LLM_PROVIDER = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
@@ -79,15 +86,48 @@ async function main(): Promise<void> {
 
   await runtime.init();
 
-  const server = createApiServer(runtime);
+  // ── Authentication (Phase 1 token) ─────────────────────────────────────────
+  mkdirSync(DATA_DIR, { recursive: true });
+  const auth = initAuth(DATA_DIR);
+
+  // Refuse to start exposed-to-the-network without a token. A freshly generated
+  // token counts; the only failure mode is an explicitly-blanked env token while bound
+  // to a non-loopback host. This makes "open to the world" impossible by accident.
+  const tokenConfigured = !!auth.tokenHash;
+  if (!isLoopback && !tokenConfigured) {
+    log.error({ host: HOST }, "refusing to bind to a non-loopback host without an auth token. Set KRELVAN_AUTH_TOKEN or run on 127.0.0.1.");
+    process.exit(1);
+  }
+  if (!isLoopback) {
+    log.warn({ host: HOST }, "Krelvan is exposed to the network — ensure you front it with HTTPS (a token over plain HTTP can be sniffed).");
+  }
+
+  const server = createApiServer(runtime, auth);
 
   await new Promise<void>((resolve, reject) => {
     server.on("error", reject);
-    server.listen(PORT, () => {
-      log.info({ port: PORT }, "Krelvan API listening");
+    server.listen(PORT, HOST, () => {
+      log.info({ port: PORT, host: HOST }, "Krelvan API listening");
       resolve();
     });
   });
+
+  // Print the token ONCE, only when freshly generated this run, in a clear banner.
+  // We never log the token again, and the plaintext is never persisted.
+  if (auth.generated && auth.freshPlaintext) {
+    const webOrigin = process.env["KRELVAN_WEB_ORIGIN"] ?? "http://localhost:3100";
+    /* eslint-disable no-console */
+    console.log("\n" + "─".repeat(64));
+    console.log("  Krelvan secured. Your access token (shown once — save it):\n");
+    console.log("      " + auth.freshPlaintext + "\n");
+    console.log("  Open the UI (already authenticated):");
+    console.log("      " + webOrigin + "/?token=" + auth.freshPlaintext);
+    console.log("\n  API calls:  Authorization: Bearer " + auth.freshPlaintext);
+    console.log("  Rotate it:  delete " + resolve(DATA_DIR, "auth.token") + " and restart,");
+    console.log("              or set KRELVAN_AUTH_TOKEN=<your-own>.");
+    console.log("─".repeat(64) + "\n");
+    /* eslint-enable no-console */
+  }
 }
 
 main().catch((err) => {
