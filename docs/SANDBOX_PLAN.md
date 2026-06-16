@@ -120,6 +120,22 @@ attempts secret-read, process-spawn, network-exfil, and a fork-bomb/CPU-spin —
 
 ---
 
+## 4b. STATUS — what's shipped
+
+- **Track A — DONE** (A1–A4): resource limits, untrusted-code opt-in gate, scrubbed
+  env (plugins can't read secrets), honest wording.
+- **Track B1 — DONE**: `SubprocessPluginLoader` is now the DEFAULT for TS plugins — a
+  child `node --permission` process with **fs-write / child_process / native-addons /
+  worker / wasi DENIED**, a memory cap, a per-invoke timeout, and a scrubbed env.
+  Verified by an adversarial test suite (fs-write blocked, spawn blocked, secret-read
+  returns null, CPU-spin killed by timeout, well-behaved plugin works). Fall back to
+  the worker loader with `KRELVAN_PLUGIN_SANDBOX=worker`. Zero new dependencies.
+  - *Known residual:* the Node permission model has no network flag, so a plugin can
+    still open sockets — but with the scrubbed env there are no secrets to exfiltrate.
+    Pinning egress is the egress-broker work (separate council item). B2 (`isolated-vm`)
+    and B3 (microVM, hosted tier) remain optional future adapters behind the same loader
+    interface.
+
 ## 5. The one honest line
 We will not claim a sandbox until B1 ships. Until then, the truthful posture is: **YAML/MCP plugins
 are safe to install; TS plugins run only first-party/explicitly-trusted code, with no secret access

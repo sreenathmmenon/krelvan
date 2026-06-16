@@ -48,6 +48,7 @@ import { PluginFactory } from "../core/plugins/plugin-factory.js";
 import { SqlitePluginRepository } from "../infrastructure/plugins/sqlite-plugin-repository.js";
 import { YamlPluginLoader } from "../infrastructure/plugins/yaml-plugin-loader.js";
 import { TypeScriptPluginLoader } from "../infrastructure/plugins/typescript-plugin-loader.js";
+import { SubprocessPluginLoader } from "../infrastructure/plugins/subprocess-plugin-loader.js";
 import type { SecretBrokerPort, OwnerId, PluginInstallResult, PluginEnableResult, PluginDisableResult, PluginUninstallResult } from "../core/plugins/ports.js";
 import { parseOwnerId } from "../core/plugins/ports.js";
 import { join, resolve as resolvePath } from "node:path";
@@ -56,6 +57,18 @@ import { createHash, randomBytes } from "node:crypto";
 import type { NewEvent } from "../core/ledger/event.js";
 
 const log = getLogger("runtime");
+
+/**
+ * Choose the TypeScript-plugin loader (the sandbox mechanism). Default is the REAL
+ * subprocess sandbox (separate process + Node permission model — no fs-write /
+ * child_process / addons, scrubbed env). Set KRELVAN_PLUGIN_SANDBOX=worker to fall back
+ * to the lighter worker_threads loader (thread isolation only) — e.g. environments
+ * where spawning a child node isn't possible.
+ */
+function makeTsPluginLoader(): import("../core/plugins/ports.js").PluginLoaderStrategy {
+  if (process.env["KRELVAN_PLUGIN_SANDBOX"] === "worker") return new TypeScriptPluginLoader();
+  return new SubprocessPluginLoader();
+}
 
 function atomicWrite(dest: string, content: string): void {
   const tmp = `${dest}.tmp`;
@@ -549,7 +562,7 @@ export class KrelvanRuntime {
 
     const factory = new PluginFactory(new Map<import("../core/plugins/types.js").PluginKind, import("../core/plugins/ports.js").PluginLoaderStrategy>([
       ["yaml", new YamlPluginLoader()],
-      ["typescript", new TypeScriptPluginLoader()],
+      ["typescript", makeTsPluginLoader()],
     ]));
 
     // Build initial supervisor from builtins already registered.
@@ -593,7 +606,7 @@ export class KrelvanRuntime {
 
     const factory = new PluginFactory(new Map<import("../core/plugins/types.js").PluginKind, import("../core/plugins/ports.js").PluginLoaderStrategy>([
       ["yaml", new YamlPluginLoader()],
-      ["typescript", new TypeScriptPluginLoader()],
+      ["typescript", makeTsPluginLoader()],
     ]));
 
     const activator = new PluginActivator({
