@@ -660,9 +660,9 @@ export class KrelvanRuntime {
    * version defaults to "1.0.0" if not provided.
    * On success, registers a metadata record in capabilityRegistry with status "installed".
    */
-  async installPlugin(sourcePath: string, version = "1.0.0"): Promise<PluginInstallResult> {
+  async installPlugin(sourcePath: string, version = "1.0.0", egressHosts?: ReadonlyArray<string>): Promise<PluginInstallResult> {
     const owner = parseOwnerId("owner-demo");
-    const result = await this.pluginLifecycle.install(sourcePath, version, owner);
+    const result = await this.pluginLifecycle.install(sourcePath, version, owner, egressHosts);
     if (result.ok) {
       const rec = result.record;
       // Register a placeholder so list() shows this plugin with status "installed"
@@ -744,6 +744,7 @@ export class KrelvanRuntime {
     fileName: string;
     content: Buffer;
     version?: string;
+    egressHosts?: ReadonlyArray<string>;
   }): Promise<PluginInstallResult & { savedPath?: string }> {
     const safeFileName = opts.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
     const destPath = join(this.capsDir, safeFileName);
@@ -752,7 +753,7 @@ export class KrelvanRuntime {
     } catch (err) {
       return { ok: false, error: "FILE_NOT_FOUND", detail: `Could not write plugin file: ${String(err)}` };
     }
-    const result = await this.installPlugin(destPath, opts.version ?? "1.0.0");
+    const result = await this.installPlugin(destPath, opts.version ?? "1.0.0", opts.egressHosts);
     if (!result.ok) {
       // Clean up the written file on failure
       try { unlinkSync(destPath); } catch { /* ignore */ }

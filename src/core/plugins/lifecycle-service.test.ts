@@ -401,3 +401,60 @@ test("SECURITY: a typescript plugin is BLOCKED from enabling without the opt-in"
   const allowed = await lifecycle.enable("untrusted-plugin", owner);
   assert.equal(allowed.ok, true, `enable should succeed with opt-in: ${!allowed.ok ? allowed.detail : ""}`);
 });
+
+// ── Egress allowlist (Track C wired end-to-end) ─────────────────────────────────
+
+test("egress: install with egressHosts persists the allowlist and survives enable+disable", async () => {
+  const dir = join(tmpdir(), `gen-lc-${randomBytes(4).toString("hex")}`);
+  mkdirSync(dir, { recursive: true });
+  const filePath = writePluginFile(dir, "egress-plugin");
+  const db = makeTestDb();
+  const { lifecycle, repository } = makeRig(db, dir);
+  const owner = parseOwnerId("owner-demo");
+
+  const result = await lifecycle.install(filePath, "1.0.0", owner, ["API.Stripe.com", "hooks.slack.com", "hooks.slack.com"]);
+  assert.equal(result.ok, true, `install failed: ${!result.ok ? result.detail : ""}`);
+
+  // Persisted, lowercased + deduped.
+  const installed = repository.get("egress-plugin");
+  assert.deepEqual([...(installed?.egressHosts ?? [])].sort(), ["api.stripe.com", "hooks.slack.com"]);
+
+  // Survives enable (the loader builds the broker allowlist from THIS field).
+  await lifecycle.enable("egress-plugin", owner);
+  assert.deepEqual([...(repository.get("egress-plugin")?.egressHosts ?? [])].sort(), ["api.stripe.com", "hooks.slack.com"]);
+
+  // Survives disable.
+  await lifecycle.disable("egress-plugin", owner, "test");
+  assert.deepEqual([...(repository.get("egress-plugin")?.egressHosts ?? [])].sort(), ["api.stripe.com", "hooks.slack.com"]);
+});
+
+test("egress: a malformed allowlist entry is rejected at install (no '*', scheme, port, or IP)", async () => {
+  const dir = join(tmpdir(), `gen-lc-${randomBytes(4).toString("hex")}`);
+  mkdirSync(dir, { recursive: true });
+  const filePath = writePluginFile(dir, "bad-egress-plugin");
+  const db = makeTestDb();
+  const { lifecycle, repository } = makeRig(db, dir);
+  const owner = parseOwnerId("owner-demo");
+
+  for (const bad of ["*", "http://evil.com", "1.2.3.4", "api.example.com:443", "host/path"]) {
+    const r = await lifecycle.install(filePath, "1.0.0", owner, [bad]);
+    assert.equal(r.ok, false, `'${bad}' should be rejected`);
+    assert.equal(!r.ok && r.error, "VALIDATION_FAILED");
+    assert.equal(repository.get("bad-egress-plugin"), undefined, "a rejected install must not persist");
+  }
+});
+
+test("egress: no egressHosts ⇒ fail-closed (empty allowlist, all egress denied)", async () => {
+  const dir = join(tmpdir(), `gen-lc-${randomBytes(4).toString("hex")}`);
+  mkdirSync(dir, { recursive: true });
+  const filePath = writePluginFile(dir, "no-egress-plugin");
+  const db = makeTestDb();
+  const { lifecycle, repository } = makeRig(db, dir);
+  const owner = parseOwnerId("owner-demo");
+
+  await lifecycle.install(filePath, "1.0.0", owner);
+  const rec = repository.get("no-egress-plugin");
+  assert.ok(rec, "installed");
+  // Absent or empty — either way the broker allowlist is empty ⇒ deny-by-default.
+  assert.equal((rec?.egressHosts ?? []).length, 0);
+});

@@ -263,10 +263,16 @@ export async function installCapability(name: string, yaml: string): Promise<Cap
   return data.capability;
 }
 
-export async function installCapabilityFile(file: File, version?: string): Promise<CapabilityRecord> {
+export async function installCapabilityFile(
+  file: File,
+  version?: string,
+  egressHosts?: readonly string[],
+): Promise<CapabilityRecord> {
   const form = new FormData();
   form.append("file", file, file.name);
   if (version) form.append("version", version);
+  // Sandboxed TS plugins reach the network only through hosts declared here (deny-by-default).
+  if (egressHosts && egressHosts.length > 0) form.append("egressHosts", JSON.stringify(egressHosts));
   const res = await fetch(`${API_BASE}/api/capabilities`, { method: "POST", body: form });
   const data = await res.json() as { capability?: CapabilityRecord; error?: string; detail?: string };
   if (!res.ok) throw new Error(data.detail ?? data.error ?? `HTTP ${res.status}`);

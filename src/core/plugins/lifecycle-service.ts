@@ -81,7 +81,14 @@ export class PluginLifecycleService implements PluginLifecyclePort {
     this.deps.snapshotHandle.replaceSnapshot(snapshot);
   }
 
-  async install(sourcePath: string, version: string, owner: OwnerId): Promise<PluginInstallResult> {
+  async install(sourcePath: string, version: string, owner: OwnerId, egressHosts?: ReadonlyArray<string>): Promise<PluginInstallResult> {
+    // Validate the declared egress allowlist up front — a plugin can never be installed
+    // with a malformed allowlist (no "*", scheme, port, path, or IP literal).
+    const egress = validateEgressHosts(egressHosts);
+    if (!egress.ok) {
+      return { ok: false, error: "VALIDATION_FAILED", detail: egress.detail };
+    }
+
     // Path containment: resolve to an absolute path and ensure it is inside pluginsRoot.
     // This prevents path traversal (../../etc/passwd) and loading arbitrary files.
     const absPath = resolvePath(sourcePath);
@@ -164,6 +171,7 @@ export class PluginLifecycleService implements PluginLifecyclePort {
       sourcePath: absPath,
       sourceHash,
       secretRefs,
+      ...(egress.hosts.length > 0 ? { egressHosts: egress.hosts } : {}),
       version,
       installedAt,
     };
@@ -174,6 +182,8 @@ export class PluginLifecycleService implements PluginLifecyclePort {
       version: record.version,
       sourceHash: record.sourceHash,
       actorId: owner,
+      // Record the declared egress allowlist in the tamper-evident ledger event.
+      ...(egress.hosts.length > 0 ? { egressHosts: egress.hosts } : {}),
     };
 
     this.atomicSaveWithEvent(record, "PluginInstalled", payload);
@@ -241,6 +251,7 @@ export class PluginLifecycleService implements PluginLifecyclePort {
       sourcePath: existing.sourcePath,
       sourceHash: existing.sourceHash,
       secretRefs: existing.secretRefs,
+      ...(existing.egressHosts && existing.egressHosts.length > 0 ? { egressHosts: existing.egressHosts } : {}),
       version: existing.version,
       installedAt: existing.installedAt,
       enabledAt: now,
@@ -283,6 +294,7 @@ export class PluginLifecycleService implements PluginLifecyclePort {
       sourcePath: existing.sourcePath,
       sourceHash: existing.sourceHash,
       secretRefs: existing.secretRefs,
+      ...(existing.egressHosts && existing.egressHosts.length > 0 ? { egressHosts: existing.egressHosts } : {}),
       version: existing.version,
       installedAt: existing.installedAt,
       disabledAt: now,
@@ -413,4 +425,27 @@ function extractSecretRefsFromText(text: string): string[] {
     if (m[1]) refs.add(m[1]);
   }
   return [...refs];
+}
+
+/** A hostname is a dotted label sequence (a.b.c) — no scheme, port, path, wildcard, or IP-literal junk. */
+const HOST_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+/**
+ * Validate + normalize a declared egress allowlist. Each entry must be a plain lowercase
+ * hostname (no scheme/port/path). Returns the deduped, lowercased set or an error string.
+ * Deny-by-default lives downstream; this just rejects malformed declarations early so a
+ * plugin can never be installed with a bogus "*" / "http://evil" / "1.2.3.4" allowlist.
+ */
+export function validateEgressHosts(raw: ReadonlyArray<string> | undefined): { ok: true; hosts: string[] } | { ok: false; detail: string } {
+  if (!raw || raw.length === 0) return { ok: true, hosts: [] };
+  const out = new Set<string>();
+  for (const entry of raw) {
+    const h = String(entry).trim().toLowerCase();
+    if (h === "") continue;
+    if (!HOST_RE.test(h)) {
+      return { ok: false, detail: `Invalid egress host '${entry}' — must be a bare hostname like 'api.stripe.com' (no scheme, port, path, wildcard, or IP literal)` };
+    }
+    out.add(h);
+  }
+  return { ok: true, hosts: [...out] };
 }

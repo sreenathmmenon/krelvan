@@ -156,7 +156,7 @@ Point an install at your own fork with
 ```bash
 npm install
 npm run typecheck    # strict TS, clean
-npm test             # 211 / 214 pass (3 are live-model API tests that need a key)
+npm test             # 214 / 217 pass (3 are live-model API tests that need a key)
 npm run demo:ledger  # canvas + audit all fold from one log
 npm run demo:resume  # kill mid-run, resume — each irreversible effect runs EXACTLY once
 npm run demo:e2e     # a real 3-agent pipeline drives itself off the ledger
@@ -169,7 +169,7 @@ npm run demo:live    # (needs KRELVAN_ANTHROPIC_KEY) a real model proposes a wor
 
 ## Status — honest
 
-**Built & verified** (typecheck clean · 211/214 tests · web build green):
+**Built & verified** (typecheck clean · 214/217 tests · web build green):
 - Ledger + SQLite durable store (real on-disk crash/resume)
 - Identity, secrets & time (key rotation/revocation, secret broker, monotonic clock)
 - Capability plane (deny-by-default, autonomy gradient, supervisor co-sign)

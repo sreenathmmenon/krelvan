@@ -159,11 +159,18 @@ attempts secret-read, process-spawn, network-exfil, and a fork-bomb/CPU-spin —
     the broker doesn't mediate. With the scrubbed env + broker-only secret delivery it has
     **no credential to exfiltrate**, though the EffectCall input / response bodies are in
     its address space. Full pinning needs a network namespace / microVM (B3, hosted tier).
-  - *Not yet wired end-to-end:* `egressHosts` is honored by the loader/broker but the
-    install path does not yet populate it, so brokered egress is **fail-closed** (empty
-    allowlist ⇒ all egress denied) until an install-time egress declaration + host→secret
-    binding ships. Safe today; the secret-injection path is proven in tests, not yet
-    reachable from the marketplace install flow.
+- **Track D — DONE**: `egressHosts` is now wired **end-to-end through install**. The
+  lifecycle `install()` accepts a declared allowlist, `validateEgressHosts()` rejects
+  anything that isn't a bare hostname (no `*`, scheme, port, path, or IP literal), the
+  hosts are persisted on the plugin record (new `egress_hosts` SQLite column, additive
+  migration) **and recorded in the tamper-evident `PluginInstalled` ledger event**, and
+  they survive enable/disable. The API multipart install reads an `egressHosts` field
+  (JSON array or comma/space list); the web client (`installCapabilityFile`) forwards it.
+  On enable, the `SubprocessPluginLoader` builds the broker allowlist from exactly this
+  field. **Default is still fail-closed** — no declaration ⇒ empty allowlist ⇒ all egress
+  denied. Verified: 3 lifecycle tests (persists + lowercases + dedupes + survives
+  enable/disable; malformed entry rejected and not persisted; absent ⇒ empty). Full suite
+  214/217.
 
 ---
 

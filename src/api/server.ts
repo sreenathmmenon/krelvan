@@ -813,6 +813,24 @@ async function handleListCapabilities(_req: IncomingMessage, res: ServerResponse
 }
 
 /**
+ * Parse an egressHosts multipart field. Accepts a JSON array (`["a.com","b.com"]`) or a
+ * comma/space/newline-separated list (`a.com, b.com`). Returns undefined when absent so
+ * install() defaults to no egress (fail-closed). Per-host validation happens in install().
+ */
+function parseEgressHostsField(raw: string | undefined): string[] | undefined {
+  if (raw === undefined) return undefined;
+  const t = raw.trim();
+  if (t === "") return undefined;
+  if (t.startsWith("[")) {
+    try {
+      const parsed: unknown = JSON.parse(t);
+      if (Array.isArray(parsed)) return parsed.filter((x): x is string => typeof x === "string");
+    } catch { /* fall through to delimiter parsing */ }
+  }
+  return t.split(/[\s,]+/).filter((s) => s !== "");
+}
+
+/**
  * POST /api/capabilities
  * Supports two install modes:
  *   1. JSON body { yaml: string, name: string } → legacy in-memory YAML install
@@ -833,7 +851,11 @@ async function handleInstallCapability(req: IncomingMessage, res: ServerResponse
     const fileName = fields["name"]?.trim() || file.filename;
     const version  = fields["version"]?.trim() || "1.0.0";
 
-    const result = await rt.installPluginFromBytes({ fileName, content: file.content, version });
+    // Optional egress allowlist for sandboxed TS plugins: a JSON array OR a
+    // comma/space-separated list of bare hostnames. Validated downstream in install().
+    const egressHosts = parseEgressHostsField(fields["egressHosts"] ?? fields["egress_hosts"]);
+
+    const result = await rt.installPluginFromBytes({ fileName, content: file.content, version, egressHosts });
     if (!result.ok) {
       const status = result.error === "ALREADY_INSTALLED" ? 409 : result.error === "FILE_NOT_FOUND" ? 404 : 422;
       json(res, status, { error: result.error, detail: result.detail });

@@ -26,6 +26,7 @@ export const PLUGIN_SCHEMA = `
     disabled_at   INTEGER,
     disable_reason TEXT,
     secret_refs   TEXT    NOT NULL DEFAULT '[]',
+    egress_hosts  TEXT    NOT NULL DEFAULT '[]',
     meta_json     TEXT    NOT NULL DEFAULT '{}'
   );
 `;
@@ -42,15 +43,18 @@ interface PluginRow {
   disabled_at: number | null;
   disable_reason: string | null;
   secret_refs: string;
+  egress_hosts: string | null;
 }
 
 function rowToRecord(row: PluginRow): PersistedPluginRecord {
+  const egressHosts = row.egress_hosts ? (JSON.parse(row.egress_hosts) as string[]) : [];
   const base = {
     name: row.name,
     pluginKind: row.plugin_kind as "yaml" | "typescript",
     sourcePath: row.source_path,
     sourceHash: row.source_hash,
     secretRefs: JSON.parse(row.secret_refs) as string[],
+    ...(egressHosts.length > 0 ? { egressHosts } : {}),
     version: row.version,
     installedAt: row.installed_at,
   };
@@ -83,14 +87,19 @@ function rowToRecord(row: PluginRow): PersistedPluginRecord {
 export class SqlitePluginRepository implements PluginRepository {
   constructor(private readonly db: DatabaseSync) {
     this.db.exec(PLUGIN_SCHEMA);
+    // Additive migration for DBs created before the egress_hosts column existed.
+    const cols = this.db.prepare("PRAGMA table_info(plugin_records)").all() as unknown as { name: string }[];
+    if (!cols.some((c) => c.name === "egress_hosts")) {
+      this.db.exec("ALTER TABLE plugin_records ADD COLUMN egress_hosts TEXT NOT NULL DEFAULT '[]'");
+    }
   }
 
   save(record: PersistedPluginRecord): void {
     const stmt = this.db.prepare(`
       INSERT INTO plugin_records
         (name, plugin_kind, status, source_path, source_hash, version,
-         installed_at, enabled_at, disabled_at, disable_reason, secret_refs)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         installed_at, enabled_at, disabled_at, disable_reason, secret_refs, egress_hosts)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(name) DO UPDATE SET
         plugin_kind    = excluded.plugin_kind,
         status         = excluded.status,
@@ -101,7 +110,8 @@ export class SqlitePluginRepository implements PluginRepository {
         enabled_at     = excluded.enabled_at,
         disabled_at    = excluded.disabled_at,
         disable_reason = excluded.disable_reason,
-        secret_refs    = excluded.secret_refs
+        secret_refs    = excluded.secret_refs,
+        egress_hosts   = excluded.egress_hosts
     `);
 
     const enabledAt: number | null = record.kind === "enabled" ? record.enabledAt : null;
@@ -120,6 +130,7 @@ export class SqlitePluginRepository implements PluginRepository {
       disabledAt,
       disableReason,
       JSON.stringify(record.secretRefs),
+      JSON.stringify(record.egressHosts ?? []),
     );
   }
 
