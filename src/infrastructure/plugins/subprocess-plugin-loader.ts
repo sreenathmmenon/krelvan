@@ -16,10 +16,15 @@
  * the parent only over the existing message protocol via IPC (process.send). A per-invoke
  * timeout + the OS process let us hard-kill a runaway (CPU/memory) plugin.
  *
- * Network: the Permission Model has no network flag, so a plugin can still open sockets.
- * We mitigate by giving the child NO secrets (scrubbed env, no secret store) — so there
- * is nothing to exfiltrate — and a future egress-broker will pin outbound traffic. This
- * is documented honestly in docs/SANDBOX_PLAN.md.
+ * Network: the Permission Model has no network flag, so a plugin can still open a raw
+ * socket. We close the EXPLOIT, not the socket: the child is given NO secrets and NO
+ * direct fetch — its only path to the network is the BROKERED-EGRESS channel back to the
+ * parent (egress-request/egress-response over IPC). The parent runs an EgressBroker that
+ * allowlists the host (deny-by-default), SSRF-guards it, injects the real credential ON
+ * THE PARENT (never in the child), and measures the call. So a malicious plugin has
+ * nothing worth exfiltrating and no allowlisted path to anything useful. The residual
+ * (pinning raw sockets entirely) needs a network namespace / microVM — the hosted tier.
+ * Documented in docs/SANDBOX_PLAN.md (Track C).
  *
  * Zero new dependencies — Node built-ins only (node:child_process).
  */
@@ -31,6 +36,7 @@ import type { PluginLoaderStrategy } from "../../core/plugins/ports.js";
 import type { CapabilityPlugin, EffectCall } from "../../core/capability/capability.js";
 import type { PersistedPluginRecord } from "../../core/plugins/types.js";
 import { getLogger } from "../../core/observability/logger.js";
+import { EgressBroker, type EgressRequest, type EgressResult } from "../../core/plugins/egress-broker.js";
 import { hasTeardown, type TeardownablePlugin } from "./typescript-plugin-loader.js";
 
 const log = getLogger("subprocess-plugin");
@@ -42,23 +48,63 @@ const MAX_MEMORY_MB = Math.max(32, Number(process.env["KRELVAN_PLUGIN_MAX_MEMORY
 // ── message protocol (matches the worker loader's shape) ───────────────────────
 interface InitData { sourcePath: string }
 type ParentToChild =
-  | { kind: "invoke"; id: number; call: EffectCall; secrets: Record<string, string> };
+  // NOTE: no `secrets` field — secrets NEVER enter the child. Outbound HTTP that needs
+  // a credential goes through the brokered-egress channel; the parent injects the secret.
+  | { kind: "invoke"; id: number; call: EffectCall }
+  | { kind: "egress-response"; eid: number; result: EgressResult }
+  | { kind: "egress-error"; eid: number; message: string };
 type ChildToParent =
   | { kind: "ready"; name: string; sideEffect: string }
   | { kind: "result"; id: number; output: unknown; claimedCostCents: number }
   | { kind: "error"; id: number; message: string }
-  | { kind: "init-error"; message: string };
+  | { kind: "init-error"; message: string }
+  | { kind: "egress-request"; eid: number; request: EgressRequest };
 
 // The child bootstrap script (inlined, run via `node --permission -e`). It imports the
 // plugin and proxies invoke() over IPC. It re-implements the tiny worker logic for the
 // process context.
 function childBootstrap(sourcePath: string): string {
   // sourcePath is JSON-encoded into the script so paths with quotes are safe.
+  //
+  // BROKERED EGRESS: the plugin is given a global `krelvanFetch(url, init)` that does
+  // NOT touch the network from the child. It posts an `egress-request` to the parent and
+  // awaits the parent's brokered (allowlisted + SSRF-guarded + secret-injected + measured)
+  // response. The plugin never sees a secret and has no allowlisted direct path out.
   return `
 import { register } from "node:module";
 import { pathToFileURL } from "node:url";
 try { register("tsx/esm", pathToFileURL("./")); } catch {}
 const SRC = ${JSON.stringify(sourcePath)};
+
+// ── brokered egress: round-trip an HTTP request through the parent over IPC ──────
+let __eid = 0;
+const __egressPending = new Map();
+process.on("message", (msg) => {
+  if (!msg) return;
+  if (msg.kind === "egress-response" || msg.kind === "egress-error") {
+    const p = __egressPending.get(msg.eid);
+    if (!p) return;
+    __egressPending.delete(msg.eid);
+    if (msg.kind === "egress-response") p.resolve(msg.result);
+    else p.reject(new Error(msg.message || "egress denied"));
+  }
+});
+globalThis.krelvanFetch = function krelvanFetch(url, init) {
+  const i = init || {};
+  const eid = ++__eid;
+  return new Promise((resolve, reject) => {
+    __egressPending.set(eid, { resolve, reject });
+    process.send?.({ kind: "egress-request", eid, request: {
+      url: String(url),
+      method: i.method,
+      headers: i.headers,
+      body: typeof i.body === "string" ? i.body : (i.body == null ? undefined : String(i.body)),
+      timeoutMs: i.timeoutMs,
+      maxBytes: i.maxBytes,
+    }});
+  });
+};
+
 let plugin;
 try {
   const mod = await import(SRC);
@@ -98,13 +144,14 @@ class SubprocessBackedPlugin implements CapabilityPlugin, TeardownablePlugin {
   private child: ChildProcess | null;
   private pending = new Map<number, { resolve: (r: { output: unknown; claimedCostCents: number }) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private nextId = 1;
+  /** Measured egress cost (cents) accumulated across a single invoke() — supervisor-attested. */
+  private measuredEgressCents = 0;
 
   constructor(
     name: string,
     sideEffect: CapabilityPlugin["sideEffect"],
     child: ChildProcess,
-    private readonly resolveSecret: (ref: string) => string | undefined,
-    private readonly secretRefs: ReadonlyArray<string>,
+    private readonly broker: EgressBroker,
   ) {
     this.name = name;
     this.sideEffect = sideEffect;
@@ -118,6 +165,8 @@ class SubprocessBackedPlugin implements CapabilityPlugin, TeardownablePlugin {
         this.pending.delete(msg.id);
         if (msg.kind === "result") p.resolve({ output: msg.output, claimedCostCents: msg.claimedCostCents });
         else p.reject(new Error(msg.message));
+      } else if (msg.kind === "egress-request") {
+        void this.handleEgress(msg.eid, msg.request);
       }
     });
     child.on("error", (err) => this.killAndReject(new Error(`sandbox process error: ${err.message}`)));
@@ -126,24 +175,42 @@ class SubprocessBackedPlugin implements CapabilityPlugin, TeardownablePlugin {
     });
   }
 
+  /** Answer a child egress-request via the parent-side broker. The secret is injected
+   *  inside the broker and NEVER returned to the child; only the response body is. */
+  private async handleEgress(eid: number, request: EgressRequest): Promise<void> {
+    const child = this.child;
+    if (!child) return;
+    try {
+      const result = await this.broker.request(request);
+      // 1 cent per brokered call + 1 cent per ~64 KiB transferred (measured, attested).
+      this.measuredEgressCents += 1 + Math.floor((result.measured.bytesIn + result.measured.bytesOut) / 65_536);
+      child.send({ kind: "egress-response", eid, result } satisfies ParentToChild);
+    } catch (e) {
+      // Allowlist/SSRF denial — surfaced to the plugin as an egress error (it never
+      // learns whether a host exists; just that it's denied).
+      child.send({ kind: "egress-error", eid, message: (e as Error).message } satisfies ParentToChild);
+    }
+  }
+
   estimateCents(_call: EffectCall): number { return 0; }
 
   async invoke(call: EffectCall): Promise<{ output: unknown; claimedCostCents: number }> {
     if (!this.child) throw new Error(`Plugin '${this.name}' has been torn down`);
     const id = this.nextId++;
-    const secrets: Record<string, string> = {};
-    for (const ref of this.secretRefs) {
-      const val = this.resolveSecret(ref);
-      if (val !== undefined) secrets[ref] = val;
-    }
+    this.measuredEgressCents = 0;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`Plugin '${this.name}' invoke() timed out after ${INVOKE_TIMEOUT_MS}ms`));
         this.killAndReject(new Error(`Plugin '${this.name}' killed after invoke timeout`));
       }, INVOKE_TIMEOUT_MS);
-      this.pending.set(id, { resolve, reject, timer });
-      this.child!.send({ kind: "invoke", id, call, secrets } satisfies ParentToChild);
+      this.pending.set(id, {
+        // Fold the measured egress cost into the result the supervisor records.
+        resolve: (r) => resolve({ output: r.output, claimedCostCents: r.claimedCostCents + this.measuredEgressCents }),
+        reject,
+        timer,
+      });
+      this.child!.send({ kind: "invoke", id, call } satisfies ParentToChild);
     });
   }
 
@@ -169,6 +236,20 @@ export class SubprocessPluginLoader implements PluginLoaderStrategy {
   ): Promise<CapabilityPlugin> {
     const { sourcePath } = record as unknown as InitData;
 
+    // Parent-side egress broker for THIS plugin: deny-by-default allowlist from the
+    // record + a host→credential injector. The injector resolves a secret ref keyed
+    // by the destination host (e.g. an "api.stripe.com" ref) and injects it as a Bearer
+    // token. The resolved secret stays on the parent — it is never sent to the child.
+    const allowlist = new Set((record.egressHosts ?? []).map((h) => h.toLowerCase()));
+    const broker = new EgressBroker({
+      allowlist,
+      injectSecret: (host) => {
+        const val = resolveSecret(host) ?? resolveSecret(`egress:${host}`);
+        return val !== undefined ? { header: "authorization", value: `Bearer ${val}` } : null;
+      },
+      now: () => Date.now(),
+    });
+
     // Permission flags. We DENY the dangerous capabilities — fs WRITE, child_process,
     // native addons, worker_threads, wasi — by simply not granting them. fs READ is
     // ALLOWED (Node needs it to resolve and import modules; scoping it tightly breaks
@@ -187,7 +268,9 @@ export class SubprocessPluginLoader implements PluginLoaderStrategy {
     return new Promise<CapabilityPlugin>((resolve, reject) => {
       const child = spawn(process.execPath, argv, {
         stdio: ["ignore", "inherit", "inherit", "ipc"],
-        env: scrubbedEnv(),
+        // Scrubbed env (no Krelvan secrets) + the brokered-egress signal. The child has
+        // no secrets to leak and must route all outbound HTTP through `krelvanFetch`.
+        env: { ...scrubbedEnv(), KRELVAN_PLUGIN_BROKERED_EGRESS: "1" },
       });
 
       const readyTimer = setTimeout(() => {
@@ -203,8 +286,8 @@ export class SubprocessPluginLoader implements PluginLoaderStrategy {
           return;
         }
         if (msg.kind === "ready") {
-          log.info({ plugin: msg.name, sourcePath }, "plugin sandbox ready (subprocess + permission model)");
-          resolve(new SubprocessBackedPlugin(msg.name, msg.sideEffect as CapabilityPlugin["sideEffect"], child, resolveSecret, record.secretRefs));
+          log.info({ plugin: msg.name, sourcePath, egressHosts: [...allowlist] }, "plugin sandbox ready (subprocess + permission model + brokered egress)");
+          resolve(new SubprocessBackedPlugin(msg.name, msg.sideEffect as CapabilityPlugin["sideEffect"], child, broker));
         }
       });
 

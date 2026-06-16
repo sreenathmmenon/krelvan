@@ -101,7 +101,7 @@ The hard infrastructure is solved so you only build domain logic:
 | **Memory** | Episodic + semantic + trust-aware, with provenance — right by default. |
 | **Human-in-the-loop** | Standard pause / approve / resume via an autonomy gradient (suggest · act-with-veto · full). |
 | **Audit by default** | Every decision, tool call, and step signed to a tamper-evident record. |
-| **Capabilities & trust** | Deny-by-default admission; capabilities declare a side-effect class and gate for approval; the supervisor co-signs results (plugins never self-sign). Declarative (YAML) + MCP capabilities are safe by construction; running untrusted TypeScript plugins is gated behind an explicit opt-in until a real code sandbox ships. |
+| **Capabilities & trust** | Deny-by-default admission; capabilities declare a side-effect class and gate for approval; the supervisor co-signs results (plugins never self-sign). Declarative (YAML) + MCP capabilities are safe by construction. Untrusted TypeScript plugins run in a **real OS-process sandbox** (`node --permission`: fs-write / child_process / native-addons / worker / WASI denied, memory + timeout caps, scrubbed env) and reach the network **only through a brokered, allowlisted, SSRF-guarded egress channel** — secrets are injected at the destination on the host and never enter the plugin. Adversarially tested. |
 | **Agent coordination** | Sub-agent delegation with supervisor co-sign. |
 | **Failure-reasoning** | Reason about *why* a run failed and how to fix it — not just retry. |
 | **Capability ecosystem** | Install a connector; it works in any agent. |
@@ -156,7 +156,7 @@ Point an install at your own fork with
 ```bash
 npm install
 npm run typecheck    # strict TS, clean
-npm test             # 167 / 170 pass (3 are live-model API tests that need a key)
+npm test             # 208 / 211 pass (3 are live-model API tests that need a key)
 npm run demo:ledger  # canvas + audit all fold from one log
 npm run demo:resume  # kill mid-run, resume — each irreversible effect runs EXACTLY once
 npm run demo:e2e     # a real 3-agent pipeline drives itself off the ledger
@@ -169,7 +169,7 @@ npm run demo:live    # (needs KRELVAN_ANTHROPIC_KEY) a real model proposes a wor
 
 ## Status — honest
 
-**Built & verified** (typecheck clean · 167/170 tests · web build green):
+**Built & verified** (typecheck clean · 208/211 tests · web build green):
 - Ledger + SQLite durable store (real on-disk crash/resume)
 - Identity, secrets & time (key rotation/revocation, secret broker, monotonic clock)
 - Capability plane (deny-by-default, autonomy gradient, supervisor co-sign)

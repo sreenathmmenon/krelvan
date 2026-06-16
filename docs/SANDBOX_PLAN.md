@@ -132,11 +132,95 @@ attempts secret-read, process-spawn, network-exfil, and a fork-bomb/CPU-spin —
   the worker loader with `KRELVAN_PLUGIN_SANDBOX=worker`. Zero new dependencies.
   - *Known residual:* the Node permission model has no network flag, so a plugin can
     still open sockets — but with the scrubbed env there are no secrets to exfiltrate.
-    Pinning egress is the egress-broker work (separate council item). B2 (`isolated-vm`)
-    and B3 (microVM, hosted tier) remain optional future adapters behind the same loader
-    interface.
+    Pinning egress is the egress-broker work (Track C, now DONE — see below). B2
+    (`isolated-vm`) and B3 (microVM, hosted tier) remain optional future adapters behind
+    the same loader interface.
+
+- **Track C — DONE**: brokered egress. The sandboxed child gets **no secrets and no
+  direct outbound HTTP** — it calls `globalThis.krelvanFetch(url, init)`, which round-trips
+  through IPC to the parent. The parent runs an `EgressBroker` (`src/core/plugins/egress-broker.ts`)
+  that, per request: (1) checks the host against the plugin's **deny-by-default allowlist**
+  (`egressHosts` on the record), (2) runs the **SSRF guard** (`assertPublicUrl`), (3) **injects
+  the real credential on the parent** (the secret never re-enters the child) and strips any
+  `Authorization`/`Host`/`Cookie` the plugin tries to set, (4) **measures** bytes + wall-time
+  and folds that into the supervisor-attested cost. Verified: 7 broker unit tests + 3 e2e
+  sandbox tests (off-allowlist DENIED in a real child; no secret visible in the child;
+  scrubbed env even against a raw socket). Zero new dependencies.
+  - *Honest residual:* a determined plugin can still open a **raw** socket the broker
+    doesn't mediate — but with the scrubbed env + broker-only secret delivery it has
+    **nothing worth exfiltrating**. Pinning raw sockets entirely needs a network namespace /
+    microVM (B3, hosted tier).
+
+---
+
+## Track C — The egress broker (closes the #1 remaining blocker)
+
+*After B1 shipped, the re-rating council (security 5.0 → 6.0) named **open network egress** the single
+top remaining blocker. The Node permission model has no network flag, so the sandboxed child can open
+arbitrary sockets. Today that's masked only because the child has a scrubbed env (no Krelvan secrets)
+**and** a latent bug: the loader sends declared `secrets` over IPC but the child bootstrap never passes
+them to `plugin.invoke`. The moment anyone wires real secret delivery (needed for any Slack/GitHub
+plugin), open egress becomes live customer-credential exfiltration.*
+
+### The design — broker, don't block
+You cannot reliably *block* the child's sockets without a network namespace (not portable). So instead
+make the child **have no reason and no ability** to reach the network directly:
+
+1. **The child gets NO secrets and NO direct outbound HTTP.** A boot flag
+   (`KRELVAN_PLUGIN_BROKERED_EGRESS=1`, set by the loader for every sandboxed child) installs a child
+   shim that (a) replaces the plugin's notion of "make an HTTP call" with a **request to the parent over
+   the existing IPC channel**, and (b) the plugin is handed **no resolved secret values** — only the
+   *fact* that a destination is reachable.
+2. **The parent is the broker.** When the child asks to fetch `https://api.stripe.com/...`, the parent:
+   - checks the URL host against this plugin's **egress allowlist** (deny-by-default — the allowlist is
+     declared at install time and persisted on the plugin record);
+   - runs the existing **SSRF guard** (`assertPublicUrl`) so a brokered request can't hit
+     loopback/metadata/private ranges either;
+   - **attaches the real secret** for that destination *on the parent side* (the secret never enters the
+     child) — this is the `SecretBroker.mint`-style "credential stays in the broker" pattern, made real
+     for HTTP;
+   - performs the fetch, **measures** bytes-in/out + wall-time, and returns only the (size-capped)
+     response body to the child;
+   - records the measured cost as the **supervisor-attested** cost (closes the "cost is self-reported"
+     council item for networked plugins).
+3. **Net effect:** even though the child *could* still open a raw socket, it has **nothing to send**
+   (no secrets) and **no allowlisted path** to anything useful; every legitimate call is brokered,
+   allowlisted, SSRF-checked, secret-injected on the parent, and measured. Exfiltration of a customer
+   credential is structurally impossible because the credential is never in the child's address space.
+
+### Why this is the right shape
+- **Closes egress without a network namespace** → keeps the "runs on a laptop, zero-deps, single binary"
+  property. Node built-ins only (`node:http`/`fetch` on the parent, IPC for the child).
+- **Fixes the latent secret-delivery bug correctly**: secrets are delivered *to the destination*, never
+  *to the plugin*. The dropped `msg.secrets` wire is removed, not "fixed" into an exfiltration hole.
+- **Reuses existing seams**: the SSRF guard, the deny-by-default allowlist idea from `SecretBroker.mint`,
+  and the IPC protocol already in the subprocess loader.
+- **Same port, swappable**: a hosted tier can later replace the in-parent broker with a real egress
+  proxy/microVM without changing the plugin contract.
+
+### Tasks (Track C)
+- **C1.** `EgressBroker` — given (pluginName, allowlist, secretResolver), expose `request(url, init)` that
+  enforces allowlist → SSRF guard → secret injection → fetch → measured result. Unit-tested in isolation.
+- **C2.** Wire a broker channel into `SubprocessPluginLoader`: a new IPC message kind
+  (`egress-request`/`egress-response`) the parent answers via the `EgressBroker`. Per-plugin allowlist
+  comes from the persisted record; secrets are resolved on the parent only.
+- **C3.** Child shim: under `KRELVAN_PLUGIN_BROKERED_EGRESS=1`, expose a `brokerFetch(url, init)` to the
+  plugin that round-trips through IPC, and pass **no resolved secrets** into the child.
+- **C4.** Adversarial tests: (a) off-allowlist host → DENIED; (b) on-allowlist host with a parent-held
+  secret → request succeeds and the secret is **never visible in the child**; (c) SSRF target via the
+  broker → blocked; (d) the response is size-capped + cost measured.
+- **C5.** typecheck + full suite + honest doc/README update (egress is now brokered & allowlisted;
+  networked-plugin cost is measured).
+
+### Honest residual after Track C
+A determined plugin can still open a *raw* socket the broker doesn't mediate — but with a scrubbed env
+and brokered-only secret delivery, **it has nothing worth exfiltrating**. Pinning raw sockets entirely
+needs a network namespace / microVM (B3, hosted tier). That's the honest line, and it's now a real
+defense-in-depth posture rather than an open hole.
 
 ## 5. The one honest line
 We will not claim a sandbox until B1 ships. Until then, the truthful posture is: **YAML/MCP plugins
 are safe to install; TS plugins run only first-party/explicitly-trusted code, with no secret access
-and a resource cap.** That's defensible, matches the code, and is exactly what the council asked for.
+and a resource cap.** *(Post-B1 + Track C: untrusted TS runs in a real OS-process sandbox; outbound HTTP
+is brokered, allowlisted, SSRF-guarded, and measured; secrets are injected at the destination and never
+enter the plugin.)*
