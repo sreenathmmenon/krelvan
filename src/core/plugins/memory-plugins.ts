@@ -157,7 +157,10 @@ export const recallCapability: CapabilityPlugin = {
 
 export const rememberCapability: CapabilityPlugin = {
   name: "remember",
-  sideEffect: "read",
+  // Writes facts + an episode entry to the agent's memory files. It IS a write
+  // (reversible — memory can be overwritten/cleared), not a read. Mislabeling it
+  // "read" made the autonomy gate never require approval for a state mutation.
+  sideEffect: "write-reversible",
 
   estimateCents: () => 2,
 

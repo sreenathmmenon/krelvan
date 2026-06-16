@@ -139,7 +139,7 @@ export class AgentRegistry {
     return [
       { name: "think",          sideEffect: "read",              maxBudgetCents: 2000 },
       { name: "recall",         sideEffect: "read",              maxBudgetCents: 50   },
-      { name: "remember",       sideEffect: "read",              maxBudgetCents: 50   },
+      { name: "remember",       sideEffect: "write-reversible",  maxBudgetCents: 50   },
       { name: "llm_route",      sideEffect: "read",              maxBudgetCents: 500  },
       { name: "web_search",     sideEffect: "read",              maxBudgetCents: 500  },
       { name: "compose",        sideEffect: "read",              maxBudgetCents: 500  },
