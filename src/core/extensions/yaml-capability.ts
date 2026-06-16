@@ -27,6 +27,7 @@
 
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
 import type { SideEffectClass } from "../manifest/manifest.js";
+import { assertPublicUrl } from "../plugins/ssrf-guard.js";
 
 // ── Schema types (what a valid YAML file must contain) ────────────────────────
 
@@ -479,6 +480,12 @@ export function compileYamlCapability(
         fetchOpts.body = JSON.stringify(interpolateObject(schema.http.body, input, secrets));
         headers["Content-Type"] ??= "application/json";
       }
+
+      // ── SSRF guard ────────────────────────────────────────────────────────────
+      // The URL is interpolated from run state ({{input.*}}), so it may be attacker-
+      // influenced. Resolve DNS and reject private/loopback/metadata targets before
+      // any request leaves the host. (Previously the YAML path had NO guard.)
+      await assertPublicUrl(url);
 
       const response = await fetch(url, fetchOpts);
 

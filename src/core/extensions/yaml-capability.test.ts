@@ -8,6 +8,10 @@
  * Run: npm test
  */
 
+// These tests mock globalThis.fetch and use non-resolvable hosts (api.example.com),
+// so we let the SSRF guard skip the DNS step while keeping scheme/IP checks active.
+process.env["KRELVAN_SSRF_ALLOW_UNRESOLVABLE"] = "1";
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 

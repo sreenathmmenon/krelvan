@@ -17,6 +17,7 @@
 
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
 import { getLogger } from "../observability/logger.js";
+import { assertPublicUrl } from "./ssrf-guard.js";
 
 const log = getLogger("http-get");
 
@@ -25,21 +26,6 @@ const MAX_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_BYTES = 32_768;
 const MAX_MAX_BYTES = 131_072;
 
-/** Patterns that indicate private / loopback addresses. */
-const PRIVATE_PATTERNS: RegExp[] = [
-  /^localhost$/i,
-  /^127\./,
-  /^10\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^192\.168\./,
-  /^0\.0\.0\.0$/,
-  /^::1$/,
-  /^\[:/,
-];
-
-function isPrivateHost(hostname: string): boolean {
-  return PRIVATE_PATTERNS.some((re) => re.test(hostname));
-}
 
 function parseOptionalHeaders(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== "string") return {};
@@ -117,11 +103,13 @@ export const httpGetCapability: CapabilityPlugin = {
       };
     }
 
-    // ── SSRF guard ────────────────────────────────────────────────────────────
-    if (isPrivateHost(parsed.hostname)) {
-      log.warn({ nodeId: call.nodeId, hostname: parsed.hostname }, "http_get: SSRF guard blocked private address");
+    // ── SSRF guard (resolves DNS, checks the actual IPs) ──────────────────────
+    try {
+      await assertPublicUrl(parsed.toString());
+    } catch (e) {
+      log.warn({ nodeId: call.nodeId, hostname: parsed.hostname, err: (e as Error).message }, "http_get: SSRF guard blocked request");
       return {
-        output: { ok: false, error: "SSRF: private addresses are not allowed" },
+        output: { ok: false, error: (e as Error).message },
         claimedCostCents: 0,
       };
     }

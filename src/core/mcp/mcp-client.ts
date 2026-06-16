@@ -20,9 +20,11 @@
  * Side effect is inferred from the tool name / description heuristics; can be
  * overridden in the MCP server config.
  *
- * Security:
- *   - MCP tools are always "write-reversible" unless the name/desc contains
- *     a keyword that maps to a stricter class (delete, send, pay, …)
+ * Security (fail-closed):
+ *   - A tool is classified "read" ONLY if it positively matches a read keyword
+ *     (get/list/read/fetch/…). Anything we cannot positively recognize as read-only
+ *     defaults to "write-irreversible" so it REQUIRES approval — an unknown
+ *     third-party tool can never silently install as a harmless read.
  *   - The Supervisor signs every EffectResult — MCP tools are untrusted data
  *     sources the same way YAML capabilities are
  *   - No eval. The client speaks JSON-RPC only.
@@ -97,18 +99,33 @@ export interface McpServerConfig {
 
 // ── Side effect inference ─────────────────────────────────────────────────────
 
-const IRREVERSIBLE_KEYWORDS = ["delete", "destroy", "remove", "drop", "purge", "send_email", "send-email"];
-const SPEND_KEYWORDS = ["pay", "charge", "purchase", "buy", "transfer_money", "stripe"];
+const IRREVERSIBLE_KEYWORDS = ["delete", "destroy", "remove", "drop", "purge", "send_email", "send-email", "wipe", "truncate", "reset"];
+const SPEND_KEYWORDS = ["pay", "charge", "purchase", "buy", "transfer_money", "stripe", "refund", "invoice"];
 const MESSAGE_KEYWORDS = ["send_message", "post_message", "send_sms", "notify", "message"];
-const WRITE_KEYWORDS = ["create", "update", "write", "set", "put", "post", "add", "insert", "upsert", "patch"];
+const WRITE_KEYWORDS = ["create", "update", "write", "set", "put", "post", "add", "insert", "upsert", "patch", "exec", "run", "query", "modify", "edit", "rename", "move"];
+// Tools we can POSITIVELY recognize as read-only. Only these get the ungated "read"
+// class; everything else FAILS CLOSED (see below).
+const READ_KEYWORDS = ["get", "list", "read", "fetch", "search", "find", "view", "show", "describe", "lookup", "query_read", "retrieve", "status", "info"];
 
-function inferSideEffect(toolName: string, description: string = ""): SideEffectClass {
+/**
+ * Infer the side-effect class of an MCP tool from its name/description.
+ *
+ * SECURITY — fail-closed: an MCP server is third-party/untrusted. If we cannot
+ * POSITIVELY classify a tool as read-only, we default to `write-irreversible`, which
+ * makes the autonomy gate REQUIRE approval before the tool runs (unless the operator
+ * granted full autonomy). A tool like `wipeAccount`/`execSql` that we don't recognize
+ * must never silently install as a harmless `read`.
+ */
+export function inferSideEffect(toolName: string, description: string = ""): SideEffectClass {
   const combined = `${toolName} ${description}`.toLowerCase();
   if (SPEND_KEYWORDS.some(k => combined.includes(k))) return "spend";
   if (IRREVERSIBLE_KEYWORDS.some(k => combined.includes(k))) return "write-irreversible";
   if (MESSAGE_KEYWORDS.some(k => combined.includes(k))) return "message-human";
   if (WRITE_KEYWORDS.some(k => combined.includes(k))) return "write-reversible";
-  return "read";
+  // Positively read-only? (and not caught by any write/spend keyword above)
+  if (READ_KEYWORDS.some(k => combined.includes(k))) return "read";
+  // Unknown tool → fail closed: treat as irreversible so it gates for approval.
+  return "write-irreversible";
 }
 
 // ── Stdio MCP transport ───────────────────────────────────────────────────────

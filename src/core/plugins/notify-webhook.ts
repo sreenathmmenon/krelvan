@@ -18,27 +18,14 @@
 
 import { createHmac } from "node:crypto";
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
+import { assertPublicUrl } from "./ssrf-guard.js";
 import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("notify-webhook");
 
 const TIMEOUT_MS = 10_000;
 
-/** Patterns that indicate private / loopback addresses. */
-const PRIVATE_PATTERNS: RegExp[] = [
-  /^localhost$/i,
-  /^127\./,
-  /^10\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^192\.168\./,
-  /^0\.0\.0\.0$/,
-  /^::1$/,
-  /^\[:/,
-];
-
-function isPrivateHost(hostname: string): boolean {
-  return PRIVATE_PATTERNS.some((re) => re.test(hostname));
-}
+// (SSRF protection moved to the shared ssrf-guard.ts — see assertPublicUrl.)
 
 function buildBody(payload: unknown): string {
   if (typeof payload === "string") return payload;
@@ -79,11 +66,13 @@ export const notifyWebhookCapability: CapabilityPlugin = {
       };
     }
 
-    // ── SSRF guard ────────────────────────────────────────────────────────────
-    if (isPrivateHost(parsed.hostname)) {
-      log.warn({ nodeId: call.nodeId, hostname: parsed.hostname }, "notify_webhook: SSRF guard blocked private address");
+    // ── SSRF guard (resolves DNS, checks the actual IPs) ──────────────────────
+    try {
+      await assertPublicUrl(parsed.toString());
+    } catch (e) {
+      log.warn({ nodeId: call.nodeId, hostname: parsed.hostname, err: (e as Error).message }, "notify_webhook: SSRF guard blocked request");
       return {
-        output: { notified: false, status: 0, error: "SSRF: private addresses are not allowed" },
+        output: { notified: false, status: 0, error: (e as Error).message },
         claimedCostCents: 0,
       };
     }
