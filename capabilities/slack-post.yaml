@@ -1,0 +1,30 @@
+name: slack.post
+description: Post a message to a Slack channel using a Bot User OAuth token (chat.postMessage). More capable than an incoming webhook — one bot token posts to any channel it is invited to.
+sideEffect: message-human
+estimateCents: 1
+
+http:
+  url: "https://slack.com/api/chat.postMessage"
+  method: POST
+  headers:
+    Authorization: "Bearer {{secret:slack-bot-token}}"
+    Content-Type: "application/json; charset=utf-8"
+  body:
+    channel: "{{input.channel}}"
+    text: "{{input.message}}"
+
+input:
+  channel:
+    type: string
+    required: true
+    description: Channel ID (e.g. C0123456789) or name the bot has been invited to.
+  message:
+    type: string
+    required: true
+    description: The message text to post (Slack mrkdwn supported).
+
+# Slack returns HTTP 200 even on logical errors; the {ok:false} body is surfaced as the response.
+responseField: ok
+
+successCodes:
+  - 200

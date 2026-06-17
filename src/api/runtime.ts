@@ -21,6 +21,7 @@ import { Supervisor, type CapabilityPlugin, type SupervisorSnapshotHandle } from
 import { Compiler } from "../core/compiler/compiler.js";
 import { getLogger } from "../core/observability/logger.js";
 import type { LedgerStore } from "../core/ledger/store.js";
+import { verify } from "../core/ledger/store.js";
 import { validateManifest, type Manifest } from "../core/manifest/manifest.js";
 import { canonicalize } from "../core/ledger/canonical.js";
 import type { SignedManifest, AllowedCapability } from "../core/compiler/compiler.js";
@@ -33,6 +34,7 @@ import { Scheduler, ScheduleRegistry, validateCron, type ScheduleRecord } from "
 import { SecretStore } from "./secret-store.js";
 import { thinkCapability } from "../core/plugins/think.js";
 import { recallCapability, rememberCapability, identifyCapability, loadSoul, saveSoul } from "../core/plugins/memory-plugins.js";
+import { ragIngestCapability, ragSearchCapability } from "../core/plugins/rag-plugins.js";
 import { llmRouteCapability } from "../core/plugins/llm-route.js";
 import { webSearchCapability } from "../core/plugins/web-search.js";
 import { composeCapability } from "../core/plugins/compose.js";
@@ -716,6 +718,74 @@ export class KrelvanRuntime {
     return { algorithm: "hmac-sha256", nonRepudiable: false, keys: [] };
   }
 
+  /**
+   * Re-verify the full signed event chain of a run — the strongest "prove what happened"
+   * surface. Re-folds the ledger events and runs verify() against the active keyring
+   * (HMAC or Ed25519): checks hash-chaining, contiguous offsets, content-addresses, and
+   * every signature. Returns ok + a per-event signed count, or the first corruption found.
+   */
+  async verifyRun(runId: string): Promise<{ ok: true; runEvents: number; signedEvents: number; ledgerEvents: number; algorithm: string } | { ok: false; error: string; detail: string }> {
+    // The ledger is ONE hash-chained log per tenant (offsets are global, not per-run).
+    // Verifying the run therefore means verifying the whole chain it lives in — a stronger
+    // guarantee than a per-run slice: it proves the run's events sit in an intact,
+    // untampered, signed history with no gaps, reordering, or forged signatures.
+    const all = await this.store.read("default");
+    const runEvents = all.filter((e) => e.scope.runId === runId);
+    if (runEvents.length === 0) return { ok: false, error: "NOT_FOUND", detail: `no events for run ${runId}` };
+    const result = verify(all, this.ring);
+    const algorithm = this.ring instanceof Ed25519Keyring ? "ed25519" : "hmac-sha256";
+    if (!result.ok) return { ok: false, error: result.error.kind, detail: result.error.message };
+    return {
+      ok: true,
+      runEvents: runEvents.length,
+      signedEvents: runEvents.filter((e) => e.sig).length,
+      ledgerEvents: all.length,
+      algorithm,
+    };
+  }
+
+  /**
+   * Install a TEMPLATE — a whole pre-built agent: a signed manifest plus the YAML
+   * capabilities it needs. This is the "install a working agent in one click" path that
+   * turns the marketplace from a catalogue of parts into a catalogue of finished agents.
+   *
+   * Steps (each idempotent / best-effort so a partial state is recoverable):
+   *   1. Install each bundled YAML capability the template ships (skip if already present).
+   *   2. Import + sign the manifest as a new agent (reuses importManifest's validation).
+   *   3. Report which declared secrets are still unset, so the UI can prompt for them.
+   *
+   * The manifest is validated and signed exactly like any imported agent — the template
+   * cannot smuggle in an unvalidated graph.
+   */
+  installTemplate(template: {
+    manifest: Manifest;
+    capabilities?: { name: string; yaml: string }[];
+    secretRefs?: string[];
+  }): { ok: true; agent: AgentRecord; installedCapabilities: string[]; missingSecrets: string[] } | { ok: false; error: string; issues?: string[] } {
+    // 1) Install each YAML capability the template bundles (idempotent).
+    const installedCapabilities: string[] = [];
+    for (const cap of template.capabilities ?? []) {
+      const existing = this.capabilityRegistry.list().find((c) => c.name === cap.name);
+      if (existing) { installedCapabilities.push(cap.name); continue; }
+      const r = this.installYamlCapability(cap.name, cap.yaml);
+      if (!r.ok) return { ok: false, error: `capability '${cap.name}' failed to install: ${r.error}` };
+      installedCapabilities.push(cap.name);
+    }
+
+    // 2) Import + sign the manifest as an agent.
+    const imported = this.importManifest(template.manifest);
+    if (!imported.ok) return { ok: false, error: "invalid_manifest", issues: imported.issues };
+
+    // 3) Which declared secrets are still missing? (drives the "set these to finish" step)
+    const missingSecrets = [...new Set(template.secretRefs ?? [])].filter((s) => !this.secretStore.has(s));
+
+    log.info(
+      { agentId: imported.agent.id, name: imported.agent.signed.manifest.name, installedCapabilities, missingSecrets },
+      "template installed",
+    );
+    return { ok: true, agent: imported.agent, installedCapabilities, missingSecrets };
+  }
+
   // ── Plugin management public API ───────────────────────────────────────────
 
   /**
@@ -1302,6 +1372,14 @@ export class KrelvanRuntime {
     this.capabilityRegistry.registerBuiltin(composeCapability, {
       description: "Writes text via LLM given a topic and prior context — outputs polished prose or bullets.",
       useWhen: "drafting messages, summaries, reports, briefings, or any human-readable text output",
+    });
+    this.capabilityRegistry.registerBuiltin(ragIngestCapability, {
+      description: "Chunks + embeds text into this agent's vector knowledge base for later retrieval.",
+      useWhen: "ingestion step of a RAG agent: load docs/pages, then ingest them so future queries can ground on them",
+    });
+    this.capabilityRegistry.registerBuiltin(ragSearchCapability, {
+      description: "Embeds a question and retrieves the most relevant ingested chunks as context (with sources).",
+      useWhen: "query step of a RAG/support agent: retrieve grounding context before a think node answers and cites",
     });
     this.capabilityRegistry.registerBuiltin(emailSendCapability, {
       description: "Sends an email via Resend API or SMTP.",

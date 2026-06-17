@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "name": "RAG Support Bot",
+  "intent": "Answer a question from my ingested knowledge base, grounded only in the retrieved documents, and cite the source — with a signed record of every answer.",
+  "entry": "retrieve",
+  "runBudgetCents": 200,
+  "maxNodeVisits": 2,
+  "seed": {
+    "query": "How do I get a refund?",
+    "kb": "support-kb"
+  },
+  "nodes": [
+    {
+      "id": "retrieve",
+      "role": "Retrieve the most relevant knowledge-base chunks for the question.",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "rag.search", "sideEffect": "read", "budgetCents": 10 }
+      ]
+    },
+    {
+      "id": "answer",
+      "role": "You are a support agent. The retrieved knowledge-base context is in the CURRENT DATA TO ANALYZE section (key ending in .body) — each chunk is tagged with its source like [1] (source: handbook). The user's question is in the 'query' state value. Answer the question using ONLY the retrieved context. If the context does not contain the answer, say you don't have that information — do NOT make anything up. Output object keys: result (your answer to the user, one or two sentences, grounded in the context); grounded (true if the answer came from the context, false if the context lacked the answer); cited_source (the source tag of the chunk you used, e.g. 'handbook', or 'none').",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "think", "sideEffect": "read", "budgetCents": 80 }
+      ]
+    },
+    {
+      "id": "record",
+      "role": "Record this Q&A to memory for an audit trail.",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "remember", "sideEffect": "write-reversible", "budgetCents": 5 }
+      ]
+    }
+  ],
+  "edges": [
+    { "from": "retrieve", "to": "answer" },
+    { "from": "answer", "to": "record" }
+  ]
+}

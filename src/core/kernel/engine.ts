@@ -460,8 +460,14 @@ function nodeOutputState(
 ): Record<string, string | number | boolean | null> | null {
   const state: Record<string, string | number | boolean | null> = {};
   for (const [k, v] of Object.entries(outputs)) {
-    if (v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+    if (v === null || typeof v === "string" || typeof v === "boolean") {
       state[`${nodeId}.${k}`] = v;
+    } else if (typeof v === "number") {
+      // The tamper-evident ledger canonicalizer only accepts INTEGER numbers — a
+      // non-integer (a price, a similarity score, any float) would fail the whole run
+      // when NodeConcluded is written. Coerce to a string so NO capability can crash a
+      // run by returning a decimal. Integers pass through unchanged.
+      state[`${nodeId}.${k}`] = Number.isInteger(v) ? v : String(v);
     }
   }
   return Object.keys(state).length > 0 ? state : null;

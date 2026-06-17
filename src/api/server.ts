@@ -188,6 +188,7 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "POST",   pattern: ["api", "agents"],                  handler: (q, r) => handleCreateAgent(q, r, runtime) },
     { method: "POST",   pattern: ["api", "agents", "build"],         handler: (q, r) => handleBuildAgent(q, r, runtime) },
     { method: "POST",   pattern: ["api", "agents", "import"],        handler: (q, r) => handleImportAgent(q, r, runtime) },
+    { method: "POST",   pattern: ["api", "templates", "install"],    handler: (q, r) => handleInstallTemplate(q, r, runtime) },
     { method: "GET",    pattern: ["api", "agents", ":id"],           handler: (q, r, p) => handleGetAgent(q, r, p, runtime) },
     { method: "DELETE", pattern: ["api", "agents", ":id"],           handler: (q, r, p) => handleDeleteAgent(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "agents", ":id", "runs"],   handler: (q, r, p) => handleAgentRuns(q, r, p, runtime) },
@@ -198,6 +199,7 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "GET",    pattern: ["api", "runs", ":id"],             handler: (q, r, p) => handleGetRun(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "stream"],   handler: (q, r, p) => handleRunStream(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "events"],   handler: (q, r, p) => handleRunEvents(q, r, p, runtime) },
+    { method: "GET",    pattern: ["api", "runs", ":id", "verify"],   handler: (q, r, p) => handleVerifyRun(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "explain"],  handler: (q, r, p) => handleRunExplain(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "diagnose"], handler: (q, r, p) => handleRunDiagnose(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "runs", ":id", "retry"],    handler: (q, r, p) => handleRunRetry(q, r, p, runtime) },
@@ -353,6 +355,33 @@ async function handleImportAgent(req: IncomingMessage, res: ServerResponse, rt: 
     return;
   }
   json(res, 201, { agent: result.agent });
+}
+
+/**
+ * POST /api/templates/install — install a whole pre-built agent (a signed manifest +
+ * its YAML capabilities) in one shot. Body: { manifest, capabilities?:[{name,yaml}],
+ * secretRefs?:[] }. Returns the created agent + which secrets still need setting.
+ */
+async function handleInstallTemplate(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  const raw = await readBody(req);
+  let body: { manifest?: unknown; capabilities?: { name: string; yaml: string }[]; secretRefs?: string[] };
+  try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  if (!body.manifest || typeof body.manifest !== "object") { jsonError(res, 400, "manifest is required"); return; }
+
+  const result = rt.installTemplate({
+    manifest: body.manifest as Manifest,
+    capabilities: Array.isArray(body.capabilities) ? body.capabilities : [],
+    secretRefs: Array.isArray(body.secretRefs) ? body.secretRefs : [],
+  });
+  if (!result.ok) {
+    json(res, 422, { error: result.error, ...(result.issues ? { issues: result.issues } : {}) });
+    return;
+  }
+  json(res, 201, {
+    agent: result.agent,
+    installedCapabilities: result.installedCapabilities,
+    missingSecrets: result.missingSecrets,
+  });
 }
 
 async function handleGetAgent(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
@@ -529,7 +558,10 @@ async function handleRunEvents(_req: IncomingMessage, res: ServerResponse, param
   if (!record) { jsonError(res, 404, "run not found"); return; }
 
   const events = await rt.store.readRun("default", record.runId);
-  // Strip sig (large) but keep all other fields for the UI
+  // Expose the signature so the UI can PROVE each event is signed (the core differentiator),
+  // without bloating the payload: send a compact `signed` flag plus the signing key id,
+  // algorithm, and a short fingerprint of the signature value. The full signature stays in
+  // the ledger; verify the whole chain with GET /api/runs/:id/verify.
   const safe = events.map(e => ({
     id: e.id,
     offset: e.offset,
@@ -538,8 +570,27 @@ async function handleRunEvents(_req: IncomingMessage, res: ServerResponse, param
     ts: e.ts,
     nodeId: e.scope.nodeId,
     payload: e.payload,
+    signed: !!e.sig,
+    sig: e.sig
+      ? { keyId: e.sig.keyId, epoch: e.sig.epoch, fingerprint: String(e.sig.value).slice(0, 16) }
+      : null,
   }));
   json(res, 200, { events: safe, runId: record.runId });
+}
+
+/**
+ * GET /api/runs/:id/verify — re-verify the full signed ledger chain of a run. This is the
+ * "prove what happened" endpoint: re-folds the events and cryptographically verifies the
+ * hash-chain + every signature against the active keyring.
+ */
+async function handleVerifyRun(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const record = rt.runRegistry.get(params["id"] ?? "");
+  if (!record) { jsonError(res, 404, "run not found"); return; }
+  // Always 200 — the verification OUTCOME (ok true/false) is the payload, not an HTTP
+  // error. A 200 with {ok:false} means "the chain failed verification" (e.g. tampering),
+  // which is a legitimate, displayable result.
+  const result = await rt.verifyRun(record.runId);
+  json(res, 200, result);
 }
 
 async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {

@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
-  listCapabilities, installCapability, installCapabilityFile,
+  listCapabilities, installCapability, installCapabilityFile, installTemplate,
   enableCapability, disableCapability, uninstallCapability,
   listMcpServers, connectMcpServer, disconnectMcpServer,
   getCapabilitySource, updateCapabilityYaml,
@@ -483,10 +483,17 @@ function Connectors({ servers, onChange, flash }: { servers: McpServerRecord[]; 
 // ── Discover tab (marketplace) ───────────────────────────────────────────────
 function DiscoverTab({ catalog, q, installedNames, onInstalled, flash }: { catalog: CatalogEntry[]; q: string; installedNames: Set<string>; onInstalled: () => Promise<void>; flash: (m: string) => void }) {
   const items = catalog.filter(e => !q || `${e.name} ${e.title} ${e.oneLiner} ${e.category}`.toLowerCase().includes(q));
-  const official = items.filter(e => e.tier === "official");
-  const community = items.filter(e => e.tier === "community");
+  // Templates (whole installable agents) lead the marketplace — that's the headline.
+  const templates = items.filter(e => e.kind === "template");
+  const official = items.filter(e => e.kind !== "template" && e.tier === "official");
+  const community = items.filter(e => e.kind !== "template" && e.tier === "community");
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--s7)" }}>
+      {templates.length > 0 && (
+        <Section title="Agent templates" sub="A whole working agent in one click — graph, capabilities, and a signed record of every run">
+          <div className="cap-grid">{templates.map(e => <CatalogCard key={e.name} e={e} installed={false} onInstalled={onInstalled} flash={flash} />)}</div>
+        </Section>
+      )}
       <Section title="Official" sub="Signed by Krelvan — install with one click">
         <div className="cap-grid">{official.map(e => <CatalogCard key={e.name} e={e} installed={installedNames.has(e.name)} onInstalled={onInstalled} flash={flash} />)}</div>
       </Section>
@@ -504,6 +511,19 @@ function CatalogCard({ e, installed, onInstalled, flash }: { e: CatalogEntry; in
   async function install() {
     setBusy(true);
     try {
+      if (e.kind === "template" && e.manifest) {
+        const res = await installTemplate({ manifest: e.manifest, capabilities: e.capabilities ?? [], secretRefs: e.secretRefs ?? [] });
+        await onInstalled();
+        if (res.missingSecrets.length > 0) {
+          flash(`${e.title} installed — set ${res.missingSecrets.length} secret${res.missingSecrets.length > 1 ? "s" : ""} to finish`);
+          // Route to secrets, pre-filling the first one; the Secrets page lists the rest.
+          window.location.href = `/secrets?name=${encodeURIComponent(res.missingSecrets[0]!)}`;
+        } else {
+          flash(`${e.title} installed — opening the agent`);
+          window.location.href = `/canvas/${encodeURIComponent(res.agent.id)}`;
+        }
+        return;
+      }
       if (e.kind === "mcp" && e.mcp) { await connectMcpServer(e.mcp); }
       else if (e.kind === "yaml" && e.yaml) { await installCapability(e.name, e.yaml); }
       await onInstalled(); flash(`${e.title} installed`);
@@ -520,7 +540,10 @@ function CatalogCard({ e, installed, onInstalled, flash }: { e: CatalogEntry; in
       <p className="small" style={{ color: "var(--ink-soft)", margin: 0, lineHeight: 1.55 }}>{e.oneLiner}</p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)", alignItems: "center" }}>
         <SideEffectBadge effect={e.sideEffect} />
-        <span className="mono small" style={{ color: "var(--ink-muted)" }}>{e.kind === "mcp" ? "connector" : "YAML"}</span>
+        <span className="mono small" style={{ color: "var(--ink-muted)" }}>{e.kind === "mcp" ? "connector" : e.kind === "template" ? "agent" : "YAML"}</span>
+        {e.kind === "template" && e.capabilities && e.capabilities.length > 0 && (
+          <span className="badge badge-neutral" title="Capabilities this agent installs">{e.capabilities.length} tools</span>
+        )}
         {e.price
           ? <span className="badge badge-neutral" style={{ color: "var(--ink)" }}>{e.price}</span>
           : <span className="badge badge-done">free</span>}
@@ -541,7 +564,7 @@ function CatalogCard({ e, installed, onInstalled, flash }: { e: CatalogEntry; in
               </label>
             )}
             <button className="btn btn-primary btn-sm" disabled={busy || needAck} onClick={install} style={{ alignSelf: "flex-start" }}>
-              {busy ? "Installing…" : e.kind === "mcp" ? "Connect" : "Install"}
+              {busy ? "Installing…" : e.kind === "mcp" ? "Connect" : e.kind === "template" ? "Install agent" : "Install"}
             </button>
           </div>
         )}

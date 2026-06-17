@@ -114,8 +114,16 @@ export interface LLMClientConfig {
   baseUrl?: string;
 }
 
+export interface EmbedResponse {
+  vectors: number[][];
+  inputTokens: number;
+}
+
 export interface LLMClient {
   complete(req: LLMRequest): Promise<LLMResponse>;
+  /** Embed one or more texts into vectors. Optional — not every provider supports it
+   *  (Anthropic has no embeddings API); callers should check or use getEmbeddingsClient(). */
+  embed?(texts: string[], model: string): Promise<EmbedResponse>;
 }
 
 // ── Anthropic client ──────────────────────────────────────────────────────────
@@ -215,6 +223,23 @@ class OpenAILLMClient implements LLMClient {
     const text = (json.choices?.[0]?.message?.content ?? "").trim();
     return { text, inputTokens: json.usage?.prompt_tokens ?? 0, outputTokens: json.usage?.completion_tokens ?? 0 };
   }
+
+  /** OpenAI-compatible embeddings — POST /embeddings (text-embedding-3-small, etc.).
+   *  Batches all texts in one call. Works for OpenAI, OpenRouter, Together, vLLM, LM Studio. */
+  async embed(texts: string[], model: string): Promise<EmbedResponse> {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (this.apiKey) headers["authorization"] = `Bearer ${this.apiKey}`;
+    const outcome = await fetchWithRetry(
+      `${this.baseUrl}/embeddings`,
+      { method: "POST", headers, body: JSON.stringify({ model, input: texts }) },
+      { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
+    );
+    if (!outcome.ok) throw new Error(outcome.status === 0 ? `embeddings network error: ${outcome.rawBody}` : `embeddings API ${outcome.status}: ${outcome.rawBody}`);
+    const json = (await outcome.resp.json()) as { data?: { embedding: number[] }[]; usage?: { prompt_tokens: number } };
+    const vectors = (json.data ?? []).map((d) => d.embedding);
+    if (vectors.length !== texts.length) throw new Error(`embeddings: expected ${texts.length} vectors, got ${vectors.length}`);
+    return { vectors, inputTokens: json.usage?.prompt_tokens ?? 0 };
+  }
 }
 
 // ── Ollama native client ──────────────────────────────────────────────────────
@@ -264,6 +289,26 @@ class OllamaLLMClient implements LLMClient {
       inputTokens: json.prompt_eval_count ?? 0,
       outputTokens: json.eval_count ?? 0,
     };
+  }
+
+  /** Ollama native embeddings — POST /api/embeddings, one call per text (the native
+   *  endpoint embeds a single prompt). Local + free (e.g. nomic-embed-text, 768-dim). */
+  async embed(texts: string[], model: string): Promise<EmbedResponse> {
+    const vectors: number[][] = [];
+    for (const prompt of texts) {
+      const outcome = await fetchWithRetry(
+        `${this.baseUrl}/api/embeddings`,
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model, prompt }) },
+        { maxAttempts: 2, baseDelayMs: 500, timeoutMs: 120_000 },
+      );
+      if (!outcome.ok) {
+        throw new Error(outcome.status === 0 ? `embeddings network error (is Ollama running?): ${outcome.rawBody}` : `Ollama embeddings ${outcome.status}: ${outcome.rawBody}`);
+      }
+      const json = (await outcome.resp.json()) as { embedding?: number[] };
+      if (!Array.isArray(json.embedding) || json.embedding.length === 0) throw new Error("Ollama embeddings returned no vector");
+      vectors.push(json.embedding);
+    }
+    return { vectors, inputTokens: 0 };
   }
 }
 
@@ -362,6 +407,40 @@ export function getLLMClient(): LLMClient {
 
   _sharedClient = buildClient({ provider, apiKey, baseUrl });
   return _sharedClient;
+}
+
+/**
+ * Returns an EMBEDDINGS client + the model to use, resolved independently of the chat
+ * provider (Anthropic — the default chat provider — has NO embeddings API, so RAG must
+ * use a different one). Resolution:
+ *   KRELVAN_EMBED_PROVIDER / _MODEL / _BASE_URL / _API_KEY override everything; else
+ *   reuse the chat provider if it can embed (ollama/openai/compatible/gemini); else
+ *   fall back to local Ollama (nomic-embed-text) so RAG works offline with no key.
+ */
+export function getEmbeddingsClient(): { client: LLMClient & { embed: NonNullable<LLMClient["embed"]> }; model: string } {
+  const chatProvider = (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") as LLMProvider;
+  const explicit = process.env["KRELVAN_EMBED_PROVIDER"] as LLMProvider | undefined;
+  let provider: LLMProvider = explicit ?? chatProvider;
+  // Anthropic (or anything that can't embed) → fall back to local Ollama.
+  if (!explicit && provider === "anthropic") provider = "ollama";
+
+  const apiKey = process.env["KRELVAN_EMBED_API_KEY"] ?? process.env["KRELVAN_LLM_API_KEY"] ?? process.env["KRELVAN_ANTHROPIC_KEY"] ?? "";
+  const baseUrl = process.env["KRELVAN_EMBED_BASE_URL"] ?? (provider === (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") ? process.env["KRELVAN_LLM_BASE_URL"] : undefined);
+  const model = process.env["KRELVAN_EMBED_MODEL"] ?? defaultEmbedModel(provider);
+
+  const client = buildClient({ provider, apiKey, baseUrl });
+  if (typeof client.embed !== "function") {
+    throw new Error(`llm-client: embeddings provider "${provider}" does not support embed(). Set KRELVAN_EMBED_PROVIDER to ollama or openai.`);
+  }
+  return { client: client as LLMClient & { embed: NonNullable<LLMClient["embed"]> }, model };
+}
+
+function defaultEmbedModel(provider: LLMProvider): string {
+  switch (provider) {
+    case "ollama": return "nomic-embed-text";          // 768-dim, local, free
+    case "gemini": return "text-embedding-004";        // 768-dim
+    default:       return "text-embedding-3-small";    // openai/compatible, 1536-dim
+  }
 }
 
 /**

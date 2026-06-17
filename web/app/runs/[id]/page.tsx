@@ -3,7 +3,7 @@
 import { useState, useEffect, use, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getRun, getRunEvents, listApprovals, resolveApproval, explainRun, diagnoseRun, retryRunWithFix, startRun, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type PendingApproval, type RunExplanation, type RunDiagnosis, API_BASE } from "../../../lib/api";
+import { getRun, getRunEvents, verifyRun, listApprovals, resolveApproval, explainRun, diagnoseRun, retryRunWithFix, startRun, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type RunVerification, type PendingApproval, type RunExplanation, type RunDiagnosis, API_BASE } from "../../../lib/api";
 import { layoutGraph, graphBounds, edgePath } from "../../../lib/layout";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -49,7 +49,16 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [resolving, setResolving] = useState<string | null>(null);
+  const [verification, setVerification] = useState<RunVerification | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
+
+  async function runVerify() {
+    setVerifying(true);
+    try { setVerification(await verifyRun(id)); }
+    catch (err) { setVerification({ ok: false, error: "request_failed", detail: (err as Error).message }); }
+    finally { setVerifying(false); }
+  }
 
   // Initial load — fetch run + events once
   const load = useCallback(async () => {
@@ -526,19 +535,44 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           )}
           {events.length > 0 && (
             <div style={{
-              display: "grid", gridTemplateColumns: "40px 170px 1fr 90px",
+              display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap",
+              gap: "var(--s3)", padding: "var(--s3) var(--s4)", borderBottom: "1px solid var(--line)",
+              background: verification?.ok ? "color-mix(in srgb, var(--ok) 8%, var(--surface))" : "var(--surface-sunken)",
+            }}>
+              <div className="small" style={{ color: "var(--ink-soft)", lineHeight: 1.5 }}>
+                Every step is appended to a signed, hash-chained ledger.{" "}
+                {verification == null && <span className="soft">Click verify to re-check the cryptographic chain.</span>}
+                {verification?.ok && (
+                  <span style={{ color: "var(--ok)", fontWeight: 600 }}>
+                    ✓ Verified — {verification.signedEvents}/{verification.runEvents} run events signed, full {verification.ledgerEvents}-event chain intact ({verification.algorithm}).
+                  </span>
+                )}
+                {verification && !verification.ok && (
+                  <span style={{ color: "var(--danger)", fontWeight: 600 }}>
+                    ✗ Verification FAILED: {verification.error} — {verification.detail}
+                  </span>
+                )}
+              </div>
+              <button className="btn btn-sm" disabled={verifying} onClick={runVerify}>
+                {verifying ? "Verifying…" : verification ? "Re-verify" : "Verify signatures"}
+              </button>
+            </div>
+          )}
+          {events.length > 0 && (
+            <div style={{
+              display: "grid", gridTemplateColumns: "40px 170px 1fr 110px",
               gap: "var(--s3)", padding: "var(--s2) var(--s4)",
               background: "var(--surface-sunken)", borderBottom: "1px solid var(--line)",
             }}>
               <span className="micro" style={{ textAlign: "right" }}>#</span>
               <span className="micro">event</span>
               <span className="micro">detail</span>
-              <span className="micro" style={{ textAlign: "right" }}>author</span>
+              <span className="micro" style={{ textAlign: "right" }}>signature</span>
             </div>
           )}
           {events.map((e, i) => (
             <div key={e.id} style={{
-              display: "grid", gridTemplateColumns: "40px 170px 1fr 90px",
+              display: "grid", gridTemplateColumns: "40px 170px 1fr 110px",
               gap: "var(--s3)", padding: "var(--s3) var(--s4)",
               borderTop: "1px solid var(--line)",
               fontSize: 12, alignItems: "center",
@@ -550,7 +584,12 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                 {e.nodeId && <><span style={{ color: "var(--brand)", fontWeight: 500 }}>{e.nodeId}</span> · </>}
                 {eventDetail(e)}
               </span>
-              <span className="mono" style={{ textAlign: "right", fontSize: 11, color: "var(--ink-muted)" }}>{e.author.slice(0, 8)}</span>
+              {e.sig
+                ? <span className="mono" title={`signed by ${e.sig.keyId} (epoch ${e.sig.epoch}) — fingerprint ${e.sig.fingerprint}`}
+                    style={{ textAlign: "right", fontSize: 10.5, color: "var(--ok)", display: "inline-flex", gap: 4, justifyContent: "flex-end", alignItems: "center" }}>
+                    🔒 {e.sig.fingerprint.slice(0, 8)}
+                  </span>
+                : <span className="mono" style={{ textAlign: "right", fontSize: 11, color: "var(--ink-muted)" }}>{e.author.slice(0, 8)}</span>}
             </div>
           ))}
         </div>

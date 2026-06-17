@@ -1,20 +1,30 @@
 {
   "$schema": "https://krelvan.com/registry.schema.json",
   "version": 1,
-  "updated": "2026-06-14",
+  "updated": "2026-06-17",
   "capabilities": [
     {
       "name": "github",
       "title": "GitHub",
-      "oneLiner": "Read repos, issues and PRs — every tool becomes a capability.",
+      "oneLiner": "Read repos, issues and PRs \u2014 every tool becomes a capability.",
       "category": "Connectors",
       "sideEffect": "read",
       "tier": "official",
       "author": "Krelvan",
       "kind": "mcp",
-      "secretRefs": ["GITHUB_TOKEN"],
+      "secretRefs": [
+        "GITHUB_TOKEN"
+      ],
       "sourceUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/github",
-      "mcp": { "name": "github", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"], "defaultSideEffect": "read" }
+      "mcp": {
+        "name": "github",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-github"
+        ],
+        "defaultSideEffect": "read"
+      }
     },
     {
       "name": "filesystem",
@@ -26,7 +36,15 @@
       "author": "Krelvan",
       "kind": "mcp",
       "sourceUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
-      "mcp": { "name": "filesystem", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem"], "defaultSideEffect": "write-reversible" }
+      "mcp": {
+        "name": "filesystem",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem"
+        ],
+        "defaultSideEffect": "write-reversible"
+      }
     },
     {
       "name": "hn.top",
@@ -43,7 +61,7 @@
     {
       "name": "weather.fetch",
       "title": "Weather",
-      "oneLiner": "Current forecast for any latitude/longitude — no key needed.",
+      "oneLiner": "Current forecast for any latitude/longitude \u2014 no key needed.",
       "category": "Research",
       "sideEffect": "read",
       "tier": "official",
@@ -73,7 +91,9 @@
       "tier": "community",
       "author": "community",
       "kind": "yaml",
-      "secretRefs": ["DISCORD_WEBHOOK"],
+      "secretRefs": [
+        "DISCORD_WEBHOOK"
+      ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
       "yaml": "name: discord.notify\ndescription: Post a message to a Discord channel webhook\nsideEffect: message-human\nestimateCents: 0\nhttp:\n  url: \"{{secret:DISCORD_WEBHOOK}}\"\n  method: POST\n  body:\n    content: \"{{input.message}}\"\ninput:\n  message:\n    type: string\n    required: true\n"
     },
@@ -88,9 +108,258 @@
       "kind": "yaml",
       "price": "from $5/mo",
       "licenseUrl": "https://serpapi.com/",
-      "secretRefs": ["SERP_API_KEY"],
+      "secretRefs": [
+        "SERP_API_KEY"
+      ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
       "yaml": "name: serp.search\ndescription: Web search results via SerpApi (requires a SERP_API_KEY)\nsideEffect: read\nestimateCents: 0\nhttp:\n  url: https://serpapi.com/search.json?q={{input.q}}&api_key={{secret:SERP_API_KEY}}\n  method: GET\ninput:\n  q:\n    type: string\n    required: true\n"
+    },
+    {
+      "name": "price-monitor",
+      "title": "Price Monitor",
+      "oneLiner": "Watch a page on a schedule, detect price changes vs last run, and alert you \u2014 with a signed record of every check.",
+      "category": "Templates",
+      "sideEffect": "message-human",
+      "tier": "official",
+      "author": "Krelvan",
+      "kind": "template",
+      "secretRefs": [
+        "slack-bot-token",
+        "firecrawl-api-key"
+      ],
+      "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "manifest": {
+        "version": 1,
+        "name": "Price Monitor",
+        "intent": "Watch a product/price page on a schedule, detect when the price changes versus the last run, and alert me \u2014 keeping a signed record of every check.",
+        "entry": "recall_baseline",
+        "runBudgetCents": 200,
+        "maxNodeVisits": 2,
+        "seed": {
+          "url": "https://example.com",
+          "watch_label": "the watched page",
+          "remember_map": "last_price=analyze.current_price"
+        },
+        "nodes": [
+          {
+            "id": "recall_baseline",
+            "role": "Load the last recorded price for this page from memory (recall.last_price). On the very first run this will be empty.",
+            "autonomy": "full",
+            "capabilities": [
+              {
+                "name": "recall",
+                "sideEffect": "read",
+                "budgetCents": 5
+              }
+            ]
+          },
+          {
+            "id": "fetch_page",
+            "role": "Fetch the current contents of {{input.target_url}} so the price can be read.",
+            "autonomy": "full",
+            "capabilities": [
+              {
+                "name": "http_get",
+                "sideEffect": "read",
+                "budgetCents": 10
+              }
+            ]
+          },
+          {
+            "id": "analyze",
+            "role": "You are a price-watch analyst. Read TWO things: (A) the CURRENT DATA TO ANALYZE section contains the freshly-fetched page text \u2014 extract the price the page shows RIGHT NOW from there. (B) the MEMORY section contains 'last_price (from a PREVIOUS run)' \u2014 that is the OLD price from before. If the MEMORY section is absent or has no last_price, this is the FIRST run. Steps: 1) From the CURRENT page text only, extract the current price as a bare number string, e.g. \"39.99\" (no symbols/words). Put it in current_price. 2) Take the previous price from MEMORY's last_price. 3) Set changed to true ONLY if a previous last_price existed AND it is different from the current price; otherwise false. Rules: write prices as quoted strings; NEVER copy the memory value into current_price \u2014 current_price must come from the CURRENT page text; never invent a previous price like 0.00. Output object keys: current_price (the price on the page now, as a quoted string), changed (true/false), result (one sentence, e.g. 'Price dropped from 49.99 to 39.99' / 'No change, still 39.99' / 'First run, baseline set to 49.99').",
+            "autonomy": "full",
+            "capabilities": [
+              {
+                "name": "think",
+                "sideEffect": "read",
+                "budgetCents": 80
+              }
+            ]
+          },
+          {
+            "id": "alert",
+            "role": "Post the price-change summary to the operator.",
+            "autonomy": "full",
+            "capabilities": [
+              {
+                "name": "notify_webhook",
+                "sideEffect": "write-reversible",
+                "budgetCents": 10
+              }
+            ]
+          },
+          {
+            "id": "persist",
+            "role": "Persist the current price as the new baseline for the next run.",
+            "autonomy": "full",
+            "capabilities": [
+              {
+                "name": "remember",
+                "sideEffect": "write-reversible",
+                "budgetCents": 5
+              }
+            ]
+          }
+        ],
+        "edges": [
+          {
+            "from": "recall_baseline",
+            "to": "fetch_page"
+          },
+          {
+            "from": "fetch_page",
+            "to": "analyze"
+          },
+          {
+            "from": "analyze",
+            "to": "alert",
+            "when": {
+              "op": "eq",
+              "left": {
+                "op": "var",
+                "key": "analyze.changed"
+              },
+              "right": {
+                "op": "const",
+                "value": true
+              }
+            }
+          },
+          {
+            "from": "analyze",
+            "to": "persist"
+          },
+          {
+            "from": "alert",
+            "to": "persist"
+          }
+        ]
+      },
+      "capabilities": [
+        {
+          "name": "slack.post",
+          "yaml": "name: slack.post\ndescription: Post a message to a Slack channel using a Bot User OAuth token (chat.postMessage). More capable than an incoming webhook \u2014 one bot token posts to any channel it is invited to.\nsideEffect: message-human\nestimateCents: 1\n\nhttp:\n  url: \"https://slack.com/api/chat.postMessage\"\n  method: POST\n  headers:\n    Authorization: \"Bearer {{secret:slack-bot-token}}\"\n    Content-Type: \"application/json; charset=utf-8\"\n  body:\n    channel: \"{{input.channel}}\"\n    text: \"{{input.message}}\"\n\ninput:\n  channel:\n    type: string\n    required: true\n    description: Channel ID (e.g. C0123456789) or name the bot has been invited to.\n  message:\n    type: string\n    required: true\n    description: The message text to post (Slack mrkdwn supported).\n\n# Slack returns HTTP 200 even on logical errors; the {ok:false} body is surfaced as the response.\nresponseField: ok\n\nsuccessCodes:\n  - 200\n"
+        },
+        {
+          "name": "firecrawl.scrape",
+          "yaml": "name: firecrawl.scrape\ndescription: Scrape a single public URL to clean markdown using Firecrawl. Strips nav/ads/boilerplate so an agent can reason over real content. Use for price pages, articles, product pages.\nsideEffect: read\nestimateCents: 2\n\nhttp:\n  url: \"https://api.firecrawl.dev/v2/scrape\"\n  method: POST\n  headers:\n    Authorization: \"Bearer {{secret:firecrawl-api-key}}\"\n    Content-Type: \"application/json\"\n  body:\n    url: \"{{input.url}}\"\n    formats:\n      - markdown\n\ninput:\n  url:\n    type: string\n    required: true\n    description: The public URL to scrape (must be publicly reachable).\n\n# Firecrawl returns { success, data: { markdown, metadata, ... } }.\nresponseField: data.markdown\n\nsuccessCodes:\n  - 200\n"
+        }
+      ]
+    },
+    {
+      "name": "kb-ingest",
+      "title": "Knowledge Base Ingest",
+      "oneLiner": "Load a document into a named knowledge base so a RAG agent can answer from it.",
+      "category": "Templates",
+      "sideEffect": "write-reversible",
+      "tier": "official",
+      "author": "Krelvan",
+      "kind": "template",
+      "secretRefs": [],
+      "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+      "manifest": {
+        "version": 1,
+        "name": "Knowledge Base Ingest",
+        "intent": "Add a document to a named knowledge base so a RAG agent can answer questions grounded in it.",
+        "entry": "ingest",
+        "runBudgetCents": 100,
+        "maxNodeVisits": 2,
+        "seed": {
+          "kb": "support-kb"
+        },
+        "nodes": [
+          {
+            "id": "ingest",
+            "role": "Chunk and embed the provided text into the knowledge base.",
+            "autonomy": "full",
+            "capabilities": [
+              {
+                "name": "rag.ingest",
+                "sideEffect": "write-reversible",
+                "budgetCents": 20
+              }
+            ]
+          }
+        ],
+        "edges": []
+      },
+      "capabilities": []
+    },
+    {
+      "name": "support-bot",
+      "title": "RAG Support Bot",
+      "oneLiner": "Answer questions grounded ONLY in your ingested docs, cite the source, refuse when it doesn't know \u2014 with a signed record.",
+      "category": "Templates",
+      "sideEffect": "read",
+      "tier": "official",
+      "author": "Krelvan",
+      "kind": "template",
+      "secretRefs": [],
+      "recommendedModel": "a capable model (claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama) + an embeddings model (OpenAI text-embedding-3-small or Ollama nomic-embed-text)",
+      "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+      "manifest": {
+        "version": 1,
+        "name": "RAG Support Bot",
+        "intent": "Answer a question from my ingested knowledge base, grounded only in the retrieved documents, and cite the source \u2014 with a signed record of every answer.",
+        "entry": "retrieve",
+        "runBudgetCents": 200,
+        "maxNodeVisits": 2,
+        "seed": {
+          "query": "How do I get a refund?",
+          "kb": "support-kb"
+        },
+        "nodes": [
+          {
+            "id": "retrieve",
+            "role": "Retrieve the most relevant knowledge-base chunks for the question.",
+            "autonomy": "full",
+            "capabilities": [
+              {
+                "name": "rag.search",
+                "sideEffect": "read",
+                "budgetCents": 10
+              }
+            ]
+          },
+          {
+            "id": "answer",
+            "role": "You are a support agent. The retrieved knowledge-base context is in the CURRENT DATA TO ANALYZE section (key ending in .body) \u2014 each chunk is tagged with its source like [1] (source: handbook). The user's question is in the 'query' state value. Answer the question using ONLY the retrieved context. If the context does not contain the answer, say you don't have that information \u2014 do NOT make anything up. Output object keys: result (your answer to the user, one or two sentences, grounded in the context); grounded (true if the answer came from the context, false if the context lacked the answer); cited_source (the source tag of the chunk you used, e.g. 'handbook', or 'none').",
+            "autonomy": "full",
+            "capabilities": [
+              {
+                "name": "think",
+                "sideEffect": "read",
+                "budgetCents": 80
+              }
+            ]
+          },
+          {
+            "id": "record",
+            "role": "Record this Q&A to memory for an audit trail.",
+            "autonomy": "full",
+            "capabilities": [
+              {
+                "name": "remember",
+                "sideEffect": "write-reversible",
+                "budgetCents": 5
+              }
+            ]
+          }
+        ],
+        "edges": [
+          {
+            "from": "retrieve",
+            "to": "answer"
+          },
+          {
+            "from": "answer",
+            "to": "record"
+          }
+        ]
+      },
+      "capabilities": []
     }
   ]
 }

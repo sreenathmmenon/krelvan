@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "name": "Price Monitor",
+  "intent": "Watch a product/price page on a schedule, detect when the price changes versus the last run, and alert me — keeping a signed record of every check.",
+  "entry": "recall_baseline",
+  "runBudgetCents": 200,
+  "maxNodeVisits": 2,
+  "seed": {
+    "url": "https://example.com",
+    "watch_label": "the watched page",
+    "remember_map": "last_price=analyze.current_price"
+  },
+  "nodes": [
+    {
+      "id": "recall_baseline",
+      "role": "Load the last recorded price for this page from memory (recall.last_price). On the very first run this will be empty.",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "recall", "sideEffect": "read", "budgetCents": 5 }
+      ]
+    },
+    {
+      "id": "fetch_page",
+      "role": "Fetch the current contents of {{input.target_url}} so the price can be read.",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "http_get", "sideEffect": "read", "budgetCents": 10 }
+      ]
+    },
+    {
+      "id": "analyze",
+      "role": "You are a price-watch analyst. Read TWO things: (A) the CURRENT DATA TO ANALYZE section contains the freshly-fetched page text — extract the price the page shows RIGHT NOW from there. (B) the MEMORY section contains 'last_price (from a PREVIOUS run)' — that is the OLD price from before. If the MEMORY section is absent or has no last_price, this is the FIRST run. Steps: 1) From the CURRENT page text only, extract the current price as a bare number string, e.g. \"39.99\" (no symbols/words). Put it in current_price. 2) Take the previous price from MEMORY's last_price. 3) Set changed to true ONLY if a previous last_price existed AND it is different from the current price; otherwise false. Rules: write prices as quoted strings; NEVER copy the memory value into current_price — current_price must come from the CURRENT page text; never invent a previous price like 0.00. Output object keys: current_price (the price on the page now, as a quoted string), changed (true/false), result (one sentence, e.g. 'Price dropped from 49.99 to 39.99' / 'No change, still 39.99' / 'First run, baseline set to 49.99').",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "think", "sideEffect": "read", "budgetCents": 80 }
+      ]
+    },
+    {
+      "id": "alert",
+      "role": "Post the price-change summary to the operator.",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "notify_webhook", "sideEffect": "write-reversible", "budgetCents": 10 }
+      ]
+    },
+    {
+      "id": "persist",
+      "role": "Persist the current price as the new baseline for the next run.",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "remember", "sideEffect": "write-reversible", "budgetCents": 5 }
+      ]
+    }
+  ],
+  "edges": [
+    { "from": "recall_baseline", "to": "fetch_page" },
+    { "from": "fetch_page", "to": "analyze" },
+    { "from": "analyze", "to": "alert", "when": { "op": "eq", "left": { "op": "var", "key": "analyze.changed" }, "right": { "op": "const", "value": true } } },
+    { "from": "analyze", "to": "persist" },
+    { "from": "alert", "to": "persist" }
+  ]
+}

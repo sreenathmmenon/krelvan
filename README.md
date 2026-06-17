@@ -29,7 +29,9 @@ On top of that record, Krelvan does things only an agentic platform can:
 - 🧠 **Builds agents from natural language** — describe an outcome, get a real, validated agent graph.
 - 🔍 **Failure-reasoning** — when a run fails, Krelvan reasons over the signed log to find the *root cause*, the failing step, and a concrete fix.
 - ♻️ **Auto-retry-with-fix** — it rebuilds a *corrected* agent from that diagnosis and re-runs it. (In our tests: a failed run was diagnosed, fixed, re-run, and **completed**.)
-- 🧩 **A capability marketplace** — install tools (HTTP APIs, MCP servers) from a Git-based registry. Every capability is labelled with exactly what it can touch and when it pauses for your approval.
+- 🧩 **A marketplace of capabilities AND whole agents** — install a tool (HTTP API, MCP server) or a complete **agent template** (graph + its capabilities + the secrets it needs) from a Git-based registry, in one click. Every capability is labelled with exactly what it can touch and when it pauses for your approval.
+- 📦 **Ready-made agents** — a **Price Monitor** (watch a page, alert only when the price changes, on a schedule) and a **RAG Support Bot** (answer grounded only in your docs, cite the source, refuse when it doesn't know) — installable and signed.
+- 🔎 **RAG, built in** — `rag.ingest` + `rag.search` over a local vector store, with embeddings from OpenAI, Gemini, or **Ollama (offline, no key)**.
 - 🔌 **7 LLM providers** — Anthropic, OpenAI, Gemini, Groq, Mistral, Ollama (local), or any OpenAI-compatible gateway.
 
 ---
@@ -114,8 +116,13 @@ model. Anyone publishes a capability by opening a PR. Entries are real and insta
 
 - **YAML capabilities** — wrap any HTTP API (no code).
 - **MCP connectors** — connect GitHub, Slack, a filesystem, or any MCP server; every tool it exposes becomes a capability.
+- **Agent templates** — a whole pre-built agent (a signed manifest + the capabilities it needs). One click installs the capabilities, creates the agent, and tells you which secrets to set. Ships with **Price Monitor**, **RAG Support Bot**, and **Knowledge Base Ingest**.
 - **Deploy capabilities** — ship a site/app to **Vercel, Netlify, Cloudflare Pages, Render, or Railway** via the provider's deploy hook. These are `write-irreversible`, so an agent pauses for your approval before it ships.
 - **Free + paid** — paid entries carry pricing + a license link; the platform never touches the money.
+
+Authoring guide: [`docs/CAPABILITY_AUTHORING.md`](docs/CAPABILITY_AUTHORING.md). Every PR to the
+registry runs a validator ([`registry/validate.test.ts`](registry/validate.test.ts)) — the same pure
+validators the runtime uses — so a broken capability or template can't reach the Discover tab.
 
 The default registry is the official one:
 [`sreenathmmenon/krelvan-registry`](https://github.com/sreenathmmenon/krelvan-registry).
@@ -156,7 +163,7 @@ Point an install at your own fork with
 ```bash
 npm install
 npm run typecheck    # strict TS, clean
-npm test             # 223 / 226 pass (3 are live-model API tests that need a key)
+npm test             # 246 / 249 pass (3 are live-model API tests that need a key)
 npm run demo:ledger  # canvas + audit all fold from one log
 npm run demo:resume  # kill mid-run, resume — each irreversible effect runs EXACTLY once
 npm run demo:e2e     # a real 3-agent pipeline drives itself off the ledger
@@ -169,7 +176,7 @@ npm run demo:live    # (needs KRELVAN_ANTHROPIC_KEY) a real model proposes a wor
 
 ## Status — honest
 
-**Built & verified** (typecheck clean · 223/226 tests · web build green):
+**Built & verified** (typecheck clean · 246/249 tests · web build green):
 - Ledger + SQLite durable store (real on-disk crash/resume)
 - Identity, secrets & time (key rotation/revocation, secret broker, monotonic clock)
 - Capability plane (deny-by-default, autonomy gradient, supervisor co-sign)

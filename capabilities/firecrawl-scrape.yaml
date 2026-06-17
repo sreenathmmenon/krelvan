@@ -1,0 +1,27 @@
+name: firecrawl.scrape
+description: Scrape a single public URL to clean markdown using Firecrawl. Strips nav/ads/boilerplate so an agent can reason over real content. Use for price pages, articles, product pages.
+sideEffect: read
+estimateCents: 2
+
+http:
+  url: "https://api.firecrawl.dev/v2/scrape"
+  method: POST
+  headers:
+    Authorization: "Bearer {{secret:firecrawl-api-key}}"
+    Content-Type: "application/json"
+  body:
+    url: "{{input.url}}"
+    formats:
+      - markdown
+
+input:
+  url:
+    type: string
+    required: true
+    description: The public URL to scrape (must be publicly reachable).
+
+# Firecrawl returns { success, data: { markdown, metadata, ... } }.
+responseField: data.markdown
+
+successCodes:
+  - 200

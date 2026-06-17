@@ -40,11 +40,19 @@ export const thinkCapability: CapabilityPlugin = {
     const role = String(input["role"] ?? input[`${call.nodeId}.role`] ?? "You are a helpful assistant.");
     const focus = String(input["focus"] ?? input[`${call.nodeId}.focus`] ?? "");
 
-    // Extract output key names that the role explicitly asks the model to set.
-    // Pattern: "Set <key> to" or "set <key> to" anywhere in the role text.
-    // These become the mandatory outputs checklist shown to the model.
-    const outputKeyMatches = [...role.matchAll(/\bset (\w+) to\b/gi)];
-    const requiredOutputKeys = [...new Set(outputKeyMatches.map(m => m[1]))];
+    // Extract output key names that the role explicitly asks the model to set, from two
+    // patterns: (1) prose "set <key> to ...", and (2) an explicit listing
+    // "Output [object] keys: a (...), b (...), c". Both feed the mandatory-outputs
+    // checklist shown to the model, so well-specified roles get reliable structured output.
+    const requiredKeySet = new Set<string>();
+    for (const m of role.matchAll(/\bset (\w+) to\b/gi)) if (m[1]) requiredKeySet.add(m[1]);
+    const listMatch = role.match(/output\s+(?:object\s+)?keys?\s*:?\s*([^.]+)/i);
+    if (listMatch?.[1]) {
+      for (const m of listMatch[1].matchAll(/\b([a-z][a-z0-9_]*)\b/gi)) {
+        if (m[1] && m[1].length > 2) requiredKeySet.add(m[1]);
+      }
+    }
+    const requiredOutputKeys = [...requiredKeySet];
 
     // Build focused data payload for the model.
     // Priority order:
@@ -55,13 +63,20 @@ export const thinkCapability: CapabilityPlugin = {
 
     const bodyEntries: string[] = [];
     const otherEntries: string[] = [];
+    const memoryEntries: string[] = [];
 
     for (const [k, v] of Object.entries(input)) {
       if (k.startsWith("_")) continue;
-      // Skip internal/metadata keys that add noise but no domain signal
+      // Skip internal/metadata keys that add noise but no domain signal.
+      // NOTE: recalled FACTS (recall.<name>, e.g. recall.last_price) are intentionally
+      // KEPT — they are the cross-run memory a memory-aware agent must reason over. Only
+      // recall *bookkeeping* (episode_count, last_run_id, last_summary) is dropped.
+      const isRecallBookkeeping =
+        k.endsWith(".recall.episode_count") || k.endsWith(".recall.last_run_id") ||
+        k.endsWith(".recall.last_summary") || k.endsWith(".recall.analyze");
       const isNoise = k.endsWith(".ok") || k.endsWith(".status") || k.endsWith(".contentType") ||
         k.endsWith(".truncated") || k.endsWith(".headers") || k.endsWith(".role") ||
-        k.includes(".recall.") || k.includes(".remembered") || k.includes(".episodeCount") ||
+        isRecallBookkeeping || k.includes(".remembered") || k.includes(".episodeCount") ||
         k.includes(".factsUpdated") || k === "role" || k === "focus";
       if (isNoise) continue;
 
@@ -70,7 +85,13 @@ export const thinkCapability: CapabilityPlugin = {
         ? serialised.slice(0, MAX_VALUE_CHARS) + `… [truncated, ${serialised.length} chars total]`
         : serialised;
 
-      if (k.endsWith(".body")) {
+      // Recalled facts (recall.<name>) are PREVIOUS-RUN values — present them in their
+      // own clearly-labelled section so the model never conflates "what I remembered
+      // last time" with "what I just fetched this time". The bare fact name is shown.
+      const recallMatch = k.match(/\.recall\.([a-z0-9_]+)$/i) ?? k.match(/^recall\.([a-z0-9_]+)$/i);
+      if (recallMatch?.[1]) {
+        memoryEntries.push(`  ${recallMatch[1]} (from a PREVIOUS run): ${truncated}`);
+      } else if (k.endsWith(".body")) {
         bodyEntries.push(`[${k}]\n${truncated}`);
       } else {
         otherEntries.push(`  ${k}: ${truncated}`);
@@ -78,7 +99,10 @@ export const thinkCapability: CapabilityPlugin = {
     }
 
     const dataSection = [
-      ...(bodyEntries.length > 0 ? ["=== DATA TO ANALYZE ===", ...bodyEntries] : []),
+      ...(memoryEntries.length > 0
+        ? ["=== MEMORY (values remembered from PREVIOUS runs — NOT the current data) ===", ...memoryEntries, ""]
+        : []),
+      ...(bodyEntries.length > 0 ? ["=== CURRENT DATA TO ANALYZE (freshly fetched this run) ===", ...bodyEntries] : []),
       ...(otherEntries.length > 0 ? ["=== OTHER STATE ===", ...otherEntries] : []),
     ].join("\n");
 
@@ -156,13 +180,28 @@ export const thinkCapability: CapabilityPlugin = {
     // Spread domain-specific output keys from parsed.outputs into the top-level output.
     // Only scalar values (string, number, boolean, null) are allowed — objects/arrays
     // are silently dropped here (the kernel projector enforces the same constraint).
+    //
+    // The canonical ledger only accepts INTEGER numbers (money is stored as integer
+    // minor-units or as strings). A model that emits a non-integer like 49.99 would
+    // otherwise fail the whole run when the state is canonicalized. So we coerce any
+    // non-integer number to its string form here — defensive for every numeric agent.
     const domainOutputs: Record<string, string | number | boolean | null> = {};
+    const RESERVED = new Set(["thought", "result", "next", "outputs"]);
+    const coerce = (k: string, v: unknown): void => {
+      if (typeof v === "number") domainOutputs[k] = Number.isInteger(v) ? v : String(v);
+      else if (v === null || typeof v === "string" || typeof v === "boolean") domainOutputs[k] = v;
+    };
+    // 1) Preferred location: a nested "outputs" object.
     if (parsed.outputs && typeof parsed.outputs === "object") {
-      for (const [k, v] of Object.entries(parsed.outputs)) {
-        if (v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
-          domainOutputs[k] = v;
-        }
-      }
+      for (const [k, v] of Object.entries(parsed.outputs)) coerce(k, v);
+    }
+    // 2) Robustness: many models (esp. local ones) FLATTEN domain keys to the top level
+    //    instead of nesting them under "outputs". Capture any non-reserved top-level
+    //    scalar key too, so e.g. {"changed": false, "current_price": "39.99"} works
+    //    whether nested or flat. Nested values win on conflict.
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (RESERVED.has(k) || k in domainOutputs) continue;
+      coerce(k, v);
     }
 
     return {

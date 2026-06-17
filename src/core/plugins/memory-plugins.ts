@@ -199,22 +199,57 @@ export const rememberCapability: CapabilityPlugin = {
     const nextVersion = Math.max(0, ...[...facts.values()].map(f => f.version)) + 1;
     let updated = 0;
 
-    for (const [k, v] of Object.entries(input)) {
-      // Promote run state keys ending in .result or .output as semantic facts
-      if ((k.endsWith(".result") || k.endsWith(".output")) && v !== null) {
-        const factKey = k.replace(/\.(result|output)$/, "").replace(".", "_");
-        if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
-          facts.set(factKey, {
-            key: factKey,
-            value: v,
-            derivedFrom: [runId],
-            provenance: "tool-observed",
-            distilledBy: "remember-plugin",
-            version: nextVersion,
-            ts: Date.now(),
+    // DETERMINISTIC mapping (no LLM): a node role / seed can set `remember_map` to a
+    // comma-separated list of `factName=stateKey` pairs. Each fact is set to the CURRENT
+    // value of that state key. This is the reliable way to persist a value an upstream
+    // node computed (e.g. remember_map="last_price=analyze.current_price") without
+    // depending on the model to echo it into a specially-named output key.
+    const remMap = input["remember_map"];
+    if (typeof remMap === "string" && remMap.trim()) {
+      for (const pair of remMap.split(",")) {
+        const eq = pair.indexOf("=");
+        if (eq <= 0) continue;
+        const factName = pair.slice(0, eq).trim();
+        const srcKey = pair.slice(eq + 1).trim();
+        const val = input[srcKey];
+        if (/^[a-z0-9_]+$/i.test(factName) && (typeof val === "string" || typeof val === "number" || typeof val === "boolean")) {
+          facts.set(factName, {
+            key: factName, value: val, derivedFrom: [runId],
+            provenance: "tool-observed", distilledBy: "remember-plugin", version: nextVersion, ts: Date.now(),
           });
           updated++;
         }
+      }
+    }
+
+    for (const [k, v] of Object.entries(input)) {
+      if (v === null || !(typeof v === "string" || typeof v === "number" || typeof v === "boolean")) continue;
+
+      // Two promotion conventions:
+      //  1. EXPLICIT (preferred): a key like "<node>.remember_<name>" stores a durable
+      //     fact named exactly "<name>", recallable next run as recall.<name>. This lets
+      //     an agent name its own cross-run state (e.g. a price baseline) deterministically
+      //     instead of relying on the node-id-derived heuristic below.
+      //  2. HEURISTIC (legacy): any key ending in ".result"/".output" becomes a fact named
+      //     after the producing node.
+      const explicit = k.match(/\.remember_([a-z0-9_]+)$/i);
+      let factKey: string | null = null;
+      if (explicit?.[1]) {
+        factKey = explicit[1];
+      } else if (k.endsWith(".result") || k.endsWith(".output")) {
+        factKey = k.replace(/\.(result|output)$/, "").replace(".", "_");
+      }
+      if (factKey) {
+        facts.set(factKey, {
+          key: factKey,
+          value: v,
+          derivedFrom: [runId],
+          provenance: "tool-observed",
+          distilledBy: "remember-plugin",
+          version: nextVersion,
+          ts: Date.now(),
+        });
+        updated++;
       }
     }
 

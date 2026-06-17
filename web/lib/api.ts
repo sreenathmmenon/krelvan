@@ -92,6 +92,17 @@ export interface LedgerEvent {
   ts: number;
   nodeId?: string;
   payload: Record<string, unknown>;
+  signed?: boolean;
+  sig?: { keyId: string; epoch: number; fingerprint: string } | null;
+}
+
+export type RunVerification =
+  | { ok: true; runEvents: number; signedEvents: number; ledgerEvents: number; algorithm: string }
+  | { ok: false; error: string; detail: string };
+
+/** Re-verify the run's signed ledger chain (the "prove what happened" action). */
+export async function verifyRun(runId: string): Promise<RunVerification> {
+  return apiFetch<RunVerification>(`/api/runs/${runId}/verify`);
 }
 
 export interface RunManifest {
@@ -277,6 +288,27 @@ export async function installCapabilityFile(
   const data = await res.json() as { capability?: CapabilityRecord; error?: string; detail?: string };
   if (!res.ok) throw new Error(data.detail ?? data.error ?? `HTTP ${res.status}`);
   return data.capability!;
+}
+
+export interface TemplateInstallResult {
+  agent: AgentRecord;
+  installedCapabilities: string[];
+  missingSecrets: string[];
+}
+
+/**
+ * Install a whole agent template: the signed manifest + the YAML capabilities it needs,
+ * in one call. Returns the created agent and which secrets still need setting.
+ */
+export async function installTemplate(payload: {
+  manifest: unknown;
+  capabilities?: { name: string; yaml: string }[];
+  secretRefs?: string[];
+}): Promise<TemplateInstallResult> {
+  return apiFetch<TemplateInstallResult>("/api/templates/install", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function enableCapability(name: string): Promise<CapabilityRecord> {

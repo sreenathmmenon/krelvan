@@ -31,7 +31,7 @@
     "start": "node dist/api/index.js",
     "up": "node bin/krelvan.mjs up",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "test": "node --import tsx --test \"src/**/*.test.ts\" \"templates/**/*.test.ts\" \"registry/**/*.test.ts\"",
     "demo:ledger": "tsx src/demo/ledger-inversion.ts",
     "demo:resume": "tsx src/demo/kill-and-resume.ts",
     "demo:e2e": "tsx src/demo/end-to-end.ts",
