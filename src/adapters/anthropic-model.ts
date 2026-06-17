@@ -140,11 +140,29 @@ export class AnthropicModel implements ModelPort {
       : [];
 
     const system = [
-      "You are a manifest compiler. Given a user's intent, output a complete agent manifest.",
-      "Pick capabilities by matching their descriptions to the intent. Only use names from the capability list.",
-      "autonomy: full=read, act-with-veto=message-human (requires approval before sending), suggest=irreversible writes.",
+      "You are a manifest compiler. Given a user's intent, output a complete agent manifest as a graph of nodes.",
       "",
-      "CAPABILITIES:",
+      "RULES (follow EXACTLY):",
+      "- Each node has: id, role, autonomy, capabilities.",
+      "  * id = a short identifier YOU invent for the step, e.g. \"fetch\", \"summarize\", \"notify\". NEVER a capability name.",
+      "  * role = a plain-English instruction describing what the step does, e.g. \"Fetch the page contents\". NEVER a capability name.",
+      "  * capabilities = a list; each item's name MUST be chosen from the CAPABILITIES list below (use the exact name). Set sideEffect to that capability's listed side-effect.",
+      "- entry = the id of the FIRST node. It MUST exactly match one of your node ids.",
+      "- Pick capabilities by matching their descriptions to the intent. Every node should have at least one capability.",
+      "- autonomy: full=read-only steps, act-with-veto=steps that message a human (user reviews before send), suggest=irreversible writes/spend.",
+      "",
+      "EXAMPLE — intent: \"fetch a webpage and summarize it for me\":",
+      "{",
+      "  \"version\": 1, \"name\": \"Page Summarizer\", \"intent\": \"...\", \"entry\": \"fetch\",",
+      "  \"runBudgetCents\": 100, \"maxNodeVisits\": 5,",
+      "  \"nodes\": [",
+      "    { \"id\": \"fetch\", \"role\": \"Fetch the webpage content\", \"autonomy\": \"full\", \"capabilities\": [ { \"name\": \"http_get\", \"sideEffect\": \"read\", \"budgetCents\": 10 } ] },",
+      "    { \"id\": \"summarize\", \"role\": \"Summarize the fetched page into a few bullets\", \"autonomy\": \"full\", \"capabilities\": [ { \"name\": \"think\", \"sideEffect\": \"read\", \"budgetCents\": 50 } ] }",
+      "  ],",
+      "  \"edges\": [ { \"from\": \"fetch\", \"to\": \"summarize\" } ]",
+      "}",
+      "",
+      "CAPABILITIES (use only these names):",
       capDescriptions,
       ...agentLines,
     ].join("\n");
@@ -252,10 +270,15 @@ export function parseManifestProposal(text: string): Manifest {
       to: (nodes[i + 1] as Record<string, unknown>)["id"],
     }));
   }
-  if (typeof m.entry !== "string") {
-    // Default entry to the first node id if present.
-    const firstNode = m.nodes[0] as Record<string, unknown> | undefined;
-    m.entry = typeof firstNode?.["id"] === "string" ? firstNode["id"] : "";
+  // Entry must be a REAL node id. Local models often invent an entry name that matches
+  // no node (e.g. "start_monitoring"), or set it to a capability name — both fail
+  // compilation. Validate against actual node ids and fall back to the first node.
+  {
+    const nodeIds = new Set((m.nodes as Record<string, unknown>[]).map((n) => n["id"]).filter((x): x is string => typeof x === "string"));
+    const firstId = (m.nodes[0] as Record<string, unknown> | undefined)?.["id"];
+    if (typeof m.entry !== "string" || !nodeIds.has(m.entry)) {
+      m.entry = typeof firstId === "string" ? firstId : "";
+    }
   }
   if (typeof m.name !== "string" || !m.name) m.name = "unnamed-agent";
   if (typeof m.intent !== "string") m.intent = "";
@@ -272,22 +295,71 @@ export function parseManifestProposal(text: string): Manifest {
   };
   const capDefaultSideEffect: Record<string, string> = {
     think: "read", web_search: "read", http_get: "read", recall: "read", llm_route: "read",
-    remember: "write", http_post: "write", compose: "read",
-    email_send: "write-reversible", telegram_send: "write-reversible",
-    slack_send: "write-reversible", notify_webhook: "write-reversible", text_transform: "read",
+    compose: "read", text_transform: "read",
+    remember: "write-reversible", http_post: "write-reversible", notify_webhook: "write-reversible",
+    email_send: "message-human", telegram_send: "message-human", slack_send: "message-human",
   };
+  const ALL_CAP_NAMES = new Set(Object.keys(capDefaultSideEffect));
   for (const node of m.nodes as Record<string, unknown>[]) {
     if (!Array.isArray(node["capabilities"])) continue;
+    // Local models often put a CAPABILITY NAME in `role` instead of a natural-language
+    // instruction (e.g. role:"http_get"). Replace such a role with a readable instruction
+    // derived from the node's capabilities, so the canvas + audit stay meaningful.
+    const roleVal = node["role"];
+    if (typeof roleVal !== "string" || !roleVal.trim() || ALL_CAP_NAMES.has(roleVal.trim())) {
+      const capNamesOnNode = (node["capabilities"] as Record<string, unknown>[])
+        .map((c) => c["name"]).filter((x): x is string => typeof x === "string");
+      node["role"] = capNamesOnNode.length > 0
+        ? `Use ${capNamesOnNode.join(", ")} to accomplish this step.`
+        : "Perform this step.";
+    }
+    // Snap capability names to known built-ins. Local models that don't honour the JSON
+    // schema enum often emit a near-miss (e.g. "text.transform" for "text_transform",
+    // "http.get" for "http_get"). Normalise dot/underscore variants to the real name;
+    // drop any capability that still doesn't resolve (a node may end up with none).
+    const snap = (name: string): string | null => {
+      if (ALL_CAP_NAMES.has(name)) return name;
+      const us = name.replace(/\./g, "_");
+      if (ALL_CAP_NAMES.has(us)) return us;
+      const dot = name.replace(/_/g, ".");
+      if (ALL_CAP_NAMES.has(dot)) return dot;
+      return null;
+    };
+    node["capabilities"] = (node["capabilities"] as Record<string, unknown>[]).filter((cap) => {
+      const nm = typeof cap["name"] === "string" ? snap(cap["name"]) : null;
+      if (nm === null) return false;
+      cap["name"] = nm;
+      return true;
+    });
     for (const cap of node["capabilities"] as Record<string, unknown>[]) {
       if (typeof cap["budgetCents"] !== "number" || !Number.isInteger(cap["budgetCents"]) || cap["budgetCents"] < 5) {
         const name = typeof cap["name"] === "string" ? cap["name"] : "";
         cap["budgetCents"] = capDefaultBudget[name] ?? 50;
       }
-      if (typeof cap["sideEffect"] !== "string" || !cap["sideEffect"]) {
-        const name = typeof cap["name"] === "string" ? cap["name"] : "";
-        cap["sideEffect"] = capDefaultSideEffect[name] ?? "read";
-      }
+      // ALWAYS set sideEffect from the canonical map — the model often emits a wrong or
+      // "none" value (e.g. compose:"none"), which fails the compiler's SIDE_EFFECT check.
+      const name = typeof cap["name"] === "string" ? cap["name"] : "";
+      if (capDefaultSideEffect[name]) cap["sideEffect"] = capDefaultSideEffect[name];
+      else if (typeof cap["sideEffect"] !== "string" || !cap["sideEffect"]) cap["sideEffect"] = "read";
     }
+  }
+
+  // Drop nodes that ended up with NO usable capabilities (they can't do anything) and
+  // any node missing an id. Then re-point entry/edges at surviving nodes so the graph
+  // stays connected and runnable.
+  const survivors = (m.nodes as Record<string, unknown>[]).filter(
+    (n) => typeof n["id"] === "string" && Array.isArray(n["capabilities"]) && (n["capabilities"] as unknown[]).length > 0,
+  );
+  if (survivors.length > 0 && survivors.length !== (m.nodes as unknown[]).length) {
+    const keptIds = new Set(survivors.map((n) => n["id"]));
+    m.nodes = survivors;
+    // re-chain edges among survivors in declaration order
+    m.edges = survivors.slice(0, -1).map((n, i) => ({ from: n["id"], to: survivors[i + 1]!["id"] }));
+    if (!keptIds.has(m.entry)) m.entry = survivors[0]!["id"];
+  } else {
+    // keep edges only between existing nodes
+    const ids = new Set((m.nodes as Record<string, unknown>[]).map((n) => n["id"]));
+    m.edges = (m.edges as Record<string, unknown>[]).filter((e) => ids.has(e["from"]) && ids.has(e["to"]));
   }
 
   // Coerce/normalize into the Manifest shape; the compiler does the real validation.

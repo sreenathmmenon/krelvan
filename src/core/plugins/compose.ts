@@ -110,15 +110,30 @@ export const composeCapability: CapabilityPlugin = {
       model,
       maxTokens: style === "detailed" ? 2048 : 1024,
       temperature: 0.4,
+      plainText: true,
     });
 
-    const words = response.text.split(/\s+/).filter(Boolean).length;
+    // Some models still wrap prose in a JSON object despite the instruction; unwrap it so
+    // the user gets clean text. We extract a likely text field or the first string value.
+    let text = response.text.trim();
+    if (text.startsWith("{") && text.endsWith("}")) {
+      try {
+        const obj = JSON.parse(text) as Record<string, unknown>;
+        const pick = obj["text"] ?? obj["result"] ?? obj["output"] ?? obj["translation"] ??
+          Object.values(obj).find((v) => typeof v === "string");
+        if (typeof pick === "string" && pick.trim()) text = pick.trim();
+      } catch { /* not JSON after all — keep as-is */ }
+    }
+
+    const words = text.split(/\s+/).filter(Boolean).length;
     const costCents = estimateCostCents(provider, model, response.inputTokens, response.outputTokens);
 
     log.info({ nodeId: call.nodeId, words, costCents }, "compose: done");
 
+    // Expose the composed text under BOTH `result` (the conventional final-output key the
+    // UI/users look for) and `text` (back-compat).
     return {
-      output: { text: response.text, words, model },
+      output: { result: text, text, words, model },
       claimedCostCents: Math.max(costCents, 1),
     };
   },

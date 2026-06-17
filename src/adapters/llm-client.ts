@@ -100,6 +100,12 @@ export interface LLMRequest {
    * The response `.text` will be valid JSON matching the schema.
    */
   schema?: { name: string; description?: string; schema: Record<string, unknown> };
+  /**
+   * Ask for PLAIN TEXT output (prose), not JSON. Matters for Ollama: its client otherwise
+   * forces `format:"json"` on every call, which wraps a translation/haiku/summary in a JSON
+   * object. Set this for free-text generations (compose, etc.). Ignored when `schema` is set.
+   */
+  plainText?: boolean;
 }
 
 export interface LLMResponse {
@@ -250,13 +256,16 @@ class OllamaLLMClient implements LLMClient {
   async complete(req: LLMRequest): Promise<LLMResponse> {
     // Ollama native API — format:"json" forces valid JSON; passing the full schema
     // constrains the output to match it (supported in Ollama ≥0.4).
-    const body = {
+    // format: a schema constrains to that shape; plainText asks for prose (no format);
+    // otherwise default to "json" (the think/route/compiler callers parse JSON).
+    const format = req.schema ? req.schema.schema : req.plainText ? undefined : "json";
+    const body: Record<string, unknown> = {
       model: req.model,
       messages: [{ role: "system", content: req.system }, ...req.messages],
       stream: false,
-      format: req.schema ? req.schema.schema : "json",
       options: { temperature: req.temperature, num_predict: req.maxTokens },
     };
+    if (format !== undefined) body["format"] = format;
 
     // Ollama local inference can be slow on large prompts — allow up to 10 minutes.
     const outcome = await fetchWithRetry(
