@@ -33,11 +33,11 @@ test("price-monitor has the conditional alert edge (alert fires only when change
   const alertEdge = manifest.edges.find(e => e.to === "alert");
   assert.ok(alertEdge, "there must be an edge into the alert node");
   assert.ok(alertEdge!.when, "the alert edge MUST be conditional (only alert on a change)");
-  // The gate is changed == true.
-  const w = alertEdge!.when as { op: string; left?: { op: string; key?: string }; right?: { op: string; value?: unknown } };
-  assert.equal(w.op, "eq");
-  assert.equal(w.left?.key, "analyze.changed");
-  assert.equal(w.right?.value, true);
+  // The gate is DETERMINISTIC (injection-proof): it compares the extracted current_price
+  // to the recalled baseline in the engine, never trusting an LLM-set 'changed' flag.
+  const json = JSON.stringify(alertEdge!.when);
+  assert.match(json, /"key":"analyze\.current_price"/, "alert gate must compare the current price");
+  assert.match(json, /"key":"recall_baseline\.recall\.last_price"/, "alert gate must compare against the recalled baseline");
 });
 
 test("price-monitor persists a baseline deterministically (remember_map in seed)", () => {
