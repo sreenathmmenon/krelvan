@@ -36,6 +36,7 @@ import { AdminAuth } from "./admin-auth.js";
 import { thinkCapability } from "../core/plugins/think.js";
 import { recallCapability, rememberCapability, identifyCapability, loadSoul, saveSoul } from "../core/plugins/memory-plugins.js";
 import { ragIngestCapability, ragSearchCapability } from "../core/plugins/rag-plugins.js";
+import { wikiIngestCapability, wikiQueryCapability } from "../core/plugins/wiki-plugins.js";
 import { llmRouteCapability } from "../core/plugins/llm-route.js";
 import { webSearchCapability } from "../core/plugins/web-search.js";
 import { composeCapability } from "../core/plugins/compose.js";
@@ -1390,6 +1391,14 @@ export class KrelvanRuntime {
     this.capabilityRegistry.registerBuiltin(ragSearchCapability, {
       description: "Embeds a question and retrieves the most relevant ingested chunks as context (with sources).",
       useWhen: "query step of a RAG/support agent: retrieve grounding context before a think node answers and cites",
+    });
+    this.capabilityRegistry.registerBuiltin(wikiIngestCapability, {
+      description: "Compiles a source into a persistent, interlinked markdown wiki — creates/updates entity + concept pages, maintains an index, flags contradictions. Knowledge accumulates instead of being re-chunked per query.",
+      useWhen: "ingest step of an LLM-Wiki agent: after a think node synthesises which pages a source touches, apply those page updates to the named wiki",
+    });
+    this.capabilityRegistry.registerBuiltin(wikiQueryCapability, {
+      description: "Reads the compiled wiki pages relevant to a question and returns them as grounded, page-cited context. Answers from the maintained wiki, not by re-retrieving raw text.",
+      useWhen: "query step of an LLM-Wiki agent: fetch the relevant wiki pages before a think node synthesises a cited answer",
     });
     this.capabilityRegistry.registerBuiltin(emailSendCapability, {
       description: "Sends an email via Resend API or SMTP.",

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Set Advisor Context",
+  "intent": "Store my goals, principles, energy/capacity, and current situation as durable memory so my Personal Advisor can ground its advice in who I actually am.",
+  "entry": "store",
+  "runBudgetCents": 50,
+  "maxNodeVisits": 2,
+  "seed": {
+    "goals": "Ship Krelvan's launch; protect deep-work mornings; stay healthy.",
+    "principles": "Say no to anything that doesn't serve the launch. Quality over quantity. Sustainable pace.",
+    "energy": "Limited — already at ~80% capacity this month.",
+    "situation": "Solo founder, two weeks from a public launch.",
+    "agentId": "personal-advisor",
+    "remember_map": "goals=goals,principles=principles,energy=energy,situation=situation"
+  },
+  "nodes": [
+    {
+      "id": "store",
+      "role": "Persist the provided goals, principles, energy, and situation as durable semantic facts so the Personal Advisor can recall them. This is set once (and updated whenever your situation changes).",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "remember", "sideEffect": "write-reversible", "budgetCents": 10 }
+      ]
+    }
+  ],
+  "edges": []
+}

@@ -29,7 +29,7 @@ interface RegistryEntry {
 interface McpBlock { name?: string; command?: string; args?: string[]; url?: string; env?: Record<string, string>; tools?: string[]; defaultSideEffect?: string }
 
 const SIDE_EFFECTS = new Set(["read", "write-reversible", "write-irreversible", "spend", "message-human", "identity-mutation"]);
-const BUILTINS = new Set(["think", "llm_route", "compose", "recall", "remember", "identify", "web_search", "http_get", "http_post", "notify_webhook", "text_transform", "email_send", "telegram_send", "slack_send", "rag.ingest", "rag.search"]);
+const BUILTINS = new Set(["think", "llm_route", "compose", "recall", "remember", "identify", "web_search", "http_get", "http_post", "notify_webhook", "text_transform", "email_send", "telegram_send", "slack_send", "rag.ingest", "rag.search", "wiki.ingest", "wiki.query"]);
 
 test("registry index.json has the expected envelope", () => {
   assert.equal(index.version, 1);
