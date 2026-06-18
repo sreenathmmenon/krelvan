@@ -137,15 +137,29 @@ export interface RunDetail {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+  const headers: Record<string, string> = { "Content-Type": "application/json", ...(init?.headers as Record<string, string> | undefined) };
+  // Attach the CSRF token (issued at login, kept in sessionStorage) on state-changing calls.
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD" && typeof window !== "undefined") {
+    const csrf = sessionStorage.getItem("krelvan_csrf");
+    if (csrf) headers["X-CSRF-Token"] = csrf;
+  }
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  if (res.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+    // Session expired/invalid — bounce to login.
+    window.location.href = "/login";
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
     throw new Error(err.error ?? `API error ${res.status}`);
   }
   return res.json() as Promise<T>;
+}
+
+/** Log out: clears the session cookie (server-side) + local CSRF, then redirect to login. */
+export async function logout(): Promise<void> {
+  try { await fetch(`${API_BASE}/api/auth/logout`, { method: "POST" }); } catch { /* ignore */ }
+  if (typeof window !== "undefined") { sessionStorage.removeItem("krelvan_csrf"); window.location.href = "/login"; }
 }
 
 // ── In-memory list cache (stale-while-revalidate) ───────────────────────────────

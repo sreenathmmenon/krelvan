@@ -82,8 +82,18 @@ const WINDOW_MS = 5 * 60_000;  // failures older than this don't count
 interface FailRecord { count: number; first: number; lockedUntil: number }
 const failsByIp = new Map<string, FailRecord>();
 
-function clientIp(req: IncomingMessage): string {
-  // single-tenant self-host: trust the socket peer (no proxy header spoofing surface)
+/**
+ * Client IP for rate-limiting. Self-host default: trust the socket peer (no XFF spoofing
+ * surface). When fronted by a trusted reverse proxy that terminates TLS, set
+ * KRELVAN_TRUST_PROXY=1 so the per-IP lockout sees the real client instead of collapsing
+ * every request into the proxy's single IP (which would turn the lockout into a self-DoS).
+ */
+export function clientIp(req: IncomingMessage): string {
+  if (process.env["KRELVAN_TRUST_PROXY"] === "1") {
+    const xff = req.headers["x-forwarded-for"];
+    const first = (Array.isArray(xff) ? xff[0] : xff)?.split(",")[0]?.trim();
+    if (first) return first;
+  }
   return req.socket.remoteAddress ?? "unknown";
 }
 
@@ -111,12 +121,15 @@ function clearFails(ip: string): void {
   failsByIp.delete(ip);
 }
 
-/** Extract the bearer token from the Authorization header (or an `?token=` fallback). */
-function presentedToken(req: IncomingMessage, url: URL): string | null {
+/**
+ * Extract the bearer token from the Authorization header. Header-only by design: a token in
+ * the query string leaks into browser history, Referer headers, and access logs, so we do
+ * NOT accept `?token=`.
+ */
+function presentedToken(req: IncomingMessage): string | null {
   const h = req.headers["authorization"];
   if (typeof h === "string" && h.startsWith("Bearer ")) return h.slice(7).trim();
-  const q = url.searchParams.get("token");
-  return q && q.trim() ? q.trim() : null;
+  return null;
 }
 
 export type AuthOutcome =
@@ -124,15 +137,28 @@ export type AuthOutcome =
   | { ok: false; status: number; message: string };
 
 /**
- * Authenticate a request. Public paths (health, OPTIONS handled earlier) skip auth.
- * Returns ok or a status/message for the caller to send.
+ * Authenticate a request. Public paths skip auth. A request is authorized if it carries
+ * EITHER a valid bearer token (machines/CI/headless — unchanged) OR a valid human session
+ * (the web UI, forwarded by the proxy). The bearer path short-circuits FIRST, so the
+ * env-token / CI path is never affected by the session layer.
+ *
+ * @param sessionValid optional predicate over the forwarded session token (from the proxy).
  */
-export function authenticate(req: IncomingMessage, url: URL, state: AuthState): AuthOutcome {
+export function authenticate(
+  req: IncomingMessage,
+  url: URL,
+  state: AuthState,
+  sessionValid?: (token: string | undefined) => boolean,
+): AuthOutcome {
   // public allowlist — read-only, no data exposure
   if (url.pathname === "/api/health") return { ok: true };
   // Ledger signing PUBLIC keys: publishable by design so an external auditor can verify
   // the ledger without a token. Public-key material only — never a secret.
   if (url.pathname === "/api/ledger/keys") return { ok: true };
+  // Auth endpoints must be reachable WITHOUT a session (you can't log in if login needs a
+  // login). They do their own credential checks + rate-limiting internally.
+  if (url.pathname === "/api/auth/status" || url.pathname === "/api/auth/login" ||
+      url.pathname === "/api/auth/logout" || url.pathname === "/api/auth/setup") return { ok: true };
 
   const ip = clientIp(req);
   const now = Date.now();
@@ -141,20 +167,25 @@ export function authenticate(req: IncomingMessage, url: URL, state: AuthState): 
     return { ok: false, status: 429, message: "too many failed attempts — try again later" };
   }
 
-  const token = presentedToken(req, url);
-  if (!token) {
-    recordFail(ip, now);
-    return { ok: false, status: 401, message: "authentication required — send Authorization: Bearer <token>" };
+  // 1) Bearer token (machines / CI / agents) — the original path, unchanged.
+  const token = presentedToken(req);
+  if (token) {
+    const presentedHash = sha256Hex(token);
+    if (timingSafeEqual(Buffer.from(presentedHash, "hex"), Buffer.from(state.tokenHash, "hex"))) {
+      clearFails(ip);
+      return { ok: true };
+    }
   }
 
-  // compare sha256(presented) against the stored sha256 hash, constant-time
-  const presentedHash = sha256Hex(token);
-  const matches = timingSafeEqual(Buffer.from(presentedHash, "hex"), Buffer.from(state.tokenHash, "hex"));
-  if (!matches) {
-    recordFail(ip, now);
-    return { ok: false, status: 401, message: "invalid token" };
+  // 2) Human session (forwarded by the proxy as X-Krelvan-Session) — additive.
+  if (sessionValid) {
+    const sess = req.headers["x-krelvan-session"];
+    if (typeof sess === "string" && sessionValid(sess)) {
+      clearFails(ip);
+      return { ok: true };
+    }
   }
 
-  clearFails(ip);
-  return { ok: true };
+  recordFail(ip, now);
+  return { ok: false, status: 401, message: "authentication required" };
 }

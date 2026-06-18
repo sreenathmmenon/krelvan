@@ -237,6 +237,8 @@ async function up() {
     // to it. The API stays on loopback (internal-only); only the web proxy reaches it.
     startProcess("web", nextBin, ["start", "-p", WEB_PORT, "-H", "0.0.0.0"], {
       cwd: WEB,
+      // KRELVAN_SECURE_COOKIES=1 (set it when fronted by HTTPS, e.g. behind Caddy) makes the
+      // session cookie Secure. KRELVAN_WEB_ORIGIN is the public origin for the CSRF/Origin check.
       env: { ...process.env, KRELVAN_API_ORIGIN: apiOrigin, KRELVAN_AUTH_TOKEN: AUTH_TOKEN },
     });
   }

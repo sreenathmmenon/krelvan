@@ -112,17 +112,40 @@ async function main(): Promise<void> {
     });
   });
 
-  // Print the token ONCE, only when freshly generated this run, in a clear banner.
-  // We never log the token again, and the plaintext is never persisted.
+  // Periodically drop expired admin sessions so the in-memory map can't grow unbounded
+  // from abandoned (never-logged-out) sessions. Unref'd: never keeps the process alive.
+  setInterval(() => runtime.adminAuth.sweepExpired(), 10 * 60 * 1000).unref();
+
+  // ── First-run admin setup (WordPress-style) ─────────────────────────────────
+  // If no admin account exists yet, mint a short-lived setup token and print the setup
+  // link to the console. This closes the "claim window": a stranger who reaches a fresh,
+  // network-exposed install FIRST cannot create the admin without this token.
+  if (!runtime.adminAuth.isSetup()) {
+    const setupToken = runtime.adminAuth.bootstrapSetupToken();
+    const webOrigin = process.env["KRELVAN_WEB_ORIGIN"] ?? "http://localhost:3100";
+    /* eslint-disable no-console */
+    console.log("\n" + "─".repeat(64));
+    console.log("  Krelvan — first run. Create your admin account (valid 30 min):\n");
+    console.log("      " + webOrigin + "/setup?token=" + setupToken);
+    console.log("\n  This link is shown only on YOUR console — open it to set your");
+    console.log("  username + password. (Headless? POST it to /api/auth/setup.)");
+    console.log("─".repeat(64) + "\n");
+    /* eslint-enable no-console */
+  }
+
+  // Print the API token ONCE, only when freshly generated this run. (Machines/CI use this
+  // bearer token; humans log in via the setup/login screen above.)
   if (auth.generated && auth.freshPlaintext) {
     const webOrigin = process.env["KRELVAN_WEB_ORIGIN"] ?? "http://localhost:3100";
     /* eslint-disable no-console */
     console.log("\n" + "─".repeat(64));
-    console.log("  Krelvan secured. Your access token (shown once — save it):\n");
+    console.log("  Krelvan secured. MACHINE access token (shown once — save it):\n");
     console.log("      " + auth.freshPlaintext + "\n");
-    console.log("  Open the UI (already authenticated):");
-    console.log("      " + webOrigin + "/?token=" + auth.freshPlaintext);
-    console.log("\n  API calls:  Authorization: Bearer " + auth.freshPlaintext);
+    console.log("  This is for CI / scripts / agents:");
+    console.log("      Authorization: Bearer " + auth.freshPlaintext);
+    console.log("\n  To use the UI, open " + webOrigin + " and sign in (the setup link");
+    console.log("  above creates your username + password). The token is NOT a URL login —");
+    console.log("  it is never accepted as a query parameter (it would leak into logs).");
     console.log("  Rotate it:  delete " + resolve(DATA_DIR, "auth.token") + " and restart,");
     console.log("              or set KRELVAN_AUTH_TOKEN=<your-own>.");
     console.log("─".repeat(64) + "\n");

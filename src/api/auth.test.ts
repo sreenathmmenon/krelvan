@@ -76,12 +76,13 @@ test("authenticate: rejects missing + wrong token, accepts correct token", () =>
     // wrong
     const wrong = authenticate(req({ authorization: "Bearer nope" }, "10.0.0.2"), url("/api/agents"), s);
     assert.equal(wrong.ok, false);
-    // correct
+    // correct (header — the only accepted form)
     const right = authenticate(req({ authorization: `Bearer ${tok}` }, "10.0.0.3"), url("/api/agents"), s);
     assert.deepEqual(right, { ok: true });
-    // correct via ?token= fallback
+    // The ?token= query fallback was REMOVED (it leaks into logs/history/Referer): a
+    // correct token in the query string must NOT authenticate — header-only by design.
     const viaQuery = authenticate(req({}, "10.0.0.4"), url("/api/agents", `?token=${tok}`), s);
-    assert.deepEqual(viaQuery, { ok: true });
+    assert.equal(viaQuery.ok, false, "token via ?token= must be rejected");
   } finally { rmSync(d, { recursive: true, force: true }); }
 });
 

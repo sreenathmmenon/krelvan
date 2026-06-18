@@ -4,6 +4,7 @@ node_modules/
 *.db-shm
 *.db-wal
 /data/
+/data-*/
 dist/
 .DS_Store
 web/.next/

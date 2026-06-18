@@ -44,7 +44,7 @@ import { getLogger } from "../core/observability/logger.js";
 import type { KrelvanRuntime } from "./runtime.js";
 import type { Manifest } from "../core/manifest/manifest.js";
 import { getLLMClient } from "../adapters/llm-client.js";
-import { authenticate, type AuthState } from "./auth.js";
+import { authenticate, clientIp, type AuthState } from "./auth.js";
 
 // The single allowed CORS origin (the web UI). Override via KRELVAN_WEB_ORIGIN.
 // We never use "*" — a wildcard with credentials is unsafe and the wildcard alone
@@ -183,6 +183,10 @@ function jsonError(res: ServerResponse, status: number, message: string): void {
 export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
   const routes: Route[] = [
     { method: "GET",    pattern: ["api", "health"],                  handler: handleHealth },
+    { method: "GET",    pattern: ["api", "auth", "status"],          handler: (q, r) => handleAuthStatus(q, r, runtime) },
+    { method: "POST",   pattern: ["api", "auth", "setup"],           handler: (q, r) => handleAuthSetup(q, r, runtime) },
+    { method: "POST",   pattern: ["api", "auth", "login"],           handler: (q, r) => handleAuthLogin(q, r, runtime) },
+    { method: "POST",   pattern: ["api", "auth", "logout"],          handler: (q, r) => handleAuthLogout(q, r, runtime) },
     { method: "GET",    pattern: ["api", "ledger", "keys"],          handler: (q, r) => handleLedgerKeys(q, r, runtime) },
     { method: "GET",    pattern: ["api", "agents"],                  handler: (q, r) => handleListAgents(q, r, runtime) },
     { method: "POST",   pattern: ["api", "agents"],                  handler: (q, r) => handleCreateAgent(q, r, runtime) },
@@ -245,10 +249,32 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     const method = req.method ?? "GET";
 
     // ── Authentication gate (before routing) ──────────────────────────────────
-    const authResult = authenticate(req, url, auth);
+    // Authorized by EITHER a valid bearer token (machines/CI) OR a valid human session
+    // (forwarded by the web proxy as X-Krelvan-Session).
+    const authResult = authenticate(req, url, auth, (t) => runtime.adminAuth.validateSession(t));
     if (!authResult.ok) {
       jsonError(res, authResult.status, authResult.message);
       return;
+    }
+
+    // ── CSRF gate for the SESSION (cookie) path on state-changing methods ──────
+    // A browser request rides a cookie, so it is vulnerable to cross-site forgery; a
+    // machine request rides a bearer token (no cookie) and cannot be forged cross-site,
+    // so it is exempt. When a request authenticated via a session token mutates state, it
+    // MUST be same-origin AND carry a valid double-submit CSRF token bound to that session.
+    // (The auth endpoints do their own same-origin check and are not session-authenticated.)
+    const sessionHdr = req.headers["x-krelvan-session"];
+    const isSessionAuthed = typeof sessionHdr === "string" && runtime.adminAuth.validateSession(sessionHdr);
+    const isMutating = method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+    const isAuthEndpoint = path === "/api/auth/login" || path === "/api/auth/setup" ||
+      path === "/api/auth/logout" || path === "/api/auth/status";
+    if (isSessionAuthed && isMutating && !isAuthEndpoint) {
+      if (!isSameOriginWrite(req)) { jsonError(res, 403, "cross-origin request blocked"); return; }
+      const csrf = req.headers["x-csrf-token"];
+      if (!runtime.adminAuth.verifyCsrfToken(sessionHdr, typeof csrf === "string" ? csrf : undefined)) {
+        jsonError(res, 403, "missing or invalid CSRF token");
+        return;
+      }
     }
 
     const match = matchRoute(routes, method, path);
@@ -269,6 +295,75 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
 }
 
 // ── handlers ──────────────────────────────────────────────────────────────────
+
+/**
+ * CSRF defence for state-changing auth/proxy requests: require the request to be
+ * same-origin per the browser's Sec-Fetch-Site (present in all modern browsers), falling
+ * back to an Origin host check. Fail-closed on writes. This blocks a malicious site from
+ * POSTing to /api/auth/login or driving the API via a logged-in admin's cookie.
+ */
+function isSameOriginWrite(req: IncomingMessage): boolean {
+  const site = req.headers["sec-fetch-site"];
+  // Modern browsers always send Sec-Fetch-Site. Only "same-origin" is a legitimate write
+  // from our own app. "same-site"/"cross-site" are forgeable origins; "none" is a
+  // user-initiated top-level load (bookmark / typed URL), never a programmatic XHR write —
+  // reject all of them for the cookie path.
+  if (typeof site === "string") return site === "same-origin";
+  // No Sec-Fetch-Site: a non-browser client (curl / server-to-server / the bearer-token
+  // path). Fall back to an Origin host check; allow only when no Origin is presented at all
+  // (true server-to-server) or when it matches our web origin exactly.
+  const origin = (req.headers["origin"] ?? req.headers["referer"]) as string | undefined;
+  if (!origin) return true; // server-to-server (no Origin) — the bearer-token path; allowed
+  const allowed = process.env["KRELVAN_WEB_ORIGIN"] ?? "http://localhost:3100";
+  try { return new URL(origin).origin === new URL(allowed).origin; } catch { return false; }
+}
+
+/** GET /api/auth/status — is setup needed? is this caller logged in? (public, read-only) */
+async function handleAuthStatus(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  const sess = req.headers["x-krelvan-session"];
+  json(res, 200, {
+    setupNeeded: !rt.adminAuth.isSetup(),
+    authenticated: typeof sess === "string" && rt.adminAuth.validateSession(sess),
+  });
+}
+
+/** POST /api/auth/setup — first-run admin creation; requires the printed setup token. */
+async function handleAuthSetup(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  if (!isSameOriginWrite(req)) { jsonError(res, 403, "cross-origin request blocked"); return; }
+  const raw = await readBody(req);
+  let body: { username?: string; password?: string; setupToken?: string };
+  try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  const result = await rt.adminAuth.setup({
+    username: body.username ?? "", password: body.password ?? "", setupToken: body.setupToken,
+  });
+  if (!result.ok) { jsonError(res, 400, result.error); return; }
+  // Immediately log the new admin in.
+  const login = await rt.adminAuth.login(body.username ?? "", body.password ?? "", clientIp(req));
+  if (!login.ok) { json(res, 201, { ok: true }); return; }
+  json(res, 201, { ok: true, session: login.token, csrf: rt.adminAuth.issueCsrfToken(login.token) });
+}
+
+/** POST /api/auth/login — verify credentials, return an opaque session token + csrf token. */
+async function handleAuthLogin(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  if (!isSameOriginWrite(req)) { jsonError(res, 403, "cross-origin request blocked"); return; }
+  const raw = await readBody(req);
+  let body: { username?: string; password?: string };
+  try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  const result = await rt.adminAuth.login(body.username ?? "", body.password ?? "", clientIp(req));
+  if (!result.ok) {
+    if (result.lockedOut) { jsonError(res, 429, "too many failed login attempts — try again later"); return; }
+    if (result.busy) { jsonError(res, 503, "authentication service busy — try again shortly"); return; }
+    jsonError(res, 401, "invalid username or password"); return;
+  }
+  json(res, 200, { ok: true, session: result.token, csrf: rt.adminAuth.issueCsrfToken(result.token) });
+}
+
+/** POST /api/auth/logout — destroy the presented session. */
+async function handleAuthLogout(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  const sess = req.headers["x-krelvan-session"];
+  if (typeof sess === "string") rt.adminAuth.destroySession(sess);
+  json(res, 200, { ok: true });
+}
 
 /**
  * GET /api/ledger/keys — publish the ledger signing public keys (ed25519 mode) so a
@@ -469,7 +564,9 @@ async function handleRunStream(req: IncomingMessage, res: ServerResponse, params
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
     "Connection": "keep-alive",
-    "Access-Control-Allow-Origin": "*",
+    // This is an AUTH-GATED data stream — scope CORS to the web origin, never "*".
+    "Access-Control-Allow-Origin": CORS_ORIGIN,
+    "Vary": "Origin",
   });
 
   const TERMINAL_STATUSES = new Set(["completed", "failed", "halted"]);

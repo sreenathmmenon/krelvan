@@ -1,48 +1,110 @@
-// Same-origin API proxy.
+// Same-origin API proxy + session gate.
 //
 // The browser calls /proxy/api/... (same origin — no CORS). This server-side route
-// forwards to the real Krelvan API and injects the bearer token from a SERVER-ONLY
-// env var (KRELVAN_AUTH_TOKEN — never NEXT_PUBLIC_, so it never reaches the browser).
-// This keeps the token off the client entirely and removes the cross-origin surface.
+// forwards to the real Krelvan API, injecting:
+//   - the bearer token (server-only env KRELVAN_AUTH_TOKEN — never reaches the browser), and
+//   - the human SESSION token (from the krelvan_sid cookie) as X-Krelvan-Session.
+//
+// THE GATE: for every API call EXCEPT the public auth endpoints, a valid session cookie is
+// required — without it the proxy returns 401, so a logged-out browser cannot use the API
+// even though the proxy holds the bearer token. This is the single seam that turns
+// "the UI just works" into "the UI requires login", WITHOUT touching the API's bearer auth
+// (machines/CI keep using the token directly).
 
 import { type NextRequest } from "next/server";
+import { SESSION_COOKIE, COOKIE_SECURE, readSessionCookie } from "../../../lib/cookie";
 
 const API_ORIGIN = process.env["KRELVAN_API_ORIGIN"] ?? "http://localhost:3201";
 const AUTH_TOKEN = process.env["KRELVAN_AUTH_TOKEN"] ?? "";
 
 export const dynamic = "force-dynamic";
 
+// API paths the browser may reach WITHOUT a session (you can't log in if login needs login).
+const PUBLIC_API = new Set([
+  "api/auth/status", "api/auth/login", "api/auth/logout", "api/auth/setup", "api/health",
+]);
+
+function json(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+
 async function forward(req: NextRequest, path: string[]): Promise<Response> {
+  const apiPath = path.join("/");
+  const session = readSessionCookie((n) => req.cookies.get(n)?.value);
+
+  // GATE: non-public API calls require a valid session cookie.
+  if (!PUBLIC_API.has(apiPath) && !session) {
+    return json(401, { error: "not authenticated" });
+  }
+
   const search = req.nextUrl.search; // preserves ?query
-  const target = `${API_ORIGIN}/${path.join("/")}${search}`;
+  const target = `${API_ORIGIN}/${apiPath}${search}`;
 
   const headers = new Headers();
-  // copy content-type / accept; drop hop-by-hop + host
   const ct = req.headers.get("content-type");
   if (ct) headers.set("content-type", ct);
   const accept = req.headers.get("accept");
   if (accept) headers.set("accept", accept);
-  if (AUTH_TOKEN) headers.set("authorization", `Bearer ${AUTH_TOKEN}`);
+  // Forward CSRF + Origin/Fetch-Metadata so the API can enforce same-origin on writes.
+  const csrf = req.headers.get("x-csrf-token");
+  if (csrf) headers.set("x-csrf-token", csrf);
+  const origin = req.headers.get("origin");
+  if (origin) headers.set("origin", origin);
+  const sfs = req.headers.get("sec-fetch-site");
+  if (sfs) headers.set("sec-fetch-site", sfs);
+
+  // AUTHORIZATION model — the critical part:
+  //  - For the PUBLIC auth endpoints (login/setup/status/logout), inject the bearer so the
+  //    request can reach the API; these endpoints do their OWN credential checks.
+  //  - For every PROTECTED route, do NOT inject the bearer. Forward ONLY the session token,
+  //    so the API must validate the session itself. (If we injected the bearer here, a
+  //    FORGED session cookie would still be authorized via the bearer — the gate would be
+  //    bypassable. Forwarding session-only closes that hole.)
+  if (PUBLIC_API.has(apiPath)) {
+    if (AUTH_TOKEN) headers.set("authorization", `Bearer ${AUTH_TOKEN}`);
+  }
+  if (session) headers.set("x-krelvan-session", session);
 
   const method = req.method.toUpperCase();
   const body = method === "GET" || method === "HEAD" ? undefined : await req.arrayBuffer();
 
-  const upstream = await fetch(target, {
-    method,
-    headers,
-    body,
-    // don't let fetch follow redirects across the proxy boundary
-    redirect: "manual",
-  }).catch((e) => {
-    return new Response(JSON.stringify({ error: `proxy: cannot reach API (${(e as Error).message})` }), {
-      status: 502,
-      headers: { "content-type": "application/json" },
-    });
+  const upstream = await fetch(target, { method, headers, body, redirect: "manual" }).catch((e) => {
+    return json(502, { error: `proxy: cannot reach API (${(e as Error).message})` });
   });
 
-  // stream the upstream response back unchanged (incl. SSE)
+  // ── Login/setup: turn the returned session token into an HttpOnly cookie ──────────
+  // The session token never reaches client JS — the proxy reads it from the JSON and sets
+  // the cookie here. Secure/__Host- when behind HTTPS (KRELVAN_SECURE_COOKIES=1).
+  if ((apiPath === "api/auth/login" || apiPath === "api/auth/setup") && upstream.status < 300) {
+    const data = await upstream.clone().json().catch(() => null) as { session?: string; csrf?: string } | null;
+    if (data?.session) {
+      // __Host- prefix (over HTTPS) requires Secure + Path=/ + no Domain; the browser then
+      // refuses any subdomain/HTTP override of the session. Plain name on local HTTP.
+      const cookie = [
+        `${SESSION_COOKIE}=${data.session}`,
+        "HttpOnly", "SameSite=Lax", "Path=/", "Max-Age=28800",
+        ...(COOKIE_SECURE ? ["Secure"] : []),
+      ].join("; ");
+      const h = new Headers({ "content-type": "application/json" });
+      h.append("set-cookie", cookie);
+      // Expose only the CSRF token to the client (NOT the session token).
+      return new Response(JSON.stringify({ ok: true, csrf: data.csrf ?? null }), { status: 200, headers: h });
+    }
+  }
+
+  // ── Logout: clear the cookie ──────────────────────────────────────────────────────
+  if (apiPath === "api/auth/logout") {
+    const h = new Headers({ "content-type": "application/json" });
+    // Clear BOTH possible names so a scheme/config change can't strand a stale cookie.
+    const attrs = `HttpOnly; SameSite=Lax; Path=/; Max-Age=0${COOKIE_SECURE ? "; Secure" : ""}`;
+    h.append("set-cookie", `${SESSION_COOKIE}=; ${attrs}`);
+    h.append("set-cookie", `krelvan_sid=; ${attrs}`);
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: h });
+  }
+
+  // ── Everything else: stream the upstream response back unchanged (incl. SSE) ───────
   const respHeaders = new Headers(upstream.headers);
-  respHeaders.delete("access-control-allow-origin"); // same-origin now; no CORS needed
+  respHeaders.delete("access-control-allow-origin");
   return new Response(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,

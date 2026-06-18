@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { listRuns } from "../lib/api";
+import { listRuns, logout } from "../lib/api";
 import CommandPalette from "./CommandPalette";
 
 // Flat nav: 4 primary links, a divider, then 3 utility links — all visible, one
@@ -62,17 +62,18 @@ export default function NavClient() {
   function openCommand() { window.dispatchEvent(new Event("krelvan:open-command")); }
 
   useEffect(() => {
+    if (pathname === "/login" || pathname === "/setup") return; // don't poll on auth pages
     let alive = true;
     async function poll() {
       try {
         const runs = await listRuns();
         if (alive) setRunningCount(runs.filter(r => r.status === "running").length);
-      } catch { /* API not reachable yet */ }
+      } catch { /* API not reachable yet / not logged in */ }
     }
     void poll();
     const t = setInterval(() => void poll(), 5000);
     return () => { alive = false; clearInterval(t); };
-  }, []);
+  }, [pathname]);
 
   useEffect(() => {
     function onScroll() { setScrolled(window.scrollY > 24); }
@@ -116,6 +117,9 @@ export default function NavClient() {
 
   const wordmarkColor = darkMode ? "var(--dark-brand-bright)" : "var(--brand)";
   const iconColor     = darkMode ? "var(--dark-ink)" : "var(--ink)";
+
+  // Auth pages (login/setup) are standalone — no nav chrome.
+  if (pathname === "/login" || pathname === "/setup") return null;
 
   return (
     <header
@@ -205,6 +209,17 @@ export default function NavClient() {
           >
             Build agent
           </a>
+          <button
+            type="button"
+            className="nav-cmdk"
+            onClick={() => { void logout(); }}
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M6 14H3.5A1.5 1.5 0 0 1 2 12.5v-9A1.5 1.5 0 0 1 3.5 2H6M10.5 11l3-3-3-3M13 8H6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
           <button
             type="button"
             className="nav-burger"

@@ -1,7 +1,11 @@
-// Shared site footer — rendered on every page via the root layout.
+// Shared site footer — rendered on every page via the root layout (except auth pages).
+"use client";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 export default function SiteFooter() {
+  const pathname = usePathname();
+  if (pathname === "/login" || pathname === "/setup") return null;
   return (
     <footer style={{ background: "var(--canvas)", borderTop: "1px solid var(--line)" }}>
       <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s7)" }}>

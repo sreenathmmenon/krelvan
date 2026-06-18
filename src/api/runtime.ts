@@ -32,6 +32,7 @@ import { McpRegistry, type McpServerConfig } from "../core/mcp/mcp-client.js";
 import { loadCapabilityDirectory, loadJsCapabilities } from "../core/capability/directory-loader.js";
 import { Scheduler, ScheduleRegistry, validateCron, type ScheduleRecord } from "./scheduler.js";
 import { SecretStore } from "./secret-store.js";
+import { AdminAuth } from "./admin-auth.js";
 import { thinkCapability } from "../core/plugins/think.js";
 import { recallCapability, rememberCapability, identifyCapability, loadSoul, saveSoul } from "../core/plugins/memory-plugins.js";
 import { ragIngestCapability, ragSearchCapability } from "../core/plugins/rag-plugins.js";
@@ -530,6 +531,8 @@ export class KrelvanRuntime {
   readonly mcpRegistry: McpRegistry;
   readonly scheduleRegistry: ScheduleRegistry;
   readonly secretStore: SecretStore;
+  /** WordPress-style admin login (first-run setup + username/password + sessions). */
+  readonly adminAuth: AdminAuth;
   readonly scheduler: Scheduler;
   readonly compiler: Compiler;
   private readonly ring: Verifier;
@@ -579,6 +582,7 @@ export class KrelvanRuntime {
     this.capabilityRegistry = new CapabilityRegistry(config.dataDir);
     this.scheduleRegistry = new ScheduleRegistry(config.dataDir);
     this.secretStore = new SecretStore(config.dataDir);
+    this.adminAuth = new AdminAuth(config.dataDir);
     // MCP servers resolve their {{secret:NAME}} env refs from the encrypted secret store;
     // the child gets a scrubbed env (never Krelvan's own secrets).
     this.mcpRegistry = new McpRegistry((name) => this.secretStore.resolve(name));
