@@ -382,9 +382,47 @@ function parseScalar(s: string): unknown {
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     return s.slice(1, -1);
   }
+  // Inline FLOW syntax — the natural way to write small objects/arrays on one line, e.g.
+  //   { type: string, required: true }   or   [200, 202]
+  // This is standard YAML and the most-requested authoring convenience; without it,
+  // authors are forced into verbose block style.
+  if (s.startsWith("{") && s.endsWith("}")) return parseFlowMap(s.slice(1, -1));
+  if (s.startsWith("[") && s.endsWith("]")) return parseFlowSeq(s.slice(1, -1));
   const n = Number(s);
   if (!isNaN(n) && s.trim() !== "") return n;
   return s;
+}
+
+/** Split a flow body on top-level commas (respecting nested {} [] and quotes). */
+function splitFlow(body: string): string[] {
+  const parts: string[] = [];
+  let depth = 0, quote = "", cur = "";
+  for (const ch of body) {
+    if (quote) { cur += ch; if (ch === quote) quote = ""; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
+    if (ch === "{" || ch === "[") { depth++; cur += ch; continue; }
+    if (ch === "}" || ch === "]") { depth--; cur += ch; continue; }
+    if (ch === "," && depth === 0) { parts.push(cur); cur = ""; continue; }
+    cur += ch;
+  }
+  if (cur.trim() !== "") parts.push(cur);
+  return parts;
+}
+
+function parseFlowMap(body: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const part of splitFlow(body)) {
+    const t = part.trim();
+    if (!t) continue;
+    const c = t.indexOf(":");
+    if (c < 0) continue;
+    out[t.slice(0, c).trim()] = parseScalar(t.slice(c + 1).trim());
+  }
+  return out;
+}
+
+function parseFlowSeq(body: string): unknown[] {
+  return splitFlow(body).map((p) => p.trim()).filter((p) => p !== "").map(parseScalar);
 }
 
 // ── Template interpolation ────────────────────────────────────────────────────

@@ -23,8 +23,10 @@ const index = JSON.parse(readFileSync(join(here, "index.json"), "utf8")) as {
 interface RegistryEntry {
   name: string; title: string; oneLiner: string; category: string; sideEffect: string;
   tier: string; author: string; kind: string; secretRefs?: string[];
-  yaml?: string; mcp?: unknown; manifest?: Manifest; capabilities?: { name: string; yaml: string }[];
+  yaml?: string; mcp?: McpBlock; manifest?: Manifest; capabilities?: { name: string; yaml: string }[];
+  connectors?: string[]; // pack kind
 }
+interface McpBlock { name?: string; command?: string; args?: string[]; url?: string; env?: Record<string, string>; tools?: string[]; defaultSideEffect?: string }
 
 const SIDE_EFFECTS = new Set(["read", "write-reversible", "write-irreversible", "spend", "message-human", "identity-mutation"]);
 const BUILTINS = new Set(["think", "llm_route", "compose", "recall", "remember", "identify", "web_search", "http_get", "http_post", "notify_webhook", "text_transform", "email_send", "telegram_send", "slack_send", "rag.ingest", "rag.search"]);
@@ -41,8 +43,41 @@ test("every registry entry has the required fields + a valid sideEffect/tier/kin
     }
     assert.ok(SIDE_EFFECTS.has(e.sideEffect), `entry '${e.name}' has invalid sideEffect '${e.sideEffect}'`);
     assert.ok(["official", "community"].includes(e.tier), `entry '${e.name}' has invalid tier '${e.tier}'`);
-    assert.ok(["yaml", "mcp", "template"].includes(e.kind), `entry '${e.name}' has invalid kind '${e.kind}'`);
+    assert.ok(["yaml", "mcp", "template", "pack"].includes(e.kind), `entry '${e.name}' has invalid kind '${e.kind}'`);
     assert.match(e.name, /^[a-z][a-z0-9._-]*$/, `entry name '${e.name}' is not a valid machine name`);
+  }
+});
+
+test("every mcp entry declares env secrets as {{secret:}} refs (no inlined tokens) and lists them in secretRefs", () => {
+  const SECRET_RE = /\{\{secret:([a-zA-Z0-9_.-]+)\}\}/g;
+  for (const e of index.capabilities.filter(x => x.kind === "mcp")) {
+    const env = e.mcp?.env ?? {};
+    const args = e.mcp?.args ?? [];
+    const declared = new Set(e.secretRefs ?? []);
+    // Collect every secret ref used anywhere in env values or args.
+    const used = new Set<string>();
+    for (const v of [...Object.values(env), ...args]) {
+      for (const m of String(v).matchAll(SECRET_RE)) if (m[1]) used.add(m[1]);
+    }
+    for (const ref of used) {
+      assert.ok(declared.has(ref), `mcp '${e.name}' uses {{secret:${ref}}} but does not list it in secretRefs`);
+    }
+    // No raw-looking credential inlined directly in env/args (must be a {{secret:}} ref).
+    for (const [k, v] of Object.entries(env)) {
+      if (/token|key|secret|password|api/i.test(k) && !/\{\{secret:/.test(String(v)) && String(v).trim() !== "") {
+        assert.fail(`mcp '${e.name}' env '${k}' looks like a credential but is inlined, not a {{secret:}} ref`);
+      }
+    }
+  }
+});
+
+test("every pack references only connectors that exist in the registry", () => {
+  const names = new Set(index.capabilities.map(e => e.name));
+  for (const e of index.capabilities.filter(x => x.kind === "pack")) {
+    assert.ok(Array.isArray(e.connectors) && e.connectors.length > 0, `pack '${e.name}' must list connectors`);
+    for (const c of e.connectors!) {
+      assert.ok(names.has(c), `pack '${e.name}' references unknown connector '${c}'`);
+    }
   }
 });
 

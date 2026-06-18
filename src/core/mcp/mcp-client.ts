@@ -85,7 +85,12 @@ export interface McpServerConfig {
   command?: string;
   /** args for the stdio command */
   args?: string[];
-  /** env vars to pass to the process (merged with process.env) */
+  /**
+   * Env vars for the spawned MCP process. Values may reference a Krelvan secret as
+   * `{{secret:NAME}}` — it is resolved from the secret store at spawn, so a registry
+   * entry never inlines a token. e.g. { "GITHUB_PERSONAL_ACCESS_TOKEN": "{{secret:GITHUB_TOKEN}}" }.
+   * The child gets a SCRUBBED base env (PATH/HOME/etc) PLUS these — never Krelvan's own secrets.
+   */
   env?: Record<string, string>;
   /** HTTP/SSE transport: base URL of the MCP server */
   url?: string;
@@ -93,8 +98,52 @@ export interface McpServerConfig {
   defaultSideEffect?: SideEffectClass;
   /** Per-tool side effect overrides: { "tool-name": "write-irreversible" } */
   toolSideEffects?: Record<string, SideEffectClass>;
+  /** Optional allowlist — only expose these tool names as capabilities (token-context hygiene). */
+  tools?: string[];
   /** Cost estimate in cents per call (default: 5) */
   estimateCents?: number;
+}
+
+/** Resolve a Krelvan secret ref to its value (or undefined). Injected per-registry. */
+export type McpSecretResolver = (name: string) => string | undefined;
+
+/**
+ * Build the env for a spawned MCP child. SECURITY: starts from a small ALLOWLIST of safe
+ * host vars (never the full process.env, which holds Krelvan's signing secrets / auth
+ * token / LLM keys), then layers the server's declared env with any `{{secret:NAME}}`
+ * resolved from the secret store. So a third-party MCP server sees only PATH-class vars +
+ * exactly the credentials it was granted.
+ */
+const MCP_ENV_ALLOW = new Set([
+  "PATH", "HOME", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+  "NODE_PATH", "NODE_OPTIONS", "SHELL", "USER", "LOGNAME", "SystemRoot", "ComSpec", "APPDATA",
+]);
+export function buildMcpChildEnv(
+  declared: Record<string, string> | undefined,
+  resolveSecret: McpSecretResolver | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && MCP_ENV_ALLOW.has(k)) out[k] = v;
+  }
+  for (const [k, rawVal] of Object.entries(declared ?? {})) {
+    out[k] = String(rawVal).replace(/\{\{secret:([a-zA-Z0-9_.-]+)\}\}/g, (_m, name: string) => {
+      const resolved = resolveSecret?.(name);
+      return resolved ?? "";
+    });
+  }
+  return out;
+}
+
+/** Collect the secret refs a server config declares in its env (for secretRefs validation). */
+export function mcpSecretRefs(config: McpServerConfig): string[] {
+  const refs = new Set<string>();
+  for (const v of Object.values(config.env ?? {})) {
+    for (const m of String(v).matchAll(/\{\{secret:([a-zA-Z0-9_.-]+)\}\}/g)) {
+      if (m[1]) refs.add(m[1]);
+    }
+  }
+  return [...refs];
 }
 
 // ── Side effect inference ─────────────────────────────────────────────────────
@@ -137,12 +186,17 @@ export class StdioMcpTransport {
   private nextId = 1;
   private ready = false;
 
-  constructor(private readonly config: McpServerConfig) {}
+  constructor(
+    private readonly config: McpServerConfig,
+    private readonly resolveSecret?: McpSecretResolver,
+  ) {}
 
   async connect(): Promise<void> {
     if (!this.config.command) throw new Error("StdioMcpTransport requires a command");
 
-    const env = { ...process.env, ...(this.config.env ?? {}) } as Record<string, string>;
+    // Scrubbed env (PATH-class only) + the server's declared env with {{secret:}} resolved.
+    // The MCP child NEVER inherits Krelvan's own secrets.
+    const env = buildMcpChildEnv(this.config.env, this.resolveSecret);
 
     this.proc = spawn(this.config.command, this.config.args ?? [], {
       stdio: ["pipe", "pipe", "pipe"],
@@ -281,11 +335,11 @@ export class McpClient {
   private transport: McpTransport;
   private tools: McpTool[] = [];
 
-  constructor(private readonly config: McpServerConfig) {
+  constructor(private readonly config: McpServerConfig, resolveSecret?: McpSecretResolver) {
     if (config.url) {
       this.transport = new HttpMcpTransport(config);
     } else if (config.command) {
-      this.transport = new StdioMcpTransport(config);
+      this.transport = new StdioMcpTransport(config, resolveSecret);
     } else {
       throw new Error(`MCP server '${config.name}' requires either 'command' or 'url'`);
     }
@@ -294,7 +348,13 @@ export class McpClient {
   async connect(): Promise<void> {
     await this.transport.connect();
     const result = await this.transport.request("tools/list", {}) as { tools: McpTool[] };
-    this.tools = result.tools ?? [];
+    let tools = result.tools ?? [];
+    // Optional allowlist: expose only the named tools (keeps the agent's tool context tight).
+    if (this.config.tools && this.config.tools.length > 0) {
+      const allow = new Set(this.config.tools);
+      tools = tools.filter((t) => allow.has(t.name));
+    }
+    this.tools = tools;
     log.info({ server: this.config.name, tools: this.tools.map(t => t.name) }, "mcp tools discovered");
   }
 
@@ -365,12 +425,15 @@ export class McpClient {
 export class McpRegistry {
   private clients = new Map<string, McpClient>();
 
+  /** A secret resolver lets `{{secret:NAME}}` in a server's env be filled from the store. */
+  constructor(private readonly resolveSecret?: McpSecretResolver) {}
+
   async connect(config: McpServerConfig): Promise<{ ok: true; tools: string[] } | { ok: false; error: string }> {
     try {
       if (this.clients.has(config.name)) {
         await this.clients.get(config.name)!.disconnect();
       }
-      const client = new McpClient(config);
+      const client = new McpClient(config, this.resolveSecret);
       await client.connect();
       this.clients.set(config.name, client);
       const tools = client.getTools().map(t => `${config.name.toLowerCase().replace(/[^a-z0-9]/g, "_")}.${t.name}`);

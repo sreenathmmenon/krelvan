@@ -524,7 +524,7 @@ function CatalogCard({ e, installed, onInstalled, flash }: { e: CatalogEntry; in
         }
         return;
       }
-      if (e.kind === "mcp" && e.mcp) { await connectMcpServer(e.mcp); }
+      if (e.kind === "mcp" && e.mcp) { await connectMcpServer({ ...e.mcp, name: e.mcp.name ?? e.name }); }
       else if (e.kind === "yaml" && e.yaml) { await installCapability(e.name, e.yaml); }
       await onInstalled(); flash(`${e.title} installed`);
     } catch (err) { flash((err as Error).message); } finally { setBusy(false); }

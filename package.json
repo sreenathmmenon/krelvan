@@ -5,7 +5,8 @@
   "type": "module",
   "license": "Apache-2.0",
   "bin": {
-    "krelvan": "bin/krelvan.mjs"
+    "krelvan": "bin/krelvan.mjs",
+    "krelvan-plugin": "bin/krelvan-plugin.mjs"
   },
   "files": [
     "bin/",

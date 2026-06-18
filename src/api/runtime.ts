@@ -577,9 +577,11 @@ export class KrelvanRuntime {
     this.agentRegistry = new AgentRegistry(config.dataDir);
     this.runRegistry = new RunRegistry(config.dataDir);
     this.capabilityRegistry = new CapabilityRegistry(config.dataDir);
-    this.mcpRegistry = new McpRegistry();
     this.scheduleRegistry = new ScheduleRegistry(config.dataDir);
     this.secretStore = new SecretStore(config.dataDir);
+    // MCP servers resolve their {{secret:NAME}} env refs from the encrypted secret store;
+    // the child gets a scrubbed env (never Krelvan's own secrets).
+    this.mcpRegistry = new McpRegistry((name) => this.secretStore.resolve(name));
     // installed YAML capabilities resolve {{secret:NAME}} from the customer secret store
     this.capabilityRegistry.setSecretResolver((name) => this.secretStore.resolve(name));
     this.scheduler = new Scheduler(this.scheduleRegistry, (agentId, scheduleId) =>
@@ -949,11 +951,15 @@ export class KrelvanRuntime {
     const result = await this.mcpRegistry.connect(mcpConfig);
     if (!result.ok) return result;
 
-    // Register new plugins from this server
-    const allPlugins = this.mcpRegistry.allPlugins();
-    for (const plugin of allPlugins) {
+    // Register new plugins from this server, then refresh the supervisor snapshot so the
+    // MCP tools are immediately admissible in runs (without this they exist in the
+    // registry but admission says CAPABILITY_NOT_GRANTED).
+    const allMcp = this.mcpRegistry.allPlugins();
+    for (const plugin of allMcp) {
       this.capabilityRegistry.registerBuiltin(plugin, `MCP: ${mcpConfig.name}`);
     }
+    const snapshot = new Map(this.capabilityRegistry["plugins"] as Map<string, CapabilityPlugin>);
+    this.supervisorSnapshotHandle.replaceSnapshot(snapshot);
     return result;
   }
 

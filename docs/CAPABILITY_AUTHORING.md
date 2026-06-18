@@ -145,3 +145,39 @@ Point any install at your own fork with
 `NEXT_PUBLIC_KRELVAN_REGISTRY_URL=https://raw.githubusercontent.com/<you>/krelvan-registry/main/index.json`.
 A consultancy or enterprise can curate an internal catalogue of connectors + agent templates for its
 clients — the open core is the wedge, your registry is private.
+
+---
+
+## 7. The authoring CLI (scaffold + pre-publish check)
+
+```bash
+krelvan-plugin new my.connector --kind yaml   # scaffold a YAML capability
+krelvan-plugin new my.connector --kind mcp    # scaffold an MCP registry entry
+krelvan-plugin check my.connector.yaml        # pre-publish lint (run before opening a PR)
+```
+
+`check` runs the SAME validators the registry CI uses, plus a **secret scan** — it fails if it
+finds an inlined credential (an `sk-…`, `ghp_…`, `xoxb-…`, a private-key block, etc.) instead of a
+`{{secret:NAME}}` reference. This is what keeps the marketplace safe-by-default: a leaked token can't
+reach the catalog.
+
+## 8. MCP connectors get their secrets injected (never inlined)
+
+An MCP registry entry declares the credentials its server needs as `{{secret:NAME}}` in the `env`
+block, and lists them in `secretRefs`:
+
+```json
+{
+  "name": "github", "kind": "mcp", "secretRefs": ["GITHUB_TOKEN"],
+  "mcp": {
+    "command": "docker",
+    "args": ["run","-i","--rm","-e","GITHUB_PERSONAL_ACCESS_TOKEN","ghcr.io/github/github-mcp-server"],
+    "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "{{secret:GITHUB_TOKEN}}" }
+  }
+}
+```
+
+At connect time Krelvan resolves `{{secret:GITHUB_TOKEN}}` from the encrypted secret store and spawns
+the server with a **scrubbed env** — PATH-class vars + only the granted secret. The MCP child never
+sees Krelvan's own signing secret, auth token, or LLM keys. (Verified: a server inspecting its own env
+sees the granted token and `null` for every `KRELVAN_*` secret.)
