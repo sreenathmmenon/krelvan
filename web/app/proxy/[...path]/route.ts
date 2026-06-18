@@ -68,7 +68,7 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
   const method = req.method.toUpperCase();
   const body = method === "GET" || method === "HEAD" ? undefined : await req.arrayBuffer();
 
-  const upstream = await fetch(target, { method, headers, body, redirect: "manual" }).catch((e) => {
+  const upstream = await fetch(target, { method, headers, body, redirect: "manual", cache: "no-store" }).catch((e) => {
     return json(502, { error: `proxy: cannot reach API (${(e as Error).message})` });
   });
 
@@ -102,14 +102,27 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
     return new Response(JSON.stringify({ ok: true }), { status: 200, headers: h });
   }
 
-  // ── Everything else: stream the upstream response back unchanged (incl. SSE) ───────
+  // Re-frame the response. `fetch` may have already DECODED the body (gzip/br) and re-chunked
+  // it, so forwarding the original content-encoding/content-length would describe bytes that no
+  // longer match — a real browser then waits forever for the missing bytes (a hang on the
+  // keep-alive connection). Strip those + hop-by-hop headers and let the platform set framing.
   const respHeaders = new Headers(upstream.headers);
-  respHeaders.delete("access-control-allow-origin");
-  return new Response(upstream.body, {
-    status: upstream.status,
-    statusText: upstream.statusText,
-    headers: respHeaders,
-  });
+  for (const h of ["content-encoding", "content-length", "transfer-encoding", "connection",
+    "keep-alive", "access-control-allow-origin"]) {
+    respHeaders.delete(h);
+  }
+
+  // SSE / event-streams must stay STREAMED (they never "complete").
+  const ctype = upstream.headers.get("content-type") ?? "";
+  if (ctype.includes("text/event-stream")) {
+    return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: respHeaders });
+  }
+
+  // Everything else (JSON, text): BUFFER the whole body and return it as a complete, self-
+  // contained response. This guarantees a clean content-length and a finished response so the
+  // browser's keep-alive connection closes the request instead of hanging waiting for a stream.
+  const buf = await upstream.arrayBuffer();
+  return new Response(buf, { status: upstream.status, statusText: upstream.statusText, headers: respHeaders });
 }
 
 type Ctx = { params: Promise<{ path: string[] }> };
