@@ -1158,17 +1158,30 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   },
 ];
 
-// Fetch the live registry; fall back to the seed if unreachable or not configured.
+// Fetch the live registry; fall back to the bundled seed if unreachable, slow, or empty.
+// The remote fetch is TIMEOUT-GUARDED (2.5s): a slow or hung GitHub never leaves the
+// marketplace blank — the user always sees the full bundled catalog instead of an empty
+// page. The seed is also MERGED in, so the remote can only ADD to (never shrink) the
+// catalog if it happens to be missing entries the build shipped with.
 export async function loadRegistry(): Promise<{ entries: CatalogEntry[]; source: "remote" | "bundled" }> {
   if (REGISTRY_URL) {
     try {
-      const res = await fetch(REGISTRY_URL, { cache: "no-store" });
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2500);
+      const res = await fetch(REGISTRY_URL, { cache: "no-store", signal: ctrl.signal });
+      clearTimeout(timer);
       if (res.ok) {
         const data = await res.json() as { capabilities?: CatalogEntry[] } | CatalogEntry[];
-        const entries = Array.isArray(data) ? data : (data.capabilities ?? []);
-        if (entries.length > 0) return { entries, source: "remote" };
+        const remote = Array.isArray(data) ? data : (data.capabilities ?? []);
+        if (remote.length > 0) {
+          // Union remote + seed by name (remote wins), so a thin remote can't hide bundled entries.
+          const byName = new Map<string, CatalogEntry>();
+          for (const e of REGISTRY_SEED) byName.set(e.name, e);
+          for (const e of remote) if (e && e.name) byName.set(e.name, e);
+          return { entries: [...byName.values()], source: "remote" };
+        }
       }
-    } catch { /* fall through to bundled seed */ }
+    } catch { /* timeout / offline / parse error → bundled seed */ }
   }
   return { entries: REGISTRY_SEED, source: "bundled" };
 }

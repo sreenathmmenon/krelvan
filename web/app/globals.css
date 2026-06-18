@@ -1660,10 +1660,11 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 }
 .cap-sim__btn[data-on="true"] { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
 .cap-spectrum__band { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--s3); }
-.cap-spectrum__zone { border-radius: var(--r); padding: var(--s3); border: 1px solid var(--line); border-left: 2px solid var(--brand); }
-.cap-spectrum__zone--0 { background: var(--surface-sunken); }
-.cap-spectrum__zone--1 { background: var(--surface-sunken); }
-.cap-spectrum__zone--2 { background: var(--surface-sunken); }
+.cap-spectrum__zone { border-radius: var(--r); padding: var(--s3); border: 1px solid var(--line); border-left: 3px solid var(--line); }
+/* a real risk gradient: calm → amber → red, not three identical greys */
+.cap-spectrum__zone--0 { background: var(--surface-sunken); border-left-color: var(--ok, #16794C); }
+.cap-spectrum__zone--1 { background: var(--info-tint, #EAF1FB); border-left-color: var(--info, #1D4ED8); }
+.cap-spectrum__zone--2 { background: var(--danger-tint, #FBEBEB); border-left-color: var(--danger, #B91C1C); }
 .cap-spectrum__zlabel { display: block; margin-bottom: var(--s2); color: var(--ink-soft); }
 .cap-spectrum__chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .cap-spectrum__chip {
@@ -1705,6 +1706,111 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   max-height: 60vh; overflow-y: auto;
 }
 @media (prefers-reduced-motion: reduce) { .cap-drawer { animation: none; } }
+
+/* ═══════════════════ Marketplace redesign (icons · facets · detail) ═══════════ */
+/* header */
+.cap-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s5); flex-wrap: wrap; margin-bottom: var(--s5); }
+.cap-stats { display: flex; gap: var(--s5); flex-shrink: 0; flex-wrap: wrap; }
+.cap-stat { text-align: right; }
+.cap-stat__v { font-size: 22px; font-weight: 600; color: var(--ink); line-height: 1.1; }
+.cap-stat__l { color: var(--ink-muted); }
+
+/* per-capability icon tile — the "face" */
+.cap-icon {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  border-radius: 10px; color: var(--brand);
+  background: var(--brand-tint, #E6F4F2);
+  border: 1px solid var(--brand-ring, rgba(14,124,117,.22));
+}
+
+/* toolbar (search + add) */
+.cap-toolbar { display: flex; gap: var(--s3); align-items: center; margin: var(--s5) 0; flex-wrap: wrap; }
+.cap-toolbar .cap-search { flex: 1; min-width: 220px; max-width: 460px; }
+.cap-add-btn { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; }
+
+/* featured strip */
+.cap-featured { margin: var(--s5) 0 var(--s6); }
+.cap-featured__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s4); }
+.cap-feat {
+  display: flex; gap: var(--s3); align-items: center; text-align: left; cursor: pointer;
+  padding: var(--s4); border-radius: var(--r-lg); border: 1px solid var(--line);
+  background: linear-gradient(120% 100% at 0% 0%, var(--brand-tint) 0%, var(--surface) 55%);
+  transition: transform 140ms var(--ease,ease), box-shadow 140ms var(--ease,ease);
+}
+.cap-feat:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.cap-feat__title { font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: var(--s2); }
+.cap-feat__inst { color: var(--ok); display: inline-flex; }
+.cap-feat__sub { margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* facets + sort */
+.cap-facets { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; margin-bottom: var(--s4); }
+.cap-facet {
+  height: 32px; padding: 0 var(--s3); border-radius: var(--r-pill);
+  border: 1px solid var(--line); background: var(--surface); cursor: pointer;
+  font-size: 13px; font-weight: 500; color: var(--ink-soft);
+  display: inline-flex; align-items: center; gap: 6px; transition: all 120ms;
+}
+.cap-facet:hover { border-color: var(--brand-ring); color: var(--ink); }
+.cap-facet[data-on="true"] { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); font-weight: 600; }
+.cap-facet__n { font-family: var(--font-mono); font-size: 11px; opacity: .8; }
+.cap-sort { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s2); }
+.cap-sort__sel {
+  height: 32px; border-radius: var(--r); border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); font-size: 13px; padding: 0 var(--s2); cursor: pointer;
+}
+
+/* category chips */
+.cap-chips { display: flex; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s5); }
+.cap-chip {
+  height: 26px; padding: 0 var(--s3); border-radius: var(--r-pill);
+  border: 1px solid transparent; background: var(--surface-sunken); cursor: pointer;
+  font-size: 12px; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 5px; transition: all 120ms;
+}
+.cap-chip:hover { color: var(--ink); }
+.cap-chip[data-on="true"] { background: var(--brand-tint); color: var(--brand); border-color: var(--brand-ring); font-weight: 600; }
+.cap-chip__n { font-family: var(--font-mono); font-size: 10px; opacity: .7; }
+
+/* rich catalog card */
+.cap-card__top { display: flex; gap: var(--s3); align-items: flex-start; }
+.cap-card__title { font-weight: 700; color: var(--ink); line-height: 1.2; }
+.cap-card__meta { margin-top: 1px; }
+.cap-card__desc { color: var(--ink-soft); margin: 0; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cap-card__tags { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.cap-card__foot { margin-top: auto; padding-top: var(--s3); border-top: 1px solid var(--line); display: flex; gap: var(--s2); align-items: center; justify-content: space-between; }
+.cap-card--clk { cursor: pointer; }
+.cap-card__more { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.cap-badge { flex-shrink: 0; }
+.cap-installed { color: var(--ok); display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 500; }
+
+/* small tag pills */
+.cap-tag { font-size: 11px; padding: 2px var(--s2); border-radius: var(--r-pill); background: var(--surface-sunken); color: var(--ink-muted); white-space: nowrap; }
+.cap-tag--free { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.cap-se { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 var(--s2); border-radius: var(--r-pill); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.cap-se__gate { opacity: .85; padding-left: 4px; border-left: 1px solid currentColor; }
+
+/* detail / add drawer extras */
+.cap-drawer--wide { width: min(620px, 100vw); }
+.cap-drawer__x { width: 32px; padding: 0; flex-shrink: 0; }
+.cap-drawer__foot { padding: var(--s4) var(--s5); border-top: 1px solid var(--line); background: var(--surface); }
+.cap-install-cta { width: 100%; height: 42px; font-size: 15px; }
+.cap-perm { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-sunken); padding: var(--s2) var(--s4); margin-bottom: var(--s5); }
+.cap-perm__row { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: var(--s3) 0; }
+.cap-perm__row + .cap-perm__row { border-top: 1px solid var(--line); }
+.cap-block { margin-bottom: var(--s5); }
+.cap-toollist { display: flex; flex-wrap: wrap; gap: 5px; }
+.cap-tool { font-size: 12px; padding: 2px var(--s2); background: var(--surface-sunken); color: var(--ink-soft); border-radius: var(--r-pill); border: 1px solid var(--line); }
+.cap-srclink { color: var(--brand); display: inline-flex; align-items: center; gap: 5px; }
+.cap-ack { display: flex; align-items: center; gap: var(--s2); color: var(--ink-soft); cursor: pointer; }
+
+/* segmented control + upload (add-own) */
+.cap-segment { display: inline-flex; background: var(--surface-sunken); border: 1px solid var(--line); border-radius: var(--r-pill); padding: 3px; margin-bottom: var(--s5); }
+.cap-segment__btn { height: 30px; padding: 0 var(--s4); border: none; background: transparent; border-radius: var(--r-pill); font-size: 13px; font-weight: 500; color: var(--ink-soft); cursor: pointer; transition: all 120ms; }
+.cap-segment__btn[data-on="true"] { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
+.cap-upload { display: flex; flex-direction: column; align-items: center; gap: var(--s2); padding: var(--s7); border: 1.5px dashed var(--line); border-radius: var(--r-lg); color: var(--ink-soft); cursor: pointer; transition: border-color 120ms, color 120ms; }
+.cap-upload:hover { border-color: var(--brand-ring); color: var(--brand); }
+.btn-link { background: none; border: none; padding: 0; color: var(--brand); cursor: pointer; font: inherit; text-decoration: underline; }
+
+@media (max-width: 560px) { .cap-drawer--wide { width: 100vw; } .cap-sort { margin-left: 0; } }
 
 /* ───────────────────── Animated hero (self-running loop) ───────────────────── */
 /* One 6s master cycle. Phases (approx): build 0-8% · search 8-26% · reason 26-44%
