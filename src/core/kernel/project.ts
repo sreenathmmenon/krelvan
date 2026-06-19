@@ -30,6 +30,8 @@ export interface RunProjection {
   requestedByIdem: Set<string>;
   /** open await: correlation id → true, until resolved. */
   openAwaits: Set<string>;
+  /** resolved approvals: correlation id → the human's decision (survives the resume re-fold). */
+  resolvedApprovals: Map<string, "approve" | "deny">;
   budget: BudgetState;
   /** run state keys derived from NodeConcluded outputs (for edge conditions). */
   state: RunState;
@@ -76,6 +78,7 @@ export function emptyAccumulator(): FoldAccumulator {
     resultsByIdem: new Set(),
     requestedByIdem: new Set(),
     openAwaits: new Set(),
+    resolvedApprovals: new Map(),
     budget: { runSpentCents: 0, runReservedCents: 0, perCapSpentCents: {}, perCapReservedCents: {} },
     state: {},
     currentNode: null,
@@ -187,7 +190,11 @@ export function applyEvent(acc: FoldAccumulator, e: LedgerEvent): void {
     }
     case "AwaitResolved": {
       const correlationId = str(pl["correlationId"]);
-      if (correlationId) acc.openAwaits.delete(correlationId);
+      if (correlationId) {
+        acc.openAwaits.delete(correlationId);
+        const decision = str(pl["decision"]);
+        if (decision === "approve" || decision === "deny") acc.resolvedApprovals.set(correlationId, decision);
+      }
       break;
     }
     case "SubRunRequested": {

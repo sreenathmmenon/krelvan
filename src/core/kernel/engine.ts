@@ -384,13 +384,27 @@ export class Engine {
         return false;
       }
 
-      // approval gate (autonomy gradient)
-      if (verdict.requiresApproval && !approve(call)) {
-        await this.append(
-          { type: "AwaitRequested", scope: this.scope(nodeId), payload: { correlationId: idem, kind: "approval", call: { capability: call.capability } } },
-          this.deps.owner,
-        );
-        return true; // parked
+      // approval gate (autonomy gradient).
+      // The ledger is the source of truth across a park→resume cycle: if the human already
+      // RESOLVED this exact approval (same content-addressed idem), honor that decision —
+      // proceed on "approve", fail on "deny" — instead of re-parking forever. Only when there
+      // is NO prior resolution do we consult the live `approve` callback (which parks the run).
+      if (verdict.requiresApproval) {
+        const prior = p.resolvedApprovals.get(idem);
+        if (prior === "deny") {
+          await this.append(
+            { type: "AdmissionDecision", scope: this.scope(nodeId), payload: { idem, admitted: false, reason: "approval denied" } },
+            this.deps.owner,
+          );
+          throw new Error(`approval denied for ${call.capability}`);
+        }
+        if (prior !== "approve" && !approve(call)) {
+          await this.append(
+            { type: "AwaitRequested", scope: this.scope(nodeId), payload: { correlationId: idem, kind: "approval", call: { capability: call.capability } } },
+            this.deps.owner,
+          );
+          return true; // parked
+        }
       }
 
       // record admission (with reservation)

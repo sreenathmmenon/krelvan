@@ -1532,7 +1532,13 @@ export class KrelvanRuntime {
     });
 
     try {
-      const result = await engine.run({ initialState: enrichedState });
+      // approve=()=>false: a gated effect (autonomy "suggest"/etc. on a non-read side-effect)
+      // PARKS the run for human approval the first time it is reached (status → halted, an
+      // AwaitRequested lands in the ledger, the Approvals page shows it). On resume after the
+      // human approves, the engine sees the ledger's AwaitResolved and proceeds — so the
+      // human-in-the-loop gate is actually enforced for API-triggered runs (it was previously
+      // bypassed because the default approve=()=>true auto-approved everything).
+      const result = await engine.run({ initialState: enrichedState, approve: () => false });
       this.runRegistry.update(runId, {
         status: result.status === "completed" ? "completed" : result.status === "halted" ? "halted" : "failed",
         finishedAt: Date.now(),

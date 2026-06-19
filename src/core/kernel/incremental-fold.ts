@@ -108,6 +108,7 @@ function foldDelta(base: FoldAccumulator, newEvents: LedgerEvent[]): FoldAccumul
     resultsByIdem: new Set(base.resultsByIdem),
     requestedByIdem: new Set(base.requestedByIdem),
     openAwaits: new Set(base.openAwaits),
+    resolvedApprovals: new Map(base.resolvedApprovals),
     budget: {
       runSpentCents: base.budget.runSpentCents,
       runReservedCents: base.budget.runReservedCents,
