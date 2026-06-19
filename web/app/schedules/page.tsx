@@ -532,10 +532,13 @@ function Empty({ hasAgents, onNew }: { hasAgents: boolean; onNew: () => void }) 
         style={{
           width: 56, height: 56, borderRadius: "var(--r-lg)",
           display: "flex", alignItems: "center", justifyContent: "center",
-          background: "var(--brand-tint)", color: "var(--brand)", fontSize: 26,
+          background: "var(--brand-tint)", color: "var(--brand)",
         }}
       >
-        ⏱
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="13" r="8" stroke="currentColor" strokeWidth="1.6" />
+          <path d="M12 9v4l2.5 2M9 2.5h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
       </div>
       <div className="h2" style={{ color: "var(--ink)" }}>No schedules yet</div>
       <div className="body-lg soft" style={{ maxWidth: "46ch" }}>

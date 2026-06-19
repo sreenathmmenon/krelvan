@@ -134,10 +134,13 @@ export default function SecretsPage() {
                   style={{
                     width: 52, height: 52, borderRadius: "var(--r-lg)", display: "flex",
                     alignItems: "center", justifyContent: "center", background: "var(--brand-tint)",
-                    color: "var(--brand)", fontSize: 24,
+                    color: "var(--brand)",
                   }}
                 >
-                  🔑
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="8" cy="8" r="4.5" stroke="currentColor" strokeWidth="1.6" />
+                    <path d="M11.2 11.2L20 20M16 16l2-2M18.5 18.5l2-2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
                 </div>
                 <div className="h3" style={{ color: "var(--ink)" }}>No secrets yet</div>
                 <div className="small soft" style={{ maxWidth: "44ch" }}>

@@ -48,7 +48,7 @@ export default function SiteFooter() {
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
               <li><a href="https://github.com/sreenathmmenon/krelvan" className="small" style={{ color: "var(--ink-soft)" }}>GitHub</a></li>
               <li><a href="https://x.com/sreenathmmenon" className="small" style={{ color: "var(--ink-soft)" }}>Twitter / X</a></li>
-              <li><Link href="/capabilities" className="small" style={{ color: "var(--ink-soft)" }}>Docs</Link></li>
+              <li><a href="https://github.com/sreenathmmenon/krelvan#readme" className="small" style={{ color: "var(--ink-soft)" }}>Docs</a></li>
               <li><a href="mailto:zreenathmenon@gmail.com" className="small" style={{ color: "var(--ink-soft)" }}>Email</a></li>
             </ul>
           </nav>

@@ -11,23 +11,25 @@ import {
   type AgentRecord, type RunRecord, type BuildResult, type ManifestNode, type ManifestEdge,
 } from "../lib/api";
 
+// Chips span Krelvan's real range — a scheduled watcher, a grounded support bot, a
+// personal advisor, and a research digest — so the box doesn't read as research-only.
 export const EXAMPLES: { text: string; label: string; hero?: boolean }[] = [
   {
-    text: "Search the web for the latest AI news and summarise the top 3 developments in a clear digest",
-    label: "Research digest",
+    text: "Watch this product page and alert me the moment the price drops, with a signed record of every check",
+    label: "Price watcher",
     hero: true,
   },
   {
-    text: "Fetch https://api.github.com/repos/vercel/next.js/releases and summarise what changed in the latest release",
-    label: "Release notes",
+    text: "Answer customer questions using only my ingested docs, cite the source, and refuse if the answer isn't there",
+    label: "Support bot",
   },
   {
-    text: "Research the top 5 use cases for small language models in enterprise and rank them by business impact",
-    label: "Market research",
+    text: "Be my honest advisor: weigh this decision against my goals and principles, and remember what I learn",
+    label: "Personal advisor",
   },
   {
-    text: "Analyse the pros and cons of PostgreSQL vs MongoDB for a real-time analytics platform",
-    label: "Tech decision",
+    text: "Search the web for the latest AI news and summarise the top 3 developments in a clear digest",
+    label: "Research digest",
   },
 ];
 

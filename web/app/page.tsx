@@ -9,6 +9,8 @@ import {
 import {
   BuildPreviewModal, MiniGraph, HeroAnimation, EXAMPLES, BUILD_STAGES,
 } from "./_builder";
+import { loadRegistry, type CatalogEntry } from "../lib/registry";
+import { glyphFor } from "../lib/glyphs";
 
 // ── Krelvan landing — product-first debut ──────────────────────────────────────
 // The homepage IS the working product. On first paint a visitor lands on a dark
@@ -31,6 +33,57 @@ const EXAMPLE_EDGES = [
   { from: "entry", to: "reason" },
   { from: "reason", to: "compose" },
 ];
+
+// ── Example-agent gallery — the shipped templates, the proof of breadth ──────
+// Loads the real registry (live, else bundled seed) and shows the flagship example
+// agents so a first-time visitor SEES that Krelvan already does real jobs — price
+// watching, RAG support, a personal advisor, an LLM-wiki, influencer outreach with a
+// human-approval gate — installable in one click. This is the single highest-leverage
+// "show the product" surface; it was previously hidden on /capabilities.
+function ExampleGallery() {
+  const [items, setItems] = useState<CatalogEntry[]>([]);
+  useEffect(() => {
+    void loadRegistry().then(r => {
+      // lead with templates (whole installable agents); cap to a tidy grid
+      const templates = r.entries.filter(e => e.kind === "template");
+      setItems(templates.slice(0, 9));
+    }).catch(() => {});
+  }, []);
+  if (items.length === 0) return null;
+  return (
+    <section style={{ background: "var(--surface)", borderTop: "1px solid var(--line)" }}>
+      <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
+        <p className="micro" style={{ marginBottom: "var(--s3)" }}>Already built — not a demo</p>
+        <h2 className="h1" style={{ marginBottom: "var(--s3)", maxWidth: "22ch" }}>
+          Start from a <span style={{ color: "var(--brand)" }}>real agent</span>.
+        </h2>
+        <p className="body-lg soft" style={{ maxWidth: "60ch", marginBottom: "var(--s7)" }}>
+          Install any of these in one click and watch it run — every step signed, the risky
+          ones pausing for your approval. Then edit it, or build your own from scratch above.
+        </p>
+        <div className="home-examples">
+          {items.map(e => (
+            <Link key={e.name} href={`/capabilities?install=${encodeURIComponent(e.name)}`} className="home-example card">
+              <span className="home-example__icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width={18} height={18} fill="none">
+                  <path d={glyphFor(e.name, e.category, e.kind)} stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div className="home-example__title">{e.title}</div>
+                <div className="home-example__desc small soft">{e.oneLiner}</div>
+                <div className="home-example__cta small">Install &amp; run →</div>
+              </div>
+            </Link>
+          ))}
+        </div>
+        <div style={{ marginTop: "var(--s6)" }}>
+          <Link href="/capabilities" className="btn btn-secondary btn-sm">Browse all {items.length >= 9 ? "agents & connectors" : "agents"} →</Link>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 // ── Copyable one-command install (final CTA) ─────────────────────────────────
 const INSTALL_CMD = "git clone https://github.com/sreenathmmenon/krelvan && cd krelvan && npx krelvan";
@@ -103,7 +156,7 @@ function HeroArtifact({ run }: { run: RunRecord | null }) {
   // No real run yet → labelled live example (the pre-built research-digest graph).
   return (
     <div className="dark-device" style={{ padding: "var(--s5)" }}>
-      <div className="micro" style={{ marginBottom: "var(--s3)" }}>Live example · research digest</div>
+      <div className="micro" style={{ marginBottom: "var(--s3)" }}>Example graph · not yet run</div>
       <div
         className="dark-surface-2"
         style={{ borderRadius: "var(--r)", padding: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}
@@ -111,14 +164,12 @@ function HeroArtifact({ run }: { run: RunRecord | null }) {
         <div style={{ background: "var(--dark-node-fill)", borderRadius: "var(--r)", padding: "var(--s5)", border: "1px solid var(--dark-line)" }}>
           <MiniGraph nodes={EXAMPLE_NODES} edges={EXAMPLE_EDGES} entry="entry" variant="dark" maxHeight={120} />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap" }}>
-          <span className="dark-verify-seal__mark" aria-hidden="true">✓</span>
-          <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>signed</span>
-          <span className="dark-ink-muted" aria-hidden="true">·</span>
-          <span className="dark-ink-soft mono" style={{ fontSize: 13 }}>3 steps</span>
+        {/* Honest: NOTHING has run, so we never show the signed seal here — only on real runs. */}
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap" }}>
+          <span className="dark-ink-muted mono" style={{ fontSize: 13 }}>3 steps · runs and signs once you build it</span>
         </div>
         <div className="dark-ink-muted small">
-          Build your own below — your real runs show up here.
+          Build your own below — your real, signed runs show up here.
         </div>
       </div>
     </div>
@@ -380,6 +431,9 @@ export default function Landing() {
           </div>
         )}
       </section>
+
+      {/* ════════════ 3.5 · EXAMPLE-AGENT GALLERY (the proof of breadth) ════════════ */}
+      <ExampleGallery />
 
       {/* ════════════ 4 · FINAL CTA (dark) ════════════ */}
       {/* Build-on-Krelvan — the platform-base value prop: eliminated decisions. */}

@@ -543,13 +543,13 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                 Every step is appended to a signed, hash-chained ledger.{" "}
                 {verification == null && <span className="soft">Click verify to re-check the cryptographic chain.</span>}
                 {verification?.ok && (
-                  <span style={{ color: "var(--ok)", fontWeight: 600 }}>
-                    ✓ Verified — {verification.signedEvents}/{verification.runEvents} run events signed, full {verification.ledgerEvents}-event chain intact ({verification.algorithm}).
+                  <span style={{ color: "var(--ok)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <Glyph kind="check" size={14} color="var(--ok)" /> Verified — {verification.signedEvents}/{verification.runEvents} run events signed, full {verification.ledgerEvents}-event chain intact ({verification.algorithm}).
                   </span>
                 )}
                 {verification && !verification.ok && (
-                  <span style={{ color: "var(--danger)", fontWeight: 600 }}>
-                    ✗ Verification FAILED: {verification.error} — {verification.detail}
+                  <span style={{ color: "var(--danger)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <Glyph kind="cross" size={14} color="var(--danger)" /> Verification FAILED: {verification.error} — {verification.detail}
                   </span>
                 )}
               </div>
@@ -587,7 +587,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               {e.sig
                 ? <span className="mono" title={`signed by ${e.sig.keyId} (epoch ${e.sig.epoch}) — fingerprint ${e.sig.fingerprint}`}
                     style={{ textAlign: "right", fontSize: 10.5, color: "var(--ok)", display: "inline-flex", gap: 4, justifyContent: "flex-end", alignItems: "center" }}>
-                    🔒 {e.sig.fingerprint.slice(0, 8)}
+                    <Glyph kind="seal" size={11} color="var(--ok)" /> {e.sig.fingerprint.slice(0, 8)}
                   </span>
                 : <span className="mono" style={{ textAlign: "right", fontSize: 11, color: "var(--ink-muted)" }}>{e.author.slice(0, 8)}</span>}
             </div>
@@ -1504,10 +1504,18 @@ function capGlyphPaths(name: string): React.ReactNode {
 }
 
 // ── Inline glyphs for empty/labels (currentColor, 14×14 viewBox) ───────────────
-function Glyph({ kind, size = 28, color }: { kind: "spark" | "ledger" | "state" | "output" | "search" | "warn" | "check" | "cross" | "pause" | "play"; size?: number; color?: string }) {
+function Glyph({ kind, size = 28, color }: { kind: "spark" | "ledger" | "state" | "output" | "search" | "warn" | "check" | "cross" | "pause" | "play" | "seal"; size?: number; color?: string }) {
   const stroke = color ?? "currentColor";
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", "aria-hidden": true as const };
   switch (kind) {
+    case "seal":
+      // a signed-seal / lock mark for ledger signatures (replaces the lock emoji)
+      return (
+        <svg {...common}>
+          <path d="M12 2.5l7.5 2.7v5.1c0 4.8-3.2 8.1-7.5 9.2-4.3-1.1-7.5-4.4-7.5-9.2V5.2L12 2.5z" stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" />
+          <path d="M9 12l2 2 4-4.5" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
     case "spark":
       return (
         <svg {...common}>

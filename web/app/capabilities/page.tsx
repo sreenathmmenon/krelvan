@@ -82,7 +82,20 @@ export default function CapabilitiesPage() {
     } finally { setLoading(false); }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
-  useEffect(() => { void loadRegistry().then(r => setCatalog(r.entries)).catch(() => {}); }, []);
+  useEffect(() => {
+    void loadRegistry().then(r => {
+      setCatalog(r.entries);
+      // Deep-link from the homepage gallery: /capabilities?install=<name> opens that item's
+      // detail drawer so a visitor lands straight on "here's what it does + install".
+      if (typeof window !== "undefined") {
+        const want = new URLSearchParams(window.location.search).get("install");
+        if (want) {
+          const found = r.entries.find(e => e.name === want);
+          if (found) { setTab("discover"); setDetail(found); }
+        }
+      }
+    }).catch(() => {});
+  }, []);
 
   function flash(msg: string) { setToast(msg); setTimeout(() => setToast(null), 3500); }
 
