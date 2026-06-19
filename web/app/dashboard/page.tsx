@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  listAgents, listRuns, buildAgent, startRun, explainRun, timeAgo, getCached,
+  listAgents, listRuns, buildAgent, startRun, autoSummarizeRuns, timeAgo, getCached,
   type AgentRecord, type RunRecord, type BuildResult,
 } from "../../lib/api";
 import {
@@ -117,24 +117,17 @@ export default function Dashboard() {
     finally { setLoading(false); }
   }, []);
 
-  // Auto-fetch summaries for completed runs whose agents still exist
+  // Background summaries — BOUNDED (most recent few, low concurrency) so we never fire one
+  // LLM call per run on load and flood the single-process API.
   useEffect(() => {
-    for (const run of runs) {
-      if (run.status !== "completed") continue;
-      if (fetchingSummaries.current.has(run.runId)) continue;
-      if (summaries[run.runId] !== undefined) continue;
-      fetchingSummaries.current.add(run.runId);
-      setSummaries(prev => ({ ...prev, [run.runId]: null }));
-      void explainRun(run.runId)
-        .then(res => {
-          const firstLine = res.explanation.split("\n").filter(l => l.trim()).slice(0, 2).join(" ").slice(0, 220);
-          setSummaries(prev => ({ ...prev, [run.runId]: firstLine }));
-        })
-        .catch(() => {
-          setSummaries(prev => { const n = { ...prev }; delete n[run.runId]; return n; });
-          fetchingSummaries.current.delete(run.runId);
-        });
-    }
+    const pending = runs
+      .filter(r => r.status === "completed" && summaries[r.runId] === undefined && !fetchingSummaries.current.has(r.runId))
+      .map(r => r.runId);
+    if (pending.length === 0) return;
+    pending.forEach(id => fetchingSummaries.current.add(id));
+    return autoSummarizeRuns(pending, (runId, summary) => {
+      setSummaries(prev => ({ ...prev, [runId]: summary }));
+    });
   }, [runs, summaries]);
 
   useEffect(() => {

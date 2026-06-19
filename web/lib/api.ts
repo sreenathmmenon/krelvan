@@ -245,6 +245,42 @@ export async function explainRun(runId: string): Promise<RunExplanation> {
   return apiFetch<RunExplanation>(`/api/runs/${encodeURIComponent(runId)}/explain`);
 }
 
+/**
+ * Background one-line summaries for run lists. Each summary is an LLM call (`explainRun`), so
+ * firing one per run on load can flood a single-process API. This bounds it: only the most
+ * recent `max` runs are summarised, at most `concurrency` at a time. `onSummary` is called as
+ * each resolves; failures are silent (a missing summary is fine). Returns a cancel function.
+ */
+export function autoSummarizeRuns(
+  runIds: string[],
+  onSummary: (runId: string, summary: string | null) => void,
+  opts: { max?: number; concurrency?: number } = {},
+): () => void {
+  const max = opts.max ?? 6;
+  const concurrency = opts.concurrency ?? 2;
+  const queue = runIds.slice(0, max);
+  let cancelled = false;
+  let active = 0;
+  let i = 0;
+  function pump() {
+    while (!cancelled && active < concurrency && i < queue.length) {
+      const runId = queue[i++]!;
+      active++;
+      onSummary(runId, null); // mark loading
+      explainRun(runId)
+        .then(res => {
+          if (cancelled) return;
+          const firstLine = res.explanation.split("\n").map(l => l.trim()).filter(Boolean).slice(0, 2).join(" ").slice(0, 220);
+          onSummary(runId, firstLine);
+        })
+        .catch(() => { if (!cancelled) onSummary(runId, ""); }) // "" = tried, no summary
+        .finally(() => { active--; if (!cancelled) pump(); });
+    }
+  }
+  pump();
+  return () => { cancelled = true; };
+}
+
 export interface RunDiagnosis {
   diagnosis: {
     rootCause: string;

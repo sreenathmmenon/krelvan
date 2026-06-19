@@ -748,18 +748,27 @@ async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, para
     const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
     const model = process.env["KRELVAN_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
     const client = getLLMClient();
-    const response = await client.complete({
-      system: "You are explaining a Krelvan AI agent run to a non-technical user. Be clear, specific, and friendly.",
-      messages: [{ role: "user", content: prompt }],
-      model,
-      maxTokens: 1024,
-      temperature: 0,
-    });
+    // Bound how long explain may hold this request. It is a NON-essential "nice to have"
+    // summary that the dashboard fetches in the background; if the LLM is slow/overloaded we
+    // must NOT block the single-threaded server for minutes (which would starve fast endpoints
+    // like /api/capabilities). Time it out fast and return 503; the UI just shows no summary.
+    const EXPLAIN_TIMEOUT_MS = Math.max(2000, Number(process.env["KRELVAN_EXPLAIN_TIMEOUT_MS"]) || 25_000);
+    const response = await Promise.race([
+      client.complete({
+        system: "You are explaining a Krelvan AI agent run to a non-technical user. Be clear, specific, and friendly.",
+        messages: [{ role: "user", content: prompt }],
+        model,
+        maxTokens: 1024,
+        temperature: 0,
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("explain timed out")), EXPLAIN_TIMEOUT_MS)),
+    ]);
     explanation = response.text;
     if (!explanation) { jsonError(res, 502, "LLM returned no content"); return; }
   } catch (err) {
-    log.error({ err: (err as Error).message }, "explain LLM failed");
-    jsonError(res, 502, `LLM error: ${(err as Error).message}`);
+    const msg = (err as Error).message;
+    log.warn({ err: msg }, "explain LLM failed");
+    jsonError(res, msg.includes("timed out") ? 504 : 502, `explain unavailable: ${msg}`);
     return;
   }
 

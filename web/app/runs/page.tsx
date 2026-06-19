@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { listRuns, explainRun, timeAgo, getCached, type RunRecord } from "../../lib/api";
+import { listRuns, autoSummarizeRuns, timeAgo, getCached, type RunRecord } from "../../lib/api";
 
 type Filter = "all" | "running" | "halted" | "completed" | "failed";
 
@@ -124,24 +124,17 @@ export default function RunsPage() {
     return () => clearInterval(t);
   }, [load]);
 
-  // Auto-fetch one-line summaries for completed runs
+  // Background one-line summaries — BOUNDED (most recent few, low concurrency) so a long run
+  // list doesn't fire one LLM call per row and flood the single-process API.
   useEffect(() => {
-    for (const run of runs) {
-      if (run.status !== "completed") continue;
-      if (fetchingRef.current.has(run.runId)) continue;
-      if (summaries[run.runId] !== undefined) continue;
-      fetchingRef.current.add(run.runId);
-      setSummaries(prev => ({ ...prev, [run.runId]: null }));
-      void explainRun(run.runId)
-        .then(res => {
-          const line = res.explanation.split("\n").filter(l => l.trim())[0] ?? "";
-          setSummaries(prev => ({ ...prev, [run.runId]: line.slice(0, 160) }));
-        })
-        .catch(() => {
-          setSummaries(prev => { const n = { ...prev }; delete n[run.runId]; return n; });
-          fetchingRef.current.delete(run.runId);
-        });
-    }
+    const pending = runs
+      .filter(r => r.status === "completed" && summaries[r.runId] === undefined && !fetchingRef.current.has(r.runId))
+      .map(r => r.runId);
+    if (pending.length === 0) return;
+    pending.forEach(id => fetchingRef.current.add(id));
+    return autoSummarizeRuns(pending, (runId, summary) => {
+      setSummaries(prev => ({ ...prev, [runId]: summary === null ? null : summary.slice(0, 160) }));
+    });
   }, [runs, summaries]);
 
   const filtered = filter === "all" ? runs : runs.filter(r => r.status === filter);
