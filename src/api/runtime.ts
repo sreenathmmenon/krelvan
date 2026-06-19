@@ -150,6 +150,11 @@ export interface PendingApproval {
   nodeId: string;
   capability: string;
   requestedAt: number;
+  /** Human description of what this node does (from the manifest node role). */
+  nodeRole?: string;
+  /** The actual proposed action — the field/value pairs the capability will act on (e.g. the
+   *  email body + recipient, the message to post). So the operator approves WHAT, not just "send". */
+  preview?: { label: string; value: string }[];
 }
 
 // ── Agent registry ─────────────────────────────────────────────────────────────
@@ -1199,10 +1204,17 @@ export class KrelvanRuntime {
     const halted = this.runRegistry.list().filter(r => r.status === "halted");
     const results: PendingApproval[] = [];
 
+    const { project } = await import("../core/kernel/project.js");
+
     for (const run of halted) {
       const events = await this.store.readRun("default", run.runId);
       const resolved = new Set<string>();
       const awaits: PendingApproval[] = [];
+
+      // Project the run so we can show WHAT the gated action will do (its inputs).
+      const proj = project(events);
+      const state = proj.state as Record<string, unknown>;
+      const manifest = this.agentRegistry.get(run.agentId)?.signed.manifest;
 
       for (const e of events) {
         const pl = e.payload as Record<string, unknown>;
@@ -1213,15 +1225,19 @@ export class KrelvanRuntime {
         if (e.type === "AwaitRequested") {
           const cid = pl["correlationId"] as string | undefined;
           const cap = (pl["call"] as Record<string, unknown> | undefined)?.["capability"] as string | undefined;
+          const nodeId = e.scope.nodeId ?? "unknown";
           if (cid) {
+            const nodeRole = manifest?.nodes.find(n => n.id === nodeId)?.role;
             awaits.push({
               correlationId: cid,
               runId: run.runId,
               agentId: run.agentId,
               agentName: run.manifestName,
-              nodeId: e.scope.nodeId ?? "unknown",
+              nodeId,
               capability: cap ?? "unknown",
               requestedAt: e.ts,
+              nodeRole: nodeRole ? nodeRole.split(".")[0]?.slice(0, 160) : undefined,
+              preview: this.buildApprovalPreview(cap ?? "", state),
             });
           }
         }
@@ -1233,6 +1249,46 @@ export class KrelvanRuntime {
     }
 
     return results.sort((a, b) => a.requestedAt - b.requestedAt);
+  }
+
+  /**
+   * Build a human-readable preview of the proposed action so an approver sees WHAT they're
+   * approving (the email body, the message, the URL) — not just "Send an email". Pulls the
+   * relevant fields from the run's projected state by capability, with a generic fallback.
+   */
+  private buildApprovalPreview(capability: string, state: Record<string, unknown>): { label: string; value: string }[] {
+    const pick = (...keys: string[]): string | undefined => {
+      for (const k of keys) {
+        // exact, then any "<node>.<key>" match
+        if (typeof state[k] === "string" && (state[k] as string).trim()) return state[k] as string;
+        for (const [sk, sv] of Object.entries(state)) {
+          if (sk.endsWith(`.${k}`) && typeof sv === "string" && (sv as string).trim()) return sv as string;
+        }
+      }
+      return undefined;
+    };
+    const out: { label: string; value: string }[] = [];
+    const add = (label: string, v?: string) => { if (v) out.push({ label, value: v.slice(0, 600) }); };
+
+    if (capability === "email_send") {
+      add("To", pick("to", "recipient", "creator_handle"));
+      add("Subject", pick("subject"));
+      add("Message", pick("message", "body", "reply"));
+    } else if (capability === "slack_send" || capability === "slack.post") {
+      add("Channel", pick("channel"));
+      add("Message", pick("message", "text", "result"));
+    } else if (capability === "telegram_send") {
+      add("Message", pick("message", "text", "result"));
+    } else if (capability === "notify_webhook" || capability === "http_post" || capability === "webhook.post") {
+      add("URL", pick("url", "target_url"));
+      add("Payload", pick("payload", "body", "message", "result"));
+    } else {
+      // generic: show the most likely "what it will say/do" fields
+      add("Message", pick("message", "reply"));
+      add("Result", pick("result"));
+      add("Body", pick("body"));
+    }
+    return out;
   }
 
   /**

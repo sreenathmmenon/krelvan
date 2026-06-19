@@ -454,6 +454,10 @@ export interface PendingApproval {
   nodeId: string;
   capability: string;
   requestedAt: number;
+  /** Human description of what this node does (from the manifest node role). */
+  nodeRole?: string;
+  /** The actual proposed action — what the agent wants to do, so you approve WHAT not just "send". */
+  preview?: { label: string; value: string }[];
 }
 
 export async function listApprovals(): Promise<PendingApproval[]> {

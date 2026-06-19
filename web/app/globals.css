@@ -1812,6 +1812,23 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 
 @media (max-width: 560px) { .cap-drawer--wide { width: 100vw; } .cap-sort { margin-left: 0; } }
 
+/* ───────────────────── Approval preview (what you're approving) ───────────────────── */
+.approval-preview {
+  background: var(--brand-tint, #E6F4F2);
+  border: 1px solid var(--brand-ring, rgba(14,124,117,.22));
+  border-radius: var(--r); padding: var(--s4); margin-bottom: var(--s4);
+}
+.approval-preview__row { display: flex; gap: var(--s3); padding: var(--s2) 0; align-items: baseline; }
+.approval-preview__row + .approval-preview__row { border-top: 1px solid var(--brand-ring, rgba(14,124,117,.18)); }
+.approval-preview__label {
+  flex-shrink: 0; width: 72px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--brand); padding-top: 2px;
+}
+.approval-preview__value {
+  flex: 1; min-width: 0; color: var(--ink); font-size: 14px; line-height: 1.55;
+  white-space: pre-wrap; word-break: break-word;
+}
+
 /* ───────────────────── Homepage example-agent gallery ───────────────────── */
 .home-examples { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--s4); }
 .home-example {

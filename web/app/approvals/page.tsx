@@ -214,6 +214,24 @@ function ApprovalCard({
         </div>
       </div>
 
+      {/* ── THE PROPOSED ACTION — what you're actually approving (the centerpiece) ── */}
+      {approval.preview && approval.preview.length > 0 ? (
+        <div className="approval-preview">
+          <div className="micro" style={{ color: "var(--ink-muted)", marginBottom: "var(--s3)" }}>The agent wants to do this — review before you approve</div>
+          {approval.preview.map((p, i) => (
+            <div key={i} className="approval-preview__row">
+              <span className="approval-preview__label">{p.label}</span>
+              <span className="approval-preview__value">{p.value}</span>
+            </div>
+          ))}
+        </div>
+      ) : approval.nodeRole ? (
+        <div className="approval-preview">
+          <div className="micro" style={{ color: "var(--ink-muted)", marginBottom: "var(--s2)" }}>What this step does</div>
+          <p className="small" style={{ margin: 0, color: "var(--ink-soft)", lineHeight: 1.55 }}>{approval.nodeRole}</p>
+        </div>
+      ) : null}
+
       {/* correlation ID row — the stable handle that links this gate to its run */}
       <div style={{ background: "var(--surface-sunken)", borderRadius: "var(--r)", padding: "var(--s2) var(--s3)", marginBottom: "var(--s4)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--s3)" }}>
         <span className="micro" style={{ flexShrink: 0 }}>Correlation ID</span>
