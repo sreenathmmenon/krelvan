@@ -149,9 +149,10 @@ function ProveItBand() {
           </h2>
           <p className="body-lg soft" style={{ maxWidth: "46ch", marginBottom: "var(--s5)" }}>
             Every step an agent takes is written to a signed, hash-chained ledger. Download a real
-            run below and check it with a zero-dependency CLI: it recomputes every hash and
-            verifies every signature against the public keys in the file. No account, no install,
-            no trust in us. Then corrupt a single byte and watch it get rejected.
+            run below and check it with a zero-dependency CLI: it recomputes every hash and verifies
+            every signature. No account, no install, no trust in us. Corrupt a single byte and it&apos;s
+            rejected — and to prove which instance produced it, pin the issuer&apos;s key with{" "}
+            <code className="mono" style={{ color: "var(--dark-brand-bright)" }}>--key</code>.
           </p>
           <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap", alignItems: "center" }}>
             <a href="/sample-run.krproof.json" download className="btn btn-dark-primary">
@@ -175,11 +176,10 @@ function ProveItBand() {
             </div>
             <pre className="proveit__out">{`  content addresses : `}<span className="proveit__ok">all 7 match</span>{`
   signatures        : `}<span className="proveit__ok">all 7 valid</span>{`
-  ordering          : `}<span className="proveit__ok">strictly increasing</span>{`
   run boundaries    : `}<span className="proveit__ok">RunStarted → terminal</span>{`
 
-`}<span className="proveit__ok">{`✓ VERIFIED`}</span>{` — every signature checks out
-  against the included public keys.`}</pre>
+`}<span className="proveit__ok">{`✓ CONSISTENT`}</span>{` — internally consistent and unaltered.
+  (pin `}<span className="dim">--key</span>{` to also prove which instance signed it.)`}</pre>
             <div className="proveit__cmd" style={{ marginTop: "var(--s3)" }}>
               <span className="proveit__dollar">$</span>
               <code className="dim"># corrupt one byte, then re-run:</code>

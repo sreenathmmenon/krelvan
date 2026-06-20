@@ -90,12 +90,41 @@ function contentAddress(canonicalBytes) {
   return `sha256:${createHash("sha256").update(canonicalBytes, "utf8").digest("hex")}`;
 }
 
-// ── main ─────────────────────────────────────────────────────────────────────────
-const file = process.argv[2];
-if (!file || file === "--help" || file === "-h") {
-  process.stdout.write("Usage: krelvan verify <proof.json>\n\nIndependently verify a Krelvan signed-run proof bundle, offline.\n");
-  process.exit(file ? 0 : 1);
+// ── arg parsing ────────────────────────────────────────────────────────────────
+//   <proof.json>            the bundle to verify
+//   --key <file.pem>        PIN against this trusted Ed25519 public key (repeatable). The
+//                           bundle's own keys are then only accepted if they match a pinned
+//                           one. This is what turns "internally consistent" into "authentic":
+//                           an auditor fetches the genuine key out-of-band (GET /api/ledger/keys
+//                           on the issuing instance) and pins it here so a forger can't supply
+//                           their own keypair.
+const args = process.argv.slice(2);
+if (!args.length || args[0] === "--help" || args[0] === "-h") {
+  process.stdout.write(`Usage: krelvan verify <proof.json> [--key <pubkey.pem> ...]
+
+Independently verify a Krelvan signed-run proof bundle, offline.
+
+Without --key, the bundle is checked against the public keys EMBEDDED in it — this proves
+the run is internally consistent and unaltered, but NOT that it came from a particular
+instance (a forger could embed their own keys). To prove authenticity of origin, pin the
+issuer's real public key: fetch it from GET /api/ledger/keys on the source instance and pass
+it with --key.
+`);
+  process.exit(args.length ? 0 : 1);
 }
+
+const pinnedKeyPems = [];
+let file = null;
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--key") {
+    const p = args[++i];
+    if (!p) die("--key needs a path to a PEM public key");
+    try { pinnedKeyPems.push(readFileSync(p, "utf8")); } catch (e) { die(`could not read pinned key ${p}: ${e.message}`); }
+  } else if (!file) {
+    file = args[i];
+  }
+}
+if (!file) die("no proof bundle given");
 
 let bundle;
 try {
@@ -111,12 +140,29 @@ if (!bundle || bundle.krelvanProofBundle !== 1 || !Array.isArray(bundle.events))
 process.stdout.write(`${C.bold}Krelvan proof bundle${C.reset} — run ${bundle.runId}\n`);
 process.stdout.write(dim(`  ${bundle.events.length} events · ${bundle.algorithm} · exported ${new Date(bundle.exportedAt).toISOString()}\n`));
 
-// Load public keys (Ed25519 only — HMAC sigs are instance-local and not third-party verifiable).
-const pubKeys = new Map();
-for (const k of bundle.publicKeys ?? []) {
-  try { pubKeys.set(`${k.keyId}#${k.epoch}`, createPublicKey(k.publicKeyPem)); }
-  catch (e) { die(`bad public key ${k.keyId}#${k.epoch}: ${e.message}`); }
+// SPKI DER fingerprint of a public key — stable, comparable across PEM whitespace.
+const keyFingerprint = (keyObj) => createHash("sha256").update(keyObj.export({ type: "spki", format: "der" })).digest("hex");
+
+// The set of trusted fingerprints, if the caller pinned any.
+const pinnedFps = new Set();
+for (const pem of pinnedKeyPems) {
+  try { pinnedFps.add(keyFingerprint(createPublicKey(pem))); }
+  catch (e) { die(`bad pinned public key: ${e.message}`); }
 }
+
+// Load the bundle's own public keys (Ed25519 only — HMAC sigs are instance-local).
+// We accept all of them here; if --key was given, we enforce below that every key that
+// ACTUALLY SIGNED an event matches a pinned fingerprint (unused bundle keys are irrelevant).
+const pubKeys = new Map();         // "keyId#epoch" -> KeyObject
+const pubKeyFp = new Map();        // "keyId#epoch" -> fingerprint hex
+for (const k of bundle.publicKeys ?? []) {
+  let keyObj;
+  try { keyObj = createPublicKey(k.publicKeyPem); }
+  catch (e) { die(`bad public key ${k.keyId}#${k.epoch}: ${e.message}`); }
+  pubKeys.set(`${k.keyId}#${k.epoch}`, keyObj);
+  pubKeyFp.set(`${k.keyId}#${k.epoch}`, keyFingerprint(keyObj));
+}
+const usedSigningKeys = new Set(); // "keyId#epoch" actually used to verify a signature
 
 const isEd25519 = bundle.algorithm === "ed25519";
 if (!isEd25519) {
@@ -145,6 +191,7 @@ for (const e of bundle.events) {
         valid = sigBytes.length === 64 && cryptoVerify(null, Buffer.from(e.id, "utf8"), key, sigBytes);
       } catch { valid = false; }
       if (!valid) { sigFailures++; process.stdout.write(`  ${bad("✗")} offset ${e.offset} ${e.type}: signature does not verify\n`); }
+      else usedSigningKeys.add(`${e.sig.keyId}#${e.sig.epoch}`);
     }
   }
 
@@ -172,21 +219,53 @@ if (first?.type !== "RunStarted") { boundaryFailures++; process.stdout.write(`  
 if (!(last && TERMINAL.has(last.type))) { boundaryFailures++; process.stdout.write(`  ${bad("✗")} does not end at a terminal event (last is ${last?.type}) — the run's end was omitted\n`); }
 
 process.stdout.write("\n");
-const allOk = idFailures === 0 && sigFailures === 0 && orderFailures === 0 && boundaryFailures === 0;
+const pinned = pinnedFps.size > 0;
+// When pinned: every key that ACTUALLY signed an event must match a pinned fingerprint.
+// (Unused keys carried in the bundle are irrelevant — only signers matter for origin.)
+let pinMismatch = false;
+if (pinned) {
+  for (const id of usedSigningKeys) {
+    if (!pinnedFps.has(pubKeyFp.get(id))) {
+      pinMismatch = true;
+      process.stdout.write(`  ${bad("✗")} signing key ${id} does NOT match any pinned --key — possible forgery\n`);
+    }
+  }
+}
+const allOk = idFailures === 0 && sigFailures === 0 && orderFailures === 0 && boundaryFailures === 0 && !pinMismatch;
 process.stdout.write(`  content addresses : ${idFailures === 0 ? ok(`all ${bundle.events.length} match`) : bad(`${idFailures} mismatch`)}\n`);
-if (isEd25519) process.stdout.write(`  signatures        : ${sigFailures === 0 ? ok(`all ${sigChecked} valid`) : bad(`${sigFailures} invalid`)}\n`);
+if (isEd25519) {
+  process.stdout.write(`  signatures        : ${sigFailures === 0 ? ok(`all ${sigChecked} valid`) : bad(`${sigFailures} invalid`)}\n`);
+  process.stdout.write(`  key trust         : ${pinMismatch ? bad("bundle key ≠ pinned key") : pinned ? ok("matches pinned key") : `${C.yellow}self-included (not pinned)${C.reset}`}\n`);
+}
 process.stdout.write(`  ordering          : ${orderFailures === 0 ? ok("strictly increasing") : bad(`${orderFailures} out of order`)}\n`);
-process.stdout.write(`  run boundaries    : ${boundaryFailures === 0 ? ok("RunStarted → terminal") : bad(`${boundaryFailures} problem(s) — start/end omitted`)}\n\n`);
+process.stdout.write(`  run boundaries    : ${boundaryFailures === 0 ? ok("RunStarted → terminal") : bad(`${boundaryFailures} problem(s) — start/end omitted`)}\n`);
+// Print key fingerprints so an UNPINNED verifier can compare them, out-of-band, to the issuing
+// instance's GET /api/ledger/keys — the step that upgrades "consistent" to "authentic".
+if (isEd25519 && pubKeys.size) {
+  for (const [id, keyObj] of pubKeys) {
+    process.stdout.write(dim(`    key ${id} sha256:${keyFingerprint(keyObj).slice(0, 24)}…\n`));
+  }
+}
+process.stdout.write("\n");
 
 if (allOk) {
-  if (isEd25519) {
-    process.stdout.write(`${ok("✓ VERIFIED")} — ${bundle.events.length} events, every signature valid against the included public keys; the slice spans a whole run start-to-finish, in order.\n${dim("  Every recorded step is authentic and unaltered — it cannot have been tampered with or forged.")}\n`);
+  if (isEd25519 && pinned) {
+    process.stdout.write(`${ok("✓ VERIFIED · authentic")} — ${bundle.events.length} events, every signature valid against your PINNED public key; the slice spans a whole run start-to-finish, in order.\n${dim("  This run provably came from the holder of that key and has not been altered or forged.")}\n`);
+  } else if (isEd25519) {
+    // Unpinned: signatures are valid against keys the bundle SUPPLIES. That proves the bundle is
+    // internally consistent (unaltered), NOT that it came from a particular instance — a forger
+    // could supply their own keypair. Say exactly that, and tell the verifier how to upgrade it.
+    process.stdout.write(`${ok("✓ CONSISTENT")} — ${bundle.events.length} events, every signature valid against the keys included in the file; the slice spans a whole run start-to-finish, in order.\n${dim("  This proves the run is internally consistent and unaltered. It does NOT prove which instance\n  produced it — the keys came from the file itself. To prove origin, fetch the issuer's public key\n  from GET /api/ledger/keys and re-run with --key <that-key.pem>.")}\n`);
   } else {
-    // HMAC: tamper-EVIDENT and instance-local — signatures can't be checked by a third party,
-    // so this is NOT non-repudiable proof. Say so plainly; exit 0 but clearly labelled.
+    // HMAC: tamper-EVIDENT and instance-local — signatures can't be checked by a third party.
     process.stdout.write(`${C.yellow}~ PARTIALLY VERIFIED${C.reset} (instance-local) — ${bundle.events.length} events; content addresses, ordering and run boundaries all check out.\n${dim(`  Signatures use ${bundle.algorithm}, which is tamper-evident but NOT independently verifiable without the instance's secret. For third-party proof, ask the sender for an Ed25519-signed export.`)}\n`);
   }
   process.exit(0);
+} else if (pinMismatch && idFailures === 0 && sigFailures === 0 && orderFailures === 0 && boundaryFailures === 0) {
+  // The chain is internally consistent but signed by a key that ISN'T the one you pinned —
+  // the classic forgery: valid signatures, wrong signer.
+  process.stdout.write(`${bad("✗ WRONG SIGNER")} — the bundle is internally consistent but its signing key does NOT match the key you pinned. It was not produced by that instance. Do not trust it.\n`);
+  process.exit(1);
 } else {
   process.stdout.write(`${bad("✗ VERIFICATION FAILED")} — the bundle does not match its own signed record, or its run start/end was omitted. Do not trust it.\n`);
   process.exit(1);

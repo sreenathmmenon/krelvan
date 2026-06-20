@@ -193,9 +193,17 @@ npm run demo:live    # (needs KRELVAN_ANTHROPIC_KEY) a real model proposes a wor
 **Asymmetric ledger signing (ed25519) — the default on a fresh install.** A new data dir signs
 the ledger with per-install Ed25519 keys. The **public** keys are published at
 `GET /api/ledger/keys` (no auth) so an auditor, regulator, or counterparty can **independently
-verify the entire ledger without any secret — and cannot forge an entry** (`npx krelvan verify`
-does exactly this, offline). That is **non-repudiable** proof, not just tamper-*evident*. The
-private key never leaves the signer.
+verify the ledger without any secret** — `npx krelvan verify <bundle>` does exactly this, offline.
+The private key never leaves the signer, so nobody but the holder can produce a signature that
+verifies against that key.
+
+> **Verifying *authenticity of origin* needs one extra step — pin the key.** Run unpinned,
+> `npx krelvan verify` checks every signature against the public keys *included in the bundle*:
+> that proves the run is internally consistent and unaltered, but **not** which instance produced
+> it (a forger could ship their own keypair inside their own file). The verifier says so plainly
+> (`✓ CONSISTENT`, not `authentic`) and prints each key's fingerprint. To prove origin, fetch the
+> issuer's real public key from `GET /api/ledger/keys` and pass it: `npx krelvan verify <bundle>
+> --key issuer.pem` → `✓ VERIFIED · authentic` (and a forged key is rejected as `✗ WRONG SIGNER`).
 
 Set `KRELVAN_LEDGER_SIGNING=hmac` to force the symmetric HMAC adapter instead (tamper-evident,
 but instance-local — not third-party verifiable). An **existing HMAC install keeps using HMAC**
@@ -212,14 +220,19 @@ Anyone can re-check it offline with **zero dependencies**:
 ```bash
 npx krelvan verify krelvan-proof-<run>.json
 #   content addresses : all 7 match
-#   signatures        : all 7 valid        (ed25519 only)
+#   signatures        : all 7 valid          (ed25519 only)
+#   key trust         : self-included (not pinned)
 #   run boundaries    : RunStarted → terminal
-#   ✓ VERIFIED — every signature checks out against the included public keys
+#   ✓ CONSISTENT — internally consistent and unaltered (pin --key to prove origin)
+
+npx krelvan verify krelvan-proof-<run>.json --key issuer.pem
+#   ✓ VERIFIED · authentic — provably from the holder of that key
 ```
 
-It recomputes each content address, verifies every Ed25519 signature against the bundled public
-keys, and rejects a bundle whose run start/end was omitted. (HMAC bundles report *partially
-verified · instance-local* — tamper-evident, but not third-party verifiable by design.)
+It recomputes each content address, verifies every Ed25519 signature, and rejects a bundle whose
+run start/end was omitted or whose signing key doesn't match a pinned `--key` (`✗ WRONG SIGNER`).
+(HMAC bundles report *partially verified · instance-local* — tamper-evident, but not third-party
+verifiable by design.)
 
 ## Backups & the data directory
 
