@@ -1949,6 +1949,13 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .proveit__term--live.is-fail .proveit__termbar { background: rgba(248,113,113,.06); }
 .proveit__termbar { position: relative; flex-wrap: nowrap; }
 .proveit__termtitle { color: var(--dark-ink-muted); font-size: 11px; margin-left: var(--s2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* mobile: the narrow panel can't fit dots + title + the tamper pill on one line, and the pill
+   (the viral hook) must never clip. Hide the title and let the pill take its space. */
+@media (max-width: 560px) {
+  .proveit__termtitle { display: none; }
+  .proveit__termbar { gap: var(--s2); }
+  .proveit__tamper { margin-left: auto; }
+}
 .proveit__tamper {
   margin-left: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: var(--s2); white-space: nowrap;
   font-size: 12.5px; font-weight: 600; color: #ffb3b3; cursor: pointer; user-select: none;
