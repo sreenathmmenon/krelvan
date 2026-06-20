@@ -531,6 +531,18 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       {/* canvas / graph */}
       {tab === "canvas" && (
         <div role="tabpanel" id="panel-canvas" aria-labelledby="tab-canvas" style={{ display: "grid", gridTemplateColumns: selectedNode ? "1fr 300px" : "1fr", gap: "var(--s5)", alignItems: "start" }}>
+          <Link
+            href={`/canvas/${run.agentId}?run=${id}`}
+            className="replay-cta"
+            style={{ gridColumn: "1 / -1" }}
+          >
+            <span className="replay-cta__play" aria-hidden="true">▶</span>
+            <span className="replay-cta__body">
+              <strong>Watch the full replay</strong>
+              <span className="small dim">Step through every event on the live canvas — scrub the ledger node by node, see exactly what ran.</span>
+            </span>
+            <span className="replay-cta__arrow" aria-hidden="true">↗</span>
+          </Link>
           <GraphCanvas
             manifest={syntheticManifest}
             projection={projection}

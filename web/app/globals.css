@@ -1837,6 +1837,28 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .run-seal__detail { color: var(--ink-soft); font-size: 13px; flex: 1; min-width: 200px; }
 .run-seal__cta { color: var(--ok); font-weight: 600; font-size: 13px; flex-shrink: 0; }
 
+/* ───────────────────── Replay CTA (run page → live canvas scrubber) ───────────────────── */
+.replay-cta {
+  display: flex; align-items: center; gap: var(--s4);
+  padding: var(--s4); border-radius: var(--r);
+  background: linear-gradient(110deg, color-mix(in srgb, var(--brand) 12%, var(--surface)), var(--surface));
+  border: 1px solid color-mix(in srgb, var(--brand) 28%, transparent);
+  text-decoration: none; color: inherit; transition: border-color 120ms, transform 120ms, box-shadow 120ms;
+}
+.replay-cta:hover {
+  border-color: color-mix(in srgb, var(--brand) 50%, transparent);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px -10px color-mix(in srgb, var(--brand) 60%, transparent);
+}
+.replay-cta__play {
+  display: grid; place-items: center; flex-shrink: 0;
+  width: 38px; height: 38px; border-radius: 999px;
+  background: var(--brand); color: #fff; font-size: 14px; padding-left: 2px;
+}
+.replay-cta__body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.replay-cta__body strong { font-weight: 650; color: var(--ink); }
+.replay-cta__arrow { color: var(--brand); font-weight: 700; flex-shrink: 0; }
+
 /* ───────────────────── Approval preview (what you're approving) ───────────────────── */
 .approval-preview {
   background: var(--brand-tint, #E6F4F2);

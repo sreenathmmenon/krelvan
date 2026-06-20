@@ -3,8 +3,8 @@
 import { useState, useEffect, use, useRef, useReducer, useMemo } from "react";
 import Link from "next/link";
 import {
-  getAgent, getAgentRuns, getRun, getRunEvents, startRun, timeAgo,
-  type AgentRecord, type RunRecord, type RunDetail, type LedgerEvent,
+  getAgent, getAgentRuns, getRun, getRunEvents, startRun, verifyRun, timeAgo,
+  type AgentRecord, type RunRecord, type RunDetail, type LedgerEvent, type RunVerification,
   type ManifestNode, type ManifestEdge, type ManifestExpr, API_BASE,
 } from "../../../lib/api";
 import { layoutGraph, graphBounds, edgePath, type NodePos } from "../../../lib/layout";
@@ -387,6 +387,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [detail, setDetail]     = useState<RunDetail | null>(null);
   const [events, setEvents]     = useState<LedgerEvent[]>([]);
+  const [verification, setVerification] = useState<RunVerification | null>(null);
   const [loading, setLoading]   = useState(true);
   const [mode, setMode]         = useState<"blueprint" | "live">("blueprint");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -429,7 +430,8 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   // ── Load run detail + events when run selected ────────────────────────────
 
   useEffect(() => {
-    if (!selectedRunId) { setDetail(null); setEvents([]); return; }
+    if (!selectedRunId) { setDetail(null); setEvents([]); setVerification(null); return; }
+    setVerification(null);
     async function loadRun() {
       const [d, evs] = await Promise.all([getRun(selectedRunId!), getRunEvents(selectedRunId!)]);
       setDetail(d);
@@ -437,6 +439,9 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
       setScrubCursor(null);
       if (d.run.status === "running" || d.run.status === "pending") {
         setMode("live");
+      } else {
+        // Auto-verify a finished run so the canvas seal is DEMONSTRATED, not just asserted.
+        void verifyRun(selectedRunId!).then(setVerification).catch(() => {});
       }
     }
     void loadRun();
@@ -724,16 +729,20 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
           )}
         </div>
 
-        {/* tamper-evident ledger badge */}
+        {/* tamper-evident ledger badge — DEMONSTRATED via auto-verify when a finished run is selected */}
         <Link
           href={selectedRunId ? `/runs/${selectedRunId}#timeline` : `/agents/${agentId}`}
-          title="Every event is hash-chained and signed — any tampering is detectable on verify"
-          className="badge badge-done canvas-ledger-badge"
+          title={verification?.ok
+            ? `Verified: ${verification.signedEvents}/${verification.runEvents} events signed, full ${verification.ledgerEvents}-event chain intact (${verification.algorithm})`
+            : "Every event is hash-chained and signed — any tampering is detectable on verify"}
+          className={`badge ${verification && !verification.ok ? "badge-failed" : "badge-done"} canvas-ledger-badge`}
           style={{ flexShrink: 0, textDecoration: "none" }}
         >
           <IconCheck />
-          <span className="sr-only">Verified:</span>
-          Signed
+          <span className="sr-only">Ledger status:</span>
+          {verification?.ok
+            ? <>{verification.signedEvents}/{verification.runEvents} verified</>
+            : verification && !verification.ok ? "Verify failed" : "Signed"}
         </Link>
 
         {/* run selector */}
