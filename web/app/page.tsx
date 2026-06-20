@@ -208,16 +208,17 @@ function useLiveVerify() {
   return { tampered, setTampered, result, verifying };
 }
 
-// The live terminal + tamper toggle. `compact` trims the title for the hero panel.
-function VerifyTerminal({ tampered, setTampered, result, verifying, idleNudge }: {
-  tampered: boolean; setTampered: (v: boolean) => void; result: VerifyResult | null; verifying: boolean; idleNudge?: boolean;
+// The live terminal + tamper toggle. `compact` shortens the title for the narrow hero panel
+// so the tamper pill always fits on one line.
+function VerifyTerminal({ tampered, setTampered, result, verifying, idleNudge, compact }: {
+  tampered: boolean; setTampered: (v: boolean) => void; result: VerifyResult | null; verifying: boolean; idleNudge?: boolean; compact?: boolean;
 }) {
   const pass = result?.verdict === "CONSISTENT";
   return (
     <div className={`proveit__term proveit__term--live${pass ? " is-pass" : result ? " is-fail" : ""}`} aria-live="polite">
       <div className="proveit__termbar">
         <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
-        <span className="proveit__termtitle mono">krelvan verify · in your browser</span>
+        <span className="proveit__termtitle mono">{compact ? "verify · browser" : "krelvan verify · in your browser"}</span>
         <label className={`proveit__tamper${idleNudge && !tampered ? " is-nudge" : ""}`}>
           <input type="checkbox" checked={tampered} onChange={e => setTampered(e.target.checked)} />
           <span>Tamper with one byte</span>
@@ -249,7 +250,7 @@ function VerifyTerminal({ tampered, setTampered, result, verifying, idleNudge }:
 // a real completed-run artifact when one exists.
 function HeroVerifyPanel() {
   const v = useLiveVerify();
-  return <VerifyTerminal {...v} idleNudge />;
+  return <VerifyTerminal {...v} idleNudge compact />;
 }
 
 function ProveItBand() {
@@ -500,7 +501,7 @@ export default function Landing() {
               {/* the falsifiable hero gesture — a runnable command, not a promise */}
               <div className="hero-verify-cmd" aria-label="Run npx krelvan verify to re-check a signed run offline">
                 <span className="hero-verify-cmd__prompt" aria-hidden="true">$</span>
-                <code>npx krelvan verify run.krproof.json</code>
+                <code>npx krelvan verify sample-run.krproof.json</code>
                 <span className="hero-verify-cmd__ok" aria-hidden="true">
                   <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d={UI.check} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </span>
@@ -725,7 +726,7 @@ export default function Landing() {
           </p>
           <div className="depth-grid">
             {[
-              { k: "The ledger IS the runtime", v: "Every step → an append-only, content-addressed, Ed25519-signed log. The canvas, audit trail and cost meter are pure reads of it — what you see is structurally what executed.", href: "/runs", cta: "See a signed run", lead: true },
+              { k: "The ledger IS the runtime", v: "Every step → an append-only, content-addressed, Ed25519-signed log. The canvas, audit trail and cost meter are pure reads of it — so you can scrub back through any run, step by step, and what you see is structurally what executed.", href: "/runs", cta: "Replay a signed run", lead: true },
               { k: "Failure diagnosis + retry", v: "When a run fails, Krelvan reads the ledger to diagnose why, drafts a corrected agent, and re-runs it — and the repair attempt is itself signed in, pass or fail.", href: "/runs", cta: "Explain a run", lead: true },
               { k: "Build from plain English", v: "Describe an outcome; get a validated, typed, signed agent graph. The model is a compiler into a manifest the kernel runs — it never executes free-form code.", href: "/dashboard", cta: "Build an agent" },
               { k: "Human-in-the-loop gate", v: "Dial autonomy per step — suggest, act-with-veto, full. It pauses before the steps you gate and shows the exact action, not a summary.", href: "/approvals", cta: "Open approvals" },
@@ -790,18 +791,6 @@ export default function Landing() {
           </p>
           <div className="cta-lanes">
             <div className="cta-lane">
-              <div className="cta-lane__time mono">~15 sec</div>
-              <div className="cta-lane__title">Verify a run</div>
-              <p className="cta-lane__desc">Download the sample and re-check it offline — no install of Krelvan itself, no account.</p>
-              <button type="button" className="btn btn-dark-primary btn-sm" onClick={scrollToProveIt}>Verify now →</button>
-            </div>
-            <div className="cta-lane">
-              <div className="cta-lane__time mono">~60 sec</div>
-              <div className="cta-lane__title">Clone &amp; run</div>
-              <p className="cta-lane__desc">One command boots the API + web UI on <span className="mono">localhost:3100</span>, or <span className="mono">docker compose up</span>.</p>
-              <InstallCommand />
-            </div>
-            <div className="cta-lane">
               <div className="cta-lane__time mono">~3 sec</div>
               <div className="cta-lane__title">Read the source</div>
               <p className="cta-lane__desc">It&apos;s all there — the ledger, the verifier, the sandbox. Star it if it&apos;s your kind of thing.</p>
@@ -809,6 +798,18 @@ export default function Landing() {
                 <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 1.6a6.4 6.4 0 0 0-2 12.5c.3.06.43-.14.43-.3v-1.1c-1.8.4-2.2-.85-2.2-.85-.3-.75-.72-.95-.72-.95-.6-.4.04-.4.04-.4.65.05 1 .67 1 .67.58 1 1.5.7 1.9.55.06-.43.23-.7.42-.87-1.45-.16-2.97-.72-2.97-3.2 0-.7.25-1.3.66-1.74-.07-.16-.29-.82.06-1.7 0 0 .54-.18 1.78.66a6.1 6.1 0 0 1 3.24 0c1.24-.84 1.78-.66 1.78-.66.35.88.13 1.54.06 1.7.41.44.66 1.04.66 1.74 0 2.49-1.52 3.04-2.97 3.2.23.2.44.6.44 1.2v1.78c0 .17.12.37.44.3A6.4 6.4 0 0 0 8 1.6z"/></svg>
                 Star on GitHub
               </a>
+            </div>
+            <div className="cta-lane">
+              <div className="cta-lane__time mono">~15 sec</div>
+              <div className="cta-lane__title">Verify a run</div>
+              <p className="cta-lane__desc">Download the sample and re-check it offline — no account, nothing to set up. The verifier is one zero-dep file.</p>
+              <button type="button" className="btn btn-dark-primary btn-sm" onClick={scrollToProveIt}>Verify now →</button>
+            </div>
+            <div className="cta-lane">
+              <div className="cta-lane__time mono">~60 sec</div>
+              <div className="cta-lane__title">Clone &amp; run</div>
+              <p className="cta-lane__desc">One command boots the API + web UI on <span className="mono">localhost:3100</span>, or <span className="mono">docker compose up</span>.</p>
+              <InstallCommand />
             </div>
           </div>
         </div>
