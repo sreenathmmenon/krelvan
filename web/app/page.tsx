@@ -174,35 +174,29 @@ function InstallCommand() {
   );
 }
 
-// ── "Prove it" band — the viral hook: a REAL verifier running in YOUR browser ──
-// We fetch the genuine signed sample bundle (/sample-run.krproof.json, Ed25519, 7 events)
-// and verify it client-side with Web Crypto (web/lib/verify-bundle.ts) — the same checks
-// the CLI runs. The "tamper" toggle flips one byte of a payload and re-verifies LIVE, so a
-// skeptic watches ✓ VERIFIED flip to ✗ REJECTED in their own browser (open devtools — it's
-// genuinely computing SHA-256 + Ed25519). This isn't a re-enactment; it's the real check.
+// ── Live in-browser verifier — the viral hook ──────────────────────────────────
+// Fetch the genuine signed sample bundle (/sample-run.krproof.json, Ed25519, 7 events) and
+// verify it client-side with Web Crypto (web/lib/verify-bundle.ts) — the same checks the CLI
+// runs. The "tamper" toggle flips one byte of a payload and re-verifies LIVE, so a skeptic
+// watches ✓ CONSISTENT flip to ✗ REJECTED in their own browser (open devtools — it's genuinely
+// computing SHA-256 + Ed25519). Not a re-enactment; the real check. Shared by the hero + band.
 const VERIFY_CMD = "npx krelvan verify sample-run.krproof.json";
 const TWEET = "Krelvan agent runs are Ed25519-signed — you can `npx krelvan verify` them offline, zero deps. Change one byte and it rejects. AI agents you can actually audit.";
+const SHARE_URL = "https://krelvan.com";
+const TWEET_HREF = `https://twitter.com/intent/tweet?text=${encodeURIComponent(TWEET)}&url=${encodeURIComponent(SHARE_URL)}`;
 
-function ProveItBand() {
+function useLiveVerify() {
   const [bundle, setBundle] = useState<ProofBundle | null>(null);
   const [tampered, setTampered] = useState(false);
   const [result, setResult] = useState<VerifyResult | null>(null);
   const [verifying, setVerifying] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [shared, setShared] = useState(false);
-
-  // Fetch the real bundle once (the same file the Download button serves).
   useEffect(() => {
     void fetch("/sample-run.krproof.json").then(r => r.json()).then((b: ProofBundle) => setBundle(b)).catch(() => {});
   }, []);
-
-  // Re-verify (really, in-browser) whenever the bundle loads or the tamper toggle flips.
   useEffect(() => {
     if (!bundle) return;
     let cancelled = false;
     setVerifying(true);
-    // Deep-clone; if "tampered", flip one byte of a payload WITHOUT touching id/sig — exactly
-    // what an attacker would try. The verifier recomputes the hash and catches the mismatch.
     const candidate: ProofBundle = JSON.parse(JSON.stringify(bundle));
     if (tampered) {
       const target = candidate.events.find(e => e.payload && typeof e.payload === "object") ?? candidate.events[1];
@@ -211,22 +205,66 @@ function ProveItBand() {
     void verifyBundle(candidate).then(r => { if (!cancelled) { setResult(r); setVerifying(false); } });
     return () => { cancelled = true; };
   }, [bundle, tampered]);
+  return { tampered, setTampered, result, verifying };
+}
 
+// The live terminal + tamper toggle. `compact` trims the title for the hero panel.
+function VerifyTerminal({ tampered, setTampered, result, verifying, idleNudge }: {
+  tampered: boolean; setTampered: (v: boolean) => void; result: VerifyResult | null; verifying: boolean; idleNudge?: boolean;
+}) {
+  const pass = result?.verdict === "CONSISTENT";
+  return (
+    <div className={`proveit__term proveit__term--live${pass ? " is-pass" : result ? " is-fail" : ""}`} aria-live="polite">
+      <div className="proveit__termbar">
+        <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
+        <span className="proveit__termtitle mono">krelvan verify · in your browser</span>
+        <label className={`proveit__tamper${idleNudge && !tampered ? " is-nudge" : ""}`}>
+          <input type="checkbox" checked={tampered} onChange={e => setTampered(e.target.checked)} />
+          <span>Tamper with one byte</span>
+        </label>
+      </div>
+      <div className="proveit__termbody">
+        <div className="proveit__cmd">
+          <span className="proveit__dollar">$</span>
+          <code>{VERIFY_CMD}{tampered ? "   # one byte changed" : ""}</code>
+        </div>
+        {!result ? (
+          <pre className="proveit__out">{verifying ? "  verifying…" : "  loading sample run…"}</pre>
+        ) : (
+          <pre className="proveit__out">{`  content addresses : `}<span className={result.hashes.failed === 0 ? "proveit__ok" : "proveit__bad"}>{result.hashes.failed === 0 ? `all ${result.hashes.checked} match` : `${result.hashes.failed} mismatch`}</span>{`
+  signatures        : `}<span className={result.signatures.failed === 0 && result.signatures.allSigned ? "proveit__ok" : "proveit__bad"}>{result.signatures.failed === 0 && result.signatures.allSigned ? `all ${result.signatures.checked} valid` : `${result.signatures.failed} invalid`}</span>{`
+  run boundaries    : `}<span className={result.boundaries.startsAtRunStarted && result.boundaries.endsTerminal ? "proveit__ok" : "proveit__bad"}>{result.boundaries.startsAtRunStarted && result.boundaries.endsTerminal ? "RunStarted → terminal" : "broken"}</span>{`
+
+`}{pass
+  ? <><span className="proveit__ok">{`✓ CONSISTENT`}</span>{` — every event authentic and unaltered.
+  (pin `}<span className="dim">--key</span>{` to also prove which instance signed it.)`}</>
+  : <><span className="proveit__bad">{`✗ REJECTED`}</span>{` — the run was altered. Do not trust it.`}</>}</pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Hero right panel: the live verifier (the proof, in the hero, above the fold). Falls back to
+// a real completed-run artifact when one exists.
+function HeroVerifyPanel() {
+  const v = useLiveVerify();
+  return <VerifyTerminal {...v} idleNudge />;
+}
+
+function ProveItBand() {
+  const v = useLiveVerify();
+  const [copied, setCopied] = useState(false);
   const copy = useCallback(() => {
     void navigator.clipboard.writeText(VERIFY_CMD).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1600); });
   }, []);
-  const shareTweet = useCallback(() => {
-    void navigator.clipboard.writeText(TWEET).then(() => { setShared(true); setTimeout(() => setShared(false), 1600); });
-  }, []);
-
-  const pass = result?.verdict === "CONSISTENT";
   return (
     <section className="proveit" aria-labelledby="proveit-h">
       <div className="container proveit__grid">
         <div className="proveit__copy">
           <p className="micro" style={{ marginBottom: "var(--s2)" }}>You shouldn&apos;t trust this page</p>
           <h2 id="proveit-h" className="display h1" style={{ marginBottom: "var(--s3)" }}>
-            Don&apos;t trust the demo. <span style={{ color: "var(--dark-brand-bright)" }}>Verify it.</span>
+            Don&apos;t trust the demo. <span className="dark-teal" style={{ fontWeight: 800 }}>Verify it.</span>
           </h2>
           <p className="body-lg soft" style={{ maxWidth: "48ch", marginBottom: "var(--s5)" }}>
             This is a <strong>real signed run</strong> from a real agent. The verifier on the right
@@ -237,47 +275,19 @@ function ProveItBand() {
             <a href="/sample-run.krproof.json" download className="btn btn-dark-primary">
               Download this run ↓
             </a>
-            <button type="button" className="btn btn-dark-ghost" onClick={shareTweet}>
-              {shared ? "✓ Copied to clipboard" : "Copy the tweet"}
-            </button>
+            <a href={TWEET_HREF} target="_blank" rel="noopener noreferrer" className="btn btn-dark-ghost">
+              Share this on X →
+            </a>
           </div>
           <p className="dark-ink-muted small" style={{ marginTop: "var(--s5)", maxWidth: "48ch", lineHeight: 1.6 }}>
             Then run it for real: <code className="mono" style={{ color: "var(--dark-ink-soft)" }}>{VERIFY_CMD}</code>{" "}
             <button type="button" onClick={copy} className="proveit__inlinecopy">{copied ? "copied" : "copy"}</button>.
-            Adversarial review found three forgery vectors — all closed. The verifier is open;{" "}
+            The verifier is open and hardened against forgery — signature-stripping, algorithm-downgrade,
+            chain-break. Don&apos;t take our word for it:{" "}
             <a href="https://github.com/sreenathmmenon/krelvan/blob/main/bin/krelvan-verify.mjs" className="dark-teal" style={{ textDecoration: "underline" }}>read it before you believe it</a>.
           </p>
         </div>
-
-        <div className={`proveit__term proveit__term--live${pass ? " is-pass" : result ? " is-fail" : ""}`} aria-live="polite">
-          <div className="proveit__termbar">
-            <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
-            <span className="proveit__termtitle mono">krelvan verify · in your browser</span>
-            {/* the tamper toggle — the viral mechanic */}
-            <label className="proveit__tamper">
-              <input type="checkbox" checked={tampered} onChange={e => setTampered(e.target.checked)} />
-              <span>Tamper with one byte</span>
-            </label>
-          </div>
-          <div className="proveit__termbody">
-            <div className="proveit__cmd">
-              <span className="proveit__dollar">$</span>
-              <code>{VERIFY_CMD}{tampered ? "   # one byte changed" : ""}</code>
-            </div>
-            {!result ? (
-              <pre className="proveit__out">{verifying ? "  verifying…" : "  loading sample run…"}</pre>
-            ) : (
-              <pre className="proveit__out">{`  content addresses : `}<span className={result.hashes.failed === 0 ? "proveit__ok" : "proveit__bad"}>{result.hashes.failed === 0 ? `all ${result.hashes.checked} match` : `${result.hashes.failed} mismatch`}</span>{`
-  signatures        : `}<span className={result.signatures.failed === 0 && result.signatures.allSigned ? "proveit__ok" : "proveit__bad"}>{result.signatures.failed === 0 && result.signatures.allSigned ? `all ${result.signatures.checked} valid` : `${result.signatures.failed} invalid`}</span>{`
-  run boundaries    : `}<span className={result.boundaries.startsAtRunStarted && result.boundaries.endsTerminal ? "proveit__ok" : "proveit__bad"}>{result.boundaries.startsAtRunStarted && result.boundaries.endsTerminal ? "RunStarted → terminal" : "broken"}</span>{`
-
-`}{pass
-  ? <><span className="proveit__ok">{`✓ CONSISTENT`}</span>{` — every event authentic and unaltered.
-  (pin `}<span className="dim">--key</span>{` to also prove which instance signed it.)`}</>
-  : <><span className="proveit__bad">{`✗ REJECTED`}</span>{` — the run was altered. Do not trust it.`}</>}</pre>
-            )}
-          </div>
-        </div>
+        <VerifyTerminal {...v} />
       </div>
     </section>
   );
@@ -481,12 +491,11 @@ export default function Landing() {
                 className="display dark-ink"
                 style={{ fontSize: "clamp(40px, 5.5vw, 64px)", lineHeight: 1.04, fontWeight: 600, letterSpacing: "-0.03em", marginBottom: "var(--s5)" }}
               >
-                AI agents that <span className="dark-teal">prove what they did</span>.
+                AI agents that <span className="dark-teal" style={{ fontWeight: 800 }}>prove what they did</span>.
               </h1>
-              <p className="dark-ink-soft body-lg" style={{ maxWidth: "53ch", marginBottom: "var(--s5)" }}>
-                Every step an agent takes is signed into an append-only ledger — and the canvas, the
-                audit trail, the cost meter are all just <em>reads</em> of that one log. So what you
-                see is what executed. Export any run and check the math yourself, offline:
+              <p className="dark-ink-soft body-lg" style={{ maxWidth: "48ch", marginBottom: "var(--s5)" }}>
+                Every step an agent takes is signed into a tamper-evident ledger. Export any run
+                and re-check the math yourself, offline — no server, no trust in us:
               </p>
               {/* the falsifiable hero gesture — a runnable command, not a promise */}
               <div className="hero-verify-cmd" aria-label="Run npx krelvan verify to re-check a signed run offline">
@@ -516,11 +525,11 @@ export default function Landing() {
               </div>
             </div>
 
-            {/* right — animated "agent runs → ledger signs it" loop. When the user
-                already has a real completed run, show THAT (real proof beats a demo);
-                otherwise the self-running animation. */}
+            {/* right — the LIVE verifier, above the fold. The hook is the proof, not a
+                promise: a real signed run checked in your browser, with a tamper toggle that
+                flips it to REJECTED. A real completed run (when one exists) beats even that. */}
             <div style={{ animation: "fade-in 400ms var(--ease) forwards" }}>
-              {latestCompleted ? <HeroArtifact run={latestCompleted} /> : <HeroAnimation />}
+              {latestCompleted ? <HeroArtifact run={latestCompleted} /> : <HeroVerifyPanel />}
             </div>
           </div>
         </div>
@@ -711,17 +720,19 @@ export default function Landing() {
             The infrastructure <span style={{ color: "var(--brand)" }}>underneath</span>.
           </h2>
           <p className="body-lg soft" style={{ maxWidth: "60ch", marginBottom: "var(--s7)" }}>
-            The hard parts are solved — signed audit, self-healing, human control, a real sandbox —
+            The hard parts are solved — signed audit, failure diagnosis, human control, a real sandbox —
             so you build the domain logic and ship agentic solutions in days, not months.
           </p>
           <div className="depth-grid">
             {[
               { k: "The ledger IS the runtime", v: "Every step → an append-only, content-addressed, Ed25519-signed log. The canvas, audit trail and cost meter are pure reads of it — what you see is structurally what executed.", href: "/runs", cta: "See a signed run", lead: true },
-              { k: "Failure-reasoning + auto-retry", v: "When a run fails, Krelvan diagnoses why from the ledger, rebuilds a corrected agent, and re-runs it to completion — and the repair is itself signed in.", href: "/runs", cta: "Explain a run", lead: true },
+              { k: "Failure diagnosis + retry", v: "When a run fails, Krelvan reads the ledger to diagnose why, drafts a corrected agent, and re-runs it — and the repair attempt is itself signed in, pass or fail.", href: "/runs", cta: "Explain a run", lead: true },
+              { k: "Build from plain English", v: "Describe an outcome; get a validated, typed, signed agent graph. The model is a compiler into a manifest the kernel runs — it never executes free-form code.", href: "/dashboard", cta: "Build an agent" },
               { k: "Human-in-the-loop gate", v: "Dial autonomy per step — suggest, act-with-veto, full. It pauses before the steps you gate and shows the exact action, not a summary.", href: "/approvals", cta: "Open approvals" },
               { k: "Real OS-process sandbox", v: "Untrusted TS plugins under node --permission, SSRF-guarded brokered egress, secrets injected only at the destination. Adversarially tested.", href: "/capabilities", cta: "Browse capabilities" },
               { k: "Memory + RAG, offline-capable", v: "Episodic, semantic and trust-aware memory with provenance. rag.ingest / rag.search with local embeddings via Ollama — no key, no network.", href: "/capabilities?install=personal-advisor", cta: "Try the advisor" },
-              { k: "7 providers · self-running", v: "Anthropic, OpenAI, Gemini, Groq, Mistral, Ollama (local), any OpenAI-compatible. Cron & interval schedules. Self-hosted auth: scrypt, sessions, CSRF.", href: "/schedules", cta: "See schedules" },
+              { k: "7 providers, swappable", v: "Anthropic, OpenAI, Gemini, Groq, Mistral, any OpenAI-compatible — or Ollama fully local, no key, no network. Switch per agent.", href: "/secrets#model", cta: "Connect a model" },
+              { k: "Scheduled + self-hosted", v: "Cron and interval schedules run agents unattended. Self-hosted auth — scrypt, sessions, CSRF — so an internet-facing box stays yours.", href: "/schedules", cta: "See schedules" },
             ].map(c => (
               <Link key={c.k} href={c.href} className={`card depth-card${c.lead ? " depth-card--lead" : ""}`}>
                 <div className="depth-card__title">
@@ -759,7 +770,7 @@ export default function Landing() {
               <ul>
                 <li>Not a hosted SaaS with an open-source husk — the whole thing runs on your box.</li>
                 <li>Not magic. An agent can still be wrong; that&apos;s why every step is signed, gated, and replayable.</li>
-                <li>Not v-final. This is a first version — we tell you exactly which parts are proven so you can judge for yourself.</li>
+                <li>Not finished. This is an early release — we mark exactly which parts are battle-tested so you can judge the rest for yourself.</li>
               </ul>
             </div>
           </div>
