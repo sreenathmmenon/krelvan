@@ -205,6 +205,7 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "GET",    pattern: ["api", "runs", ":id", "stream"],   handler: (q, r, p) => handleRunStream(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "events"],   handler: (q, r, p) => handleRunEvents(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "verify"],   handler: (q, r, p) => handleVerifyRun(q, r, p, runtime) },
+    { method: "GET",    pattern: ["api", "runs", ":id", "export"],   handler: (q, r, p) => handleExportRun(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "explain"],  handler: (q, r, p) => handleRunExplain(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "diagnose"], handler: (q, r, p) => handleRunDiagnose(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "runs", ":id", "retry"],    handler: (q, r, p) => handleRunRetry(q, r, p, runtime) },
@@ -217,6 +218,8 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "POST",   pattern: ["api", "capabilities", ":name", "enable"],          handler: (q, r, p) => handleEnableCapability(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "capabilities", ":name", "disable"],         handler: (q, r, p) => handleDisableCapability(q, r, p, runtime) },
     { method: "DELETE", pattern: ["api", "capabilities", ":name"],                    handler: (q, r, p) => handleUninstallCapability(q, r, p, runtime) },
+    { method: "GET",    pattern: ["api", "model"],                   handler: (q, r) => handleGetModel(q, r, runtime) },
+    { method: "POST",   pattern: ["api", "model"],                   handler: (q, r) => handleSetModel(q, r, runtime) },
     { method: "GET",    pattern: ["api", "secrets"],                 handler: (q, r) => handleListSecrets(q, r, runtime) },
     { method: "PUT",    pattern: ["api", "secrets", ":name"],        handler: (q, r, p) => handleSetSecret(q, r, p, runtime) },
     { method: "DELETE", pattern: ["api", "secrets", ":name"],        handler: (q, r, p) => handleDeleteSecret(q, r, p, runtime) },
@@ -381,6 +384,19 @@ async function handleHealth(_req: IncomingMessage, res: ServerResponse): Promise
 /** GET /api/status — readiness for the UI (is a model wired up?). Drives the build gate + pill. */
 async function handleStatus(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   json(res, 200, { ...rt.modelStatus });
+}
+
+async function handleGetModel(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  json(res, 200, { ...rt.modelStatus });
+}
+
+async function handleSetModel(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  const raw = await readBody(req);
+  let body: { provider?: string; apiKey?: string; model?: string; baseUrl?: string };
+  try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  const result = rt.setModelConfig(body);
+  if (!result.ok) { jsonError(res, 400, result.error); return; }
+  json(res, 200, { ok: true, ...result.status });
 }
 
 async function handleListAgents(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
@@ -702,6 +718,20 @@ async function handleVerifyRun(_req: IncomingMessage, res: ServerResponse, param
   // which is a legitimate, displayable result.
   const result = await rt.verifyRun(record.runId);
   json(res, 200, result);
+}
+
+async function handleExportRun(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const record = rt.runRegistry.get(params["id"] ?? "");
+  if (!record) { jsonError(res, 404, "run not found"); return; }
+  const result = await rt.exportRun(record.runId);
+  if (!result.ok) { jsonError(res, 404, result.error); return; }
+  // Offer it as a downloadable file — this is the "hand someone a signed record" moment.
+  const safeId = record.runId.replace(/[^a-zA-Z0-9_.-]/g, "_");
+  res.writeHead(200, {
+    "content-type": "application/json; charset=utf-8",
+    "content-disposition": `attachment; filename="krelvan-proof-${safeId}.json"`,
+  });
+  res.end(JSON.stringify(result.bundle, null, 2));
 }
 
 async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {

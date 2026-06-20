@@ -5,9 +5,12 @@ import {
   listSecrets,
   setSecret,
   deleteSecret,
+  getModel,
+  setModel,
   timeAgo,
   type SecretMeta,
   type RequiredSecret,
+  type ModelStatus,
 } from "../../lib/api";
 
 export default function SecretsPage() {
@@ -69,6 +72,10 @@ export default function SecretsPage() {
           (like deploying to your Vercel) reads it from here. Values are never shown in full again.
         </p>
       </div>
+
+      {/* Model — the LLM that builds and powers agents. Lives here so a self-hoster can
+          wire up a provider from the UI instead of editing env vars. */}
+      <ModelSection />
 
       {error && (
         <div role="alert" className="state-error" style={{ marginBottom: "var(--s6)", justifyContent: "space-between" }}>
@@ -159,6 +166,136 @@ export default function SecretsPage() {
         </>
       )}
     </div>
+  );
+}
+
+function ModelSection() {
+  const [status, setStatus] = useState<ModelStatus | null>(null);
+  const [provider, setProvider] = useState("anthropic");
+  const [apiKey, setApiKey] = useState("");
+  const [model, setModelName] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const s = await getModel();
+      setStatus(s);
+      setProvider(s.provider || "anthropic");
+      setModelName(s.model || "");
+    } catch { /* API unreachable — leave defaults; the page-level error banner covers it */ }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  // Scroll into view when arriving via /secrets#model (the "Connect a model" CTAs).
+  useEffect(() => {
+    if (window.location.hash === "#model") {
+      setTimeout(() => document.getElementById("model")?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+    }
+  }, []);
+
+  const needsKey = provider !== "ollama";
+  const ready = !!status?.hasLlm;
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    if (needsKey && !apiKey.trim() && !ready) { setMsg({ kind: "err", text: `An API key is required for ${provider}.` }); return; }
+    setSaving(true);
+    try {
+      // Only send apiKey if the user typed one — empty means "keep the existing key".
+      const cfg: { provider: string; model: string; baseUrl?: string; apiKey?: string } = {
+        provider, model: model.trim(),
+      };
+      if (apiKey.trim()) cfg.apiKey = apiKey.trim();
+      if (provider === "ollama") cfg.baseUrl = baseUrl.trim();
+      const s = await setModel(cfg);
+      setStatus(s);
+      setApiKey("");
+      setMsg(s.hasLlm
+        ? { kind: "ok", text: `Connected — ${s.provider}${s.model ? ` · ${s.model}` : ""}. Your next build will use it.` }
+        : { kind: "err", text: `Saved, but ${s.provider} still needs an API key before agents can build.` });
+    } catch (e) {
+      setMsg({ kind: "err", text: (e as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section id="model" style={{ marginBottom: "var(--s7)", scrollMarginTop: "var(--s8)" }}>
+      <div className="card" style={{ padding: "var(--s6)", boxShadow: "var(--shadow-md)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--s4)", marginBottom: "var(--s2)", flexWrap: "wrap" }}>
+          <h2 className="h2">Model</h2>
+          <span className={`badge ${ready ? "badge-done" : "badge-paused"}`}>
+            <span className="dot" />
+            {ready ? `Connected · ${status?.provider}${status?.model ? ` · ${status.model}` : ""}` : "No model connected"}
+          </span>
+        </div>
+        <p className="small soft" style={{ margin: "0 0 var(--s5)", maxWidth: "62ch" }}>
+          The LLM that turns your plain-English goal into a signed agent and reasons inside each run.
+          Stored encrypted on <em>this</em> instance. Pick a hosted provider with a key, or point at a
+          local Ollama — nothing leaves your machine with Ollama.
+        </p>
+
+        <form onSubmit={(e) => void handleSave(e)} style={{ display: "flex", flexDirection: "column", gap: "var(--s5)" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
+            <span className="micro">Provider</span>
+            <select className="input" value={provider} onChange={e => setProvider(e.target.value)} style={{ maxWidth: 280 }}>
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI</option>
+              <option value="ollama">Ollama (local, no key)</option>
+            </select>
+          </label>
+
+          {needsKey && (
+            <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
+              <span className="micro">API key {ready && status?.source === "in-app" ? "(leave blank to keep current)" : ""}</span>
+              <input
+                type="password" className="input input-mono" value={apiKey}
+                onChange={e => setApiKey(e.target.value)} autoComplete="off"
+                placeholder={provider === "anthropic" ? "sk-ant-…" : "sk-…"}
+              />
+              <span className="small muted">Sent once over your local connection, then encrypted. Never shown again.</span>
+            </label>
+          )}
+
+          {provider === "ollama" && (
+            <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
+              <span className="micro">Base URL (optional)</span>
+              <input className="input input-mono" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="http://localhost:11434" />
+            </label>
+          )}
+
+          <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
+            <span className="micro">Model (optional)</span>
+            <input
+              className="input input-mono" value={model} onChange={e => setModelName(e.target.value)}
+              placeholder={provider === "anthropic" ? "claude-sonnet-4-6" : provider === "ollama" ? "qwen2.5:14b" : "gpt-4o"}
+            />
+            <span className="small muted">Leave blank to use the provider&apos;s default.</span>
+          </label>
+
+          {msg && (
+            msg.kind === "ok" ? (
+              <div style={{ margin: 0, padding: "var(--s3) var(--s4)", borderRadius: "var(--r)", display: "flex", alignItems: "center", gap: "var(--s3)", background: "color-mix(in srgb, var(--ok) 10%, var(--surface))", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", color: "var(--ok)", fontSize: 13, fontWeight: 500 }}>
+                {msg.text}
+              </div>
+            ) : (
+              <div className="state-error" role="alert" style={{ margin: 0 }}>{msg.text}</div>
+            )
+          )}
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--s3)", borderTop: "1px solid var(--line)", paddingTop: "var(--s5)" }}>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? "Saving…" : ready ? "Update model" : "Connect model"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
   );
 }
 

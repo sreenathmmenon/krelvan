@@ -83,6 +83,7 @@ if (cmd === "help" || cmd === "--help" || cmd === "-h") {
 Usage:
   krelvan [up]          build if needed, then start the API + web UI
   krelvan up --api-only start only the API (no web UI)
+  krelvan verify <file> verify an exported run proof bundle, offline
   krelvan help          show this help
 
 Environment (all optional):
@@ -98,6 +99,13 @@ Once up:
   API      http://localhost:${API_PORT}/api/health
 `);
   process.exit(0);
+}
+
+// `krelvan verify <proof.json>` — delegate to the standalone, zero-dep offline verifier.
+if (cmd === "verify") {
+  const { spawnSync } = await import("node:child_process");
+  const r = spawnSync(process.execPath, [join(__dirname, "krelvan-verify.mjs"), ...args.slice(1)], { stdio: "inherit", shell: false });
+  process.exit(r.status ?? 0);
 }
 
 /** Run a command to completion, inheriting stdio. Rejects on non-zero exit. */

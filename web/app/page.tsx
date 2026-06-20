@@ -212,12 +212,17 @@ export default function Landing() {
   const [modelReady, setModelReady] = useState<boolean | null>(null);
   const fetchingSummaries = useRef<Set<string>>(new Set());
 
+  // Track consecutive fetch failures so a logged-out visitor (every call 401s) doesn't
+  // poll a failing endpoint forever on the public landing page.
+  const pollFailures = useRef(0);
+
   const reload = useCallback(async () => {
     try {
       const [a, r] = await Promise.all([listAgents(), listRuns()]);
       setAgents(a);
       setRuns(r);
-    } catch { /* API not yet reachable */ }
+      pollFailures.current = 0;
+    } catch { pollFailures.current += 1; }
     finally { setLoading(false); }
   }, []);
 
@@ -237,7 +242,12 @@ export default function Landing() {
 
   useEffect(() => {
     void reload();
-    const t = setInterval(() => void reload(), 3000);
+    // Poll for live agents/runs, but give up after 3 consecutive failures (a logged-out
+    // visitor on the marketing page) so we don't hammer a 401-ing endpoint forever.
+    const t = setInterval(() => {
+      if (pollFailures.current >= 3) { clearInterval(t); return; }
+      void reload();
+    }, 3000);
     return () => clearInterval(t);
   }, [reload]);
 
@@ -312,8 +322,8 @@ export default function Landing() {
               </h1>
               <p className="dark-ink-soft body-lg" style={{ maxWidth: "52ch", marginBottom: "var(--s5)" }}>
                 Describe a goal in plain English. Krelvan builds the agent, signs every step it
-                takes to a tamper-evident, replayable record, and pauses for your approval before
-                anything risky — all self-hosted, on infrastructure you own.
+                takes to a tamper-evident, replayable record, and pauses for your approval on the
+                steps you choose to gate — all self-hosted, on infrastructure you own.
               </p>
               <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap" }}>
                 <button className="btn btn-dark-primary btn-lg" onClick={focusBuilder}>

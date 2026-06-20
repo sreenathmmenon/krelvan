@@ -482,15 +482,26 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
       {/* ── tamper-proof seal — the #1 wedge, auto-verified on load, always visible ── */}
       {verification?.ok && (
-        <a href="#tab-timeline" onClick={() => setTab("timeline")} className="run-seal" title="See the full cryptographic chain">
+        <div className="run-seal" style={{ cursor: "default" }}>
           <Glyph kind="seal" size={15} color="var(--ok)" />
           {/* HONESTY: HMAC (default) is tamper-EVIDENT but repudiable; only Ed25519 is non-repudiable. */}
           <span className="run-seal__title">{verification.nonRepudiable ? "Tamper-proof · non-repudiable" : "Tamper-evident"}</span>
           <span className="run-seal__detail">
             <span className="mono">{verification.signedEvents}/{verification.runEvents}</span> events signed · full <span className="mono">{verification.ledgerEvents}</span>-event chain verified · {verification.nonRepudiable ? "Ed25519 — anyone can verify from the public key" : "HMAC-SHA256 — verifiable on this instance"}
           </span>
-          <span className="run-seal__cta">View chain →</span>
-        </a>
+          <a
+            href={`/proxy/api/runs/${id}/export`}
+            download
+            className="run-seal__cta"
+            style={{ textDecoration: "none" }}
+            title={verification.nonRepudiable
+              ? "Download a signed record anyone can verify offline with `npx krelvan verify`"
+              : "Download the signed record (HMAC is verifiable on this instance)"}
+          >
+            Download signed record ↓
+          </a>
+          <a href="#tab-timeline" onClick={() => setTab("timeline")} className="run-seal__cta" style={{ textDecoration: "none" }}>View chain →</a>
+        </div>
       )}
       {verification && !verification.ok && (
         <div className="run-seal run-seal--fail">
@@ -594,9 +605,20 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                   </span>
                 )}
               </div>
-              <button className="btn btn-sm" disabled={verifying} onClick={runVerify}>
-                {verifying ? "Verifying…" : verification ? "Re-verify" : "Verify signatures"}
-              </button>
+              <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center", flexShrink: 0 }}>
+                <a
+                  href={`/proxy/api/runs/${id}/export`}
+                  download
+                  className="btn btn-sm btn-secondary"
+                  style={{ textDecoration: "none" }}
+                  title="Download a portable proof bundle — verify it offline with `npx krelvan verify <file>`, no Krelvan install or trust required"
+                >
+                  Download proof ↓
+                </a>
+                <button className="btn btn-sm" disabled={verifying} onClick={runVerify}>
+                  {verifying ? "Verifying…" : verification ? "Re-verify" : "Verify signatures"}
+                </button>
+              </div>
             </div>
           )}
           {events.length > 0 && (
@@ -782,7 +804,7 @@ function OutputPanel({ projection, manifest, run }: {
         <p className="h3" style={{ color: "var(--live)" }}>Agent is working…</p>
         <p className="small soft" style={{ maxWidth: "42ch", lineHeight: 1.6 }}>
           The result will appear here the moment it finishes. Watch it think live on the <strong>Graph</strong> tab,
-          or follow each step on the <strong>Timeline</strong>.
+          or follow each step on the <strong>Ledger</strong>.
         </p>
       </div>
     );
@@ -826,7 +848,7 @@ function OutputPanel({ projection, manifest, run }: {
           <p className="h3" style={{ color: "var(--ink)" }}>No text output produced</p>
           <p className="small soft" style={{ maxWidth: "44ch", lineHeight: 1.6 }}>
             This run didn&apos;t compose a human-readable result. Open the <strong>State</strong> tab to see the
-            raw values it produced, or the <strong>Timeline</strong> for every recorded step.
+            raw values it produced, or the <strong>Ledger</strong> for every recorded step.
           </p>
         </div>
       )}
@@ -892,7 +914,7 @@ function OutputBlockCard({ block, showCopy, copied, onCopy }: {
     try { display = JSON.stringify(JSON.parse(block.value), null, 2); } catch { /* not JSON — leave as-is */ }
   }
   const truncated = display.length > MAX;
-  if (truncated) display = display.slice(0, MAX) + `\n… (${block.value.length.toLocaleString()} chars total — see the Timeline for the full record)`;
+  if (truncated) display = display.slice(0, MAX) + `\n… (${block.value.length.toLocaleString()} chars total — see the Ledger for the full record)`;
 
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden" }}>

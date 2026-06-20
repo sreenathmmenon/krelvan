@@ -63,6 +63,17 @@ import type { NewEvent } from "../core/ledger/event.js";
 const log = getLogger("runtime");
 
 /**
+ * Reserved secret names that hold in-app LLM model configuration. Stored in the encrypted
+ * secret store (so a self-hoster can wire up a model from the UI), but hidden from the
+ * user-facing Secrets list — they're managed through the dedicated /api/model surface.
+ */
+const MODEL_PROVIDER_SECRET = "KRELVAN_LLM_PROVIDER";
+const MODEL_API_KEY_SECRET = "KRELVAN_LLM_API_KEY";
+const MODEL_NAME_SECRET = "KRELVAN_LLM_MODEL";
+const MODEL_BASE_URL_SECRET = "KRELVAN_LLM_BASE_URL";
+const RESERVED_MODEL_SECRETS = new Set([MODEL_PROVIDER_SECRET, MODEL_API_KEY_SECRET, MODEL_NAME_SECRET, MODEL_BASE_URL_SECRET]);
+
+/**
  * Choose the TypeScript-plugin loader (the sandbox mechanism). Default is the REAL
  * subprocess sandbox (separate process + Node permission model — no fs-write /
  * child_process / addons, scrubbed env). Set KRELVAN_PLUGIN_SANDBOX=worker to fall back
@@ -546,9 +557,10 @@ export class KrelvanRuntime {
   private readonly supervisorSigner: Signer;
   private readonly config: RuntimeConfig;
   private readonly anthropicApiKey: string | null;
-  private readonly llmProvider: string;
-  private readonly llmApiKey: string | null;
-  private readonly llmBaseUrl: string | undefined;
+  /** Constructor/env-provided defaults. In-app config (stored as reserved secrets) overrides these. */
+  private readonly llmProviderDefault: string;
+  private readonly llmApiKeyDefault: string | null;
+  private readonly llmBaseUrlDefault: string | undefined;
   private readonly pluginLifecycle: PluginLifecycleService;
   private readonly pluginRepository: SqlitePluginRepository;
   private readonly capsDir: string;
@@ -645,9 +657,9 @@ export class KrelvanRuntime {
 
     // Compiler — built lazily per compile so knownAgents is always current.
     this.anthropicApiKey = config.anthropicApiKey ?? null;
-    this.llmProvider = config.llmProvider ?? process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
-    this.llmApiKey = config.llmApiKey ?? config.anthropicApiKey ?? process.env["KRELVAN_LLM_API_KEY"] ?? process.env["KRELVAN_ANTHROPIC_KEY"] ?? null;
-    this.llmBaseUrl = config.llmBaseUrl ?? process.env["KRELVAN_LLM_BASE_URL"];
+    this.llmProviderDefault = config.llmProvider ?? process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
+    this.llmApiKeyDefault = config.llmApiKey ?? config.anthropicApiKey ?? process.env["KRELVAN_LLM_API_KEY"] ?? process.env["KRELVAN_ANTHROPIC_KEY"] ?? null;
+    this.llmBaseUrlDefault = config.llmBaseUrl ?? process.env["KRELVAN_LLM_BASE_URL"];
     this.compiler = this.buildCompiler();
   }
 
@@ -758,6 +770,65 @@ export class KrelvanRuntime {
       // must not call the HMAC default "tamper-proof".
       nonRepudiable: algorithm === "ed25519",
     };
+  }
+
+  /**
+   * Export a run as a portable, self-verifiable proof bundle — the payoff of the whole
+   * "prove what they did" wedge. A third party can re-check it offline with `npx krelvan
+   * verify <file>` (or the bundled bin/krelvan-verify.mjs), recomputing every content
+   * address and signature against the included public keys WITHOUT trusting this instance.
+   *
+   * The bundle is the run's own event slice (every causal step), each carrying the exact
+   * preimage fields the content-address is computed over, its id, and its signature — plus
+   * the Ed25519 public keys (for HMAC, signatures are instance-local and the bundle says so).
+   */
+  async exportRun(runId: string): Promise<{ ok: true; bundle: Record<string, unknown> } | { ok: false; error: string }> {
+    const all = await this.store.read("default");
+    const runEvents = all.filter((e) => e.scope.runId === runId);
+    if (runEvents.length === 0) return { ok: false, error: `no events for run ${runId}` };
+    const signing = this.getLedgerSigningInfo();
+    const verification = await this.verifyRun(runId);
+
+    const events = runEvents.map((e) => ({
+      // exactly the preimage fields (LED-03) the id is computed over — order-independent;
+      // the verifier canonicalizes (sorted keys) before hashing.
+      type: e.type,
+      scope: {
+        tenantId: e.scope.tenantId,
+        runId: e.scope.runId,
+        ...(e.scope.nodeId !== undefined ? { nodeId: e.scope.nodeId } : {}),
+        branchId: e.scope.branchId,
+      },
+      parents: [...e.parents],
+      prev: e.prev,
+      offset: e.offset,
+      payload: e.payload,
+      determinism: e.determinism,
+      ts: e.ts,
+      author: e.author,
+      // the derived/assigned fields the verifier recomputes and checks against:
+      id: e.id,
+      sig: e.sig,
+    }));
+
+    const bundle: Record<string, unknown> = {
+      krelvanProofBundle: 1,
+      runId,
+      exportedAt: this.now(),
+      algorithm: signing.algorithm,
+      nonRepudiable: signing.nonRepudiable,
+      // Public keys an auditor verifies against. Empty for HMAC (signatures are instance-local).
+      publicKeys: signing.keys,
+      verification: verification.ok
+        ? { ok: true, runEvents: verification.runEvents, signedEvents: verification.signedEvents }
+        : { ok: false, error: verification.error, detail: verification.detail },
+      hashAlgorithm: "sha256",
+      events,
+      howToVerify: signing.algorithm === "ed25519"
+        ? "Run `npx krelvan verify <this-file>` (or `node bin/krelvan-verify.mjs <this-file>`). It recomputes every event's SHA-256 content address and checks each Ed25519 signature against the included public keys — no Krelvan install or trust required."
+        : "This instance signs with HMAC-SHA256, which is tamper-EVIDENT but instance-local: the verify key is the sign key, so an outside party cannot independently verify it. For non-repudiable proof a third party can check, run this instance with Ed25519 signing (KRELVAN_LEDGER_SIGNING=ed25519).",
+    };
+    return { ok: true, bundle };
   }
 
   /**
@@ -1378,7 +1449,8 @@ export class KrelvanRuntime {
   // ── Secrets (customer-managed) ─────────────────────────────────────────────
   /** Public metadata for all set secrets, plus which are still needed by installed caps. */
   listSecrets(): { secrets: import("./secret-store.js").SecretMeta[]; required: { name: string; capability: string; set: boolean }[] } {
-    const secrets = this.secretStore.list();
+    // Hide the reserved model-config secrets — they're managed via the dedicated /api/model surface.
+    const secrets = this.secretStore.list().filter((s) => !RESERVED_MODEL_SECRETS.has(s.name));
     // Gather secret refs declared by installed/enabled capabilities.
     const required: { name: string; capability: string; set: boolean }[] = [];
     const seen = new Set<string>();
@@ -1395,10 +1467,14 @@ export class KrelvanRuntime {
   }
 
   setSecret(name: string, value: string): { ok: true; meta: import("./secret-store.js").SecretMeta } | { ok: false; error: string } {
+    if (RESERVED_MODEL_SECRETS.has(name.trim())) {
+      return { ok: false, error: `'${name.trim()}' is managed in Settings → Model, not as a secret` };
+    }
     return this.secretStore.set(name, value);
   }
 
   deleteSecret(name: string): boolean {
+    if (RESERVED_MODEL_SECRETS.has(name.trim())) return false;
     return this.secretStore.delete(name);
   }
 
@@ -1409,20 +1485,67 @@ export class KrelvanRuntime {
     return this.lastTs;
   }
 
+  /**
+   * Effective LLM config — in-app config (stored under reserved secret names) wins over
+   * constructor/env defaults, so a self-hoster can wire up a model from the UI without
+   * SSHing in to edit env vars or restarting. buildCompiler() reads these fresh per build.
+   */
+  private get llmProvider(): string {
+    return this.secretStore.resolve(MODEL_PROVIDER_SECRET) ?? this.llmProviderDefault;
+  }
+  private get llmApiKey(): string | null {
+    return this.secretStore.resolve(MODEL_API_KEY_SECRET) ?? this.llmApiKeyDefault;
+  }
+  private get llmBaseUrl(): string | undefined {
+    return this.secretStore.resolve(MODEL_BASE_URL_SECRET) ?? this.llmBaseUrlDefault;
+  }
+  private get llmModel(): string | undefined {
+    return this.secretStore.resolve(MODEL_NAME_SECRET) ?? process.env["KRELVAN_LLM_MODEL"];
+  }
+
   get hasLlm(): boolean {
     return !!(this.llmApiKey) || this.llmProvider === "ollama";
   }
 
-  /** Readiness for the UI: is a model wired up, and which provider. Drives the build gate + pill. */
-  get modelStatus(): { hasLlm: boolean; provider: string } {
-    return { hasLlm: this.hasLlm, provider: this.llmProvider };
+  /** Readiness for the UI: is a model wired up, and which provider/model. Drives the build gate + pill. */
+  get modelStatus(): { hasLlm: boolean; provider: string; model: string | null; source: "in-app" | "env" } {
+    const inApp = this.secretStore.isStored(MODEL_PROVIDER_SECRET)
+      || this.secretStore.isStored(MODEL_API_KEY_SECRET);
+    return { hasLlm: this.hasLlm, provider: this.llmProvider, model: this.llmModel ?? null, source: inApp ? "in-app" : "env" };
   }
+
+  /**
+   * Configure the LLM provider from the UI. Stored encrypted via the secret store under
+   * reserved names; takes effect on the next build (buildCompiler reads fresh). Passing an
+   * empty/whitespace value for a field clears it (reverting to env/default). For Ollama, an
+   * API key is not required.
+   */
+  setModelConfig(cfg: { provider?: string; apiKey?: string; model?: string; baseUrl?: string }): { ok: true; status: ReturnType<KrelvanRuntime["modelStatusGetter"]> } | { ok: false; error: string } {
+    const provider = (cfg.provider ?? "").trim().toLowerCase();
+    if (provider && !["anthropic", "openai", "ollama"].includes(provider)) {
+      return { ok: false, error: "provider must be one of: anthropic, openai, ollama" };
+    }
+    const apply = (name: string, value: string | undefined) => {
+      const v = (value ?? "").trim();
+      if (v) { this.secretStore.set(name, v); } else { this.secretStore.delete(name); }
+    };
+    if (cfg.provider !== undefined) apply(MODEL_PROVIDER_SECRET, provider);
+    if (cfg.apiKey !== undefined) apply(MODEL_API_KEY_SECRET, cfg.apiKey);
+    if (cfg.model !== undefined) apply(MODEL_NAME_SECRET, cfg.model);
+    if (cfg.baseUrl !== undefined) apply(MODEL_BASE_URL_SECRET, cfg.baseUrl);
+    // anthropic/openai with no key set at all → not actually ready; report honestly via status
+    return { ok: true, status: this.modelStatus };
+  }
+
+  // helper purely so the return type of setModelConfig can name modelStatus's shape
+  private modelStatusGetter() { return this.modelStatus; }
 
   /** Build a fresh Compiler with current agent registry injected into the model prompt. */
   private buildCompiler(): Compiler {
     const modelPort = this.hasLlm
       ? new AnthropicModel({
           apiKey: this.llmApiKey ?? "",
+          model: this.llmModel,
           allowedCapabilities: this.allowedCapabilities(),
           suggestedRunBudgetCents: 1000,
           knownAgents: this.agentRegistry.list().map((a) => ({

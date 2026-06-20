@@ -423,9 +423,9 @@ export default function ApprovalsPage() {
             <div className="h3" style={{ marginBottom: "var(--s4)", color: "var(--brand)" }}>How an agent decides whether to pause</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
               {[
-                { autonomy: "full", desc: "Acts immediately — no gate. Used for read-only or low-risk steps." },
-                { autonomy: "act-with-veto", desc: "Proposes the action and pauses here. You approve or deny before it runs." },
-                { autonomy: "suggest", desc: "Frames the action as a recommendation. Always pauses for your review." },
+                { autonomy: "suggest", desc: "Pauses for your approval before every side-effect — any write, message, spend, or identity change. Reads still run freely. The safest setting." },
+                { autonomy: "act-with-veto", desc: "Pauses only before irreversible writes, spending, and identity changes. Reversible writes and messages (email, Slack, Telegram) proceed without a gate." },
+                { autonomy: "full", desc: "Acts on every step with no human gate — including irreversible writes and spend. Use only for agents you fully trust." },
               ].map(row => (
                 <div key={row.autonomy} style={{ display: "flex", gap: "var(--s3)", alignItems: "baseline" }}>
                   <code className="mono small" style={{ padding: "var(--s1) var(--s2)", background: "var(--surface)", border: "1px solid var(--line-strong)", borderRadius: "var(--r-sm)", flexShrink: 0, color: "var(--brand)" }}>{row.autonomy}</code>

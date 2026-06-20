@@ -735,14 +735,15 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
           title={verification?.ok
             ? `Verified: ${verification.signedEvents}/${verification.runEvents} events signed, full ${verification.ledgerEvents}-event chain intact (${verification.algorithm})`
             : "Every event is hash-chained and signed — any tampering is detectable on verify"}
-          className={`badge ${verification && !verification.ok ? "badge-failed" : "badge-done"} canvas-ledger-badge`}
+          className={`badge ${verification?.ok ? "badge-done" : verification && !verification.ok ? "badge-failed" : "badge-neutral"} canvas-ledger-badge`}
           style={{ flexShrink: 0, textDecoration: "none" }}
         >
           <IconCheck />
           <span className="sr-only">Ledger status:</span>
           {verification?.ok
             ? <>{verification.signedEvents}/{verification.runEvents} verified</>
-            : verification && !verification.ok ? "Verify failed" : "Signed"}
+            : verification && !verification.ok ? "Verify failed"
+            : selectedRunId ? "Verifying…" : "Hash-chained · signed"}
         </Link>
 
         {/* run selector */}

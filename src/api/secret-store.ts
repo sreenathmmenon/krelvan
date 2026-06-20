@@ -132,6 +132,11 @@ export class SecretStore {
     return this.secrets.has(name) || process.env[name] !== undefined;
   }
 
+  /** True only if a value was SET in the store (not merely present as an env var). */
+  isStored(name: string): boolean {
+    return this.secrets.has(name);
+  }
+
   /** Public metadata only — never the plaintext. */
   list(): SecretMeta[] {
     return [...this.secrets.values()]

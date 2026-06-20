@@ -204,10 +204,21 @@ export async function buildAgent(intent: string): Promise<BuildResult> {
   });
 }
 
-export interface ModelStatus { hasLlm: boolean; provider: string }
+export interface ModelStatus { hasLlm: boolean; provider: string; model?: string | null; source?: "in-app" | "env" }
 /** Readiness: is a model wired up? Drives the build gate + the "Model connected" pill. */
 export async function getStatus(): Promise<ModelStatus> {
   return apiFetch<ModelStatus>("/api/status");
+}
+
+/** Current model configuration (provider, model, whether a key is wired, source). */
+export async function getModel(): Promise<ModelStatus> {
+  return apiFetch<ModelStatus>("/api/model");
+}
+
+export interface ModelConfigInput { provider?: string; apiKey?: string; model?: string; baseUrl?: string }
+/** Configure the LLM provider from the UI. Persists encrypted on this instance; effective on the next build. */
+export async function setModel(cfg: ModelConfigInput): Promise<ModelStatus> {
+  return apiFetch<ModelStatus>("/api/model", { method: "POST", body: JSON.stringify(cfg) });
 }
 
 export async function deleteAgent(id: string): Promise<void> {
