@@ -204,6 +204,12 @@ export async function buildAgent(intent: string): Promise<BuildResult> {
   });
 }
 
+export interface ModelStatus { hasLlm: boolean; provider: string }
+/** Readiness: is a model wired up? Drives the build gate + the "Model connected" pill. */
+export async function getStatus(): Promise<ModelStatus> {
+  return apiFetch<ModelStatus>("/api/status");
+}
+
 export async function deleteAgent(id: string): Promise<void> {
   await apiFetch(`/api/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

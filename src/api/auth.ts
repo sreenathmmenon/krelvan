@@ -152,6 +152,8 @@ export function authenticate(
 ): AuthOutcome {
   // public allowlist — read-only, no data exposure
   if (url.pathname === "/api/health") return { ok: true };
+  // readiness (is a model configured) — boolean + provider name only, no secrets.
+  if (url.pathname === "/api/status") return { ok: true };
   // Ledger signing PUBLIC keys: publishable by design so an external auditor can verify
   // the ledger without a token. Public-key material only — never a secret.
   if (url.pathname === "/api/ledger/keys") return { ok: true };

@@ -97,6 +97,12 @@ export interface Manifest {
    * Use this to embed URLs, configuration, or any other static inputs the agent always needs.
    */
   seed?: Record<string, string | number | boolean | null>;
+  /**
+   * Optional schedule — if present, installing this agent auto-arms it to run itself on a
+   * cron expression or fixed interval. Makes "set it and forget it" agents (a price monitor,
+   * a daily digest) genuinely self-running instead of needing a schedule wired up by hand.
+   */
+  schedule?: { kind: "cron"; expr: string } | { kind: "interval"; ms: number };
 }
 
 export interface ValidationIssue {
@@ -130,6 +136,18 @@ export function validateManifest(m: Manifest): ValidationIssue[] {
 
   if (m.runBudgetCents < 0) issues.push({ code: "BAD_BUDGET", message: "runBudgetCents must be >= 0" });
   if (m.maxNodeVisits < 1) issues.push({ code: "BAD_MAX_VISITS", message: "maxNodeVisits must be >= 1" });
+
+  // optional schedule — a cron expr (5 fields) or a positive interval
+  if (m.schedule) {
+    if (m.schedule.kind === "cron") {
+      const fields = m.schedule.expr.trim().split(/\s+/);
+      if (fields.length !== 5) issues.push({ code: "BAD_SCHEDULE", message: "cron schedule must be a 5-field expression" });
+    } else if (m.schedule.kind === "interval") {
+      if (!Number.isInteger(m.schedule.ms) || m.schedule.ms < 1000) issues.push({ code: "BAD_SCHEDULE", message: "interval schedule must be >= 1000 ms" });
+    } else {
+      issues.push({ code: "BAD_SCHEDULE", message: "schedule.kind must be 'cron' or 'interval'" });
+    }
+  }
 
   // capability budgets must be non-negative integers (LED-02 spirit)
   for (const n of m.nodes) {

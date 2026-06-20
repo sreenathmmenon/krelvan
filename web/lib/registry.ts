@@ -28,6 +28,7 @@ export interface TemplateManifest {
   runBudgetCents: number;
   maxNodeVisits: number;
   seed?: Record<string, string | number | boolean | null>;
+  schedule?: { kind: "cron"; expr: string } | { kind: "interval"; ms: number };
 }
 
 export interface CatalogEntry {
@@ -119,7 +120,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
         },
         {
           "id": "analyze",
-          "role": "You are a price-watch analyst. Read TWO things: (A) the CURRENT DATA TO ANALYZE section contains the freshly-fetched page text — extract the price the page shows RIGHT NOW from there. (B) the MEMORY section contains 'last_price (from a PREVIOUS run)' — that is the OLD price from before. If the MEMORY section is absent or has no last_price, this is the FIRST run. Steps: 1) From the CURRENT page text only, extract the current price as a bare number string, e.g. \"39.99\" (no symbols/words). Put it in current_price. 2) Take the previous price from MEMORY's last_price. 3) Set changed to true ONLY if a previous last_price existed AND it is different from the current price; otherwise false. Rules: write prices as quoted strings; NEVER copy the memory value into current_price — current_price must come from the CURRENT page text; never invent a previous price like 0.00. Output object keys: current_price (the price on the page now, as a quoted string), changed (true/false), result (one sentence, e.g. 'Price dropped from 49.99 to 39.99' / 'No change, still 39.99' / 'First run, baseline set to 49.99').",
+          "role": "You are a price-watch analyst. FIRST: if there is an UPSTREAM ERRORS section, OR the CURRENT DATA TO ANALYZE section is empty/missing/contains no price (e.g. an error page, a loading page, or no number that looks like a price), then the page could NOT be read — set current_price to \"\" (empty), changed to false, and result to a short note like 'Could not read a price from the page'. Do NOT invent or guess a price in that case. OTHERWISE: Read TWO things: (A) the CURRENT DATA TO ANALYZE section contains the freshly-fetched page text — extract the price the page shows RIGHT NOW from there. (B) the MEMORY section contains 'last_price (from a PREVIOUS run)' — the OLD price. If MEMORY is absent or has no last_price, this is the FIRST run. Steps: 1) From the CURRENT page text only, extract the current price as a bare number string, e.g. \"39.99\" (no symbols/words). Put it in current_price. 2) Take the previous price from MEMORY's last_price. 3) Set changed to true ONLY if a previous last_price existed AND it is different from the current price; otherwise false. Rules: write prices as quoted strings; NEVER copy the memory value into current_price — current_price must come from the CURRENT page text; never invent a previous price like 0.00; if no price is visible, current_price is \"\" not a guess. Output object keys: current_price (the price on the page now as a quoted string, or \"\" if none), changed (true/false), result (one sentence).",
           "autonomy": "full",
           "capabilities": [
             {
@@ -167,15 +168,53 @@ export const REGISTRY_SEED: CatalogEntry[] = [
           "from": "analyze",
           "to": "alert",
           "when": {
-            "op": "eq",
-            "left": {
-              "op": "var",
-              "key": "analyze.changed"
-            },
-            "right": {
-              "op": "const",
-              "value": true
-            }
+            "op": "and",
+            "clauses": [
+              {
+                "op": "ne",
+                "left": {
+                  "op": "var",
+                  "key": "analyze.current_price"
+                },
+                "right": {
+                  "op": "const",
+                  "value": ""
+                }
+              },
+              {
+                "op": "ne",
+                "left": {
+                  "op": "var",
+                  "key": "recall_baseline.recall.last_price"
+                },
+                "right": {
+                  "op": "const",
+                  "value": null
+                }
+              },
+              {
+                "op": "ne",
+                "left": {
+                  "op": "var",
+                  "key": "recall_baseline.recall.last_price"
+                },
+                "right": {
+                  "op": "const",
+                  "value": ""
+                }
+              },
+              {
+                "op": "ne",
+                "left": {
+                  "op": "var",
+                  "key": "analyze.current_price"
+                },
+                "right": {
+                  "op": "var",
+                  "key": "recall_baseline.recall.last_price"
+                }
+              }
+            ]
           }
         },
         {
@@ -186,7 +225,11 @@ export const REGISTRY_SEED: CatalogEntry[] = [
           "from": "alert",
           "to": "persist"
         }
-      ]
+      ],
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 * * * *"
+      }
     },
     "capabilities": [
       {

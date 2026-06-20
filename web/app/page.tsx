@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  listAgents, listRuns, buildAgent, startRun, autoSummarizeRuns, timeAgo,
+  listAgents, listRuns, buildAgent, startRun, autoSummarizeRuns, getStatus, timeAgo,
   type AgentRecord, type RunRecord, type BuildResult,
 } from "../lib/api";
 import {
@@ -209,6 +209,7 @@ export default function Landing() {
   const [loading, setLoading] = useState(true);
   const [composeFocused, setComposeFocused] = useState(false);
   const [summaries, setSummaries] = useState<Record<string, string | null>>({});
+  const [modelReady, setModelReady] = useState<boolean | null>(null);
   const fetchingSummaries = useRef<Set<string>>(new Set());
 
   const reload = useCallback(async () => {
@@ -239,6 +240,9 @@ export default function Landing() {
     const t = setInterval(() => void reload(), 3000);
     return () => clearInterval(t);
   }, [reload]);
+
+  // Model readiness — drives the build gate + the "Model connected" pill.
+  useEffect(() => { void getStatus().then(s => setModelReady(s.hasLlm)).catch(() => setModelReady(null)); }, []);
 
   // Cycle build-stage messages while building (same cadence as the workspace)
   useEffect(() => {
@@ -365,13 +369,25 @@ export default function Landing() {
               className={`build-box${composeFocused ? " is-focused" : ""}`}
             >
               {/* labelled top row — frames the box as a real tool, not a bare field */}
-              <div className="build-box__head">
-                <span className="build-box__badge" aria-hidden="true">
-                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none">
-                    <path d="M8 1.6l1.7 4.7L14.4 8l-4.7 1.7L8 14.4l-1.7-4.7L1.6 8l4.7-1.7L8 1.6z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-                  </svg>
+              <div className="build-box__head" style={{ justifyContent: "space-between" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)" }}>
+                  <span className="build-box__badge" aria-hidden="true">
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none">
+                      <path d="M8 1.6l1.7 4.7L14.4 8l-4.7 1.7L8 14.4l-1.7-4.7L1.6 8l4.7-1.7L8 1.6z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                  <span className="micro" style={{ color: "var(--ink-soft)" }}>Describe your agent</span>
                 </span>
-                <span className="micro" style={{ color: "var(--ink-soft)" }}>Describe your agent</span>
+                {modelReady === true && (
+                  <span className="model-pill model-pill--on" title="A model is connected — you can build agents">
+                    <span className="model-pill__dot" /> Model connected
+                  </span>
+                )}
+                {modelReady === false && (
+                  <Link href="/secrets#model" className="model-pill model-pill--off" title="No model configured — building is disabled">
+                    <span className="model-pill__dot" /> Connect a model
+                  </Link>
+                )}
               </div>
 
               <textarea

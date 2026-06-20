@@ -170,7 +170,7 @@ export default function CapabilitiesPage() {
       {viewSource && <SourceDrawer cap={viewSource} onClose={() => setViewSource(null)} onSaved={reload} flash={flash} />}
       {detail && (
         <DetailDrawer
-          e={detail} installed={installedNames.has(detail.name)}
+          e={detail} installed={installedNames.has(detail.name)} catalog={catalog}
           onClose={() => setDetail(null)} onInstalled={reload} flash={flash}
         />
       )}
@@ -446,7 +446,8 @@ function CatalogCard({ e, installed, autonomy, onInstalled, flash, onDetail }: {
 }
 
 // ── Detail drawer (per-capability) ───────────────────────────────────────────
-function DetailDrawer({ e, installed, onClose, onInstalled, flash }: {
+function DetailDrawer({ e, installed, catalog, onClose, onInstalled, flash }: {
+  catalog: CatalogEntry[];
   e: CatalogEntry; installed: boolean; onClose: () => void; onInstalled: () => Promise<void>; flash: (m: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -479,11 +480,29 @@ function DetailDrawer({ e, installed, onClose, onInstalled, flash }: {
         else { flash(`${e.title} installed`); window.location.href = `/canvas/${encodeURIComponent(res.agent.id)}`; }
         return;
       }
-      if (e.kind === "mcp" && e.mcp) await connectMcpServer({ ...e.mcp, name: e.mcp.name ?? e.name });
-      else if (e.kind === "yaml" && e.yaml) await installCapability(e.name, e.yaml);
-      else if (e.kind === "pack" && e.connectors) {
-        // Install each connector the pack references (best-effort across the catalog).
-        flash(`Pack install: connect ${e.connectors.length} connectors from the list below`);
+      if (e.kind === "mcp" && e.mcp) { await connectMcpServer({ ...e.mcp, name: e.mcp.name ?? e.name }); await onInstalled(); flash(`${e.title} installed`); setDone(true); return; }
+      if (e.kind === "yaml" && e.yaml) { await installCapability(e.name, e.yaml); await onInstalled(); flash(`${e.title} installed`); setDone(true); return; }
+      if (e.kind === "pack" && e.connectors) {
+        // REAL pack install: resolve each named connector from the catalog and install it.
+        // Only the ones with no required secrets install cleanly here; the rest are reported.
+        let ok = 0; const needKey: string[] = []; const missing: string[] = [];
+        for (const name of e.connectors) {
+          const c = catalog.find(x => x.name === name);
+          if (!c) { missing.push(name); continue; }
+          if (c.secretRefs && c.secretRefs.length > 0) { needKey.push(name); continue; }
+          try {
+            if (c.kind === "mcp" && c.mcp) await connectMcpServer({ ...c.mcp, name: c.mcp.name ?? c.name });
+            else if (c.kind === "yaml" && c.yaml) await installCapability(c.name, c.yaml);
+            ok++;
+          } catch { needKey.push(name); }
+        }
+        await onInstalled();
+        const parts = [`installed ${ok}`];
+        if (needKey.length) parts.push(`${needKey.length} need a key (open each from Discover)`);
+        if (missing.length) parts.push(`${missing.length} not found`);
+        flash(`${e.title}: ${parts.join(" · ")}`);
+        setDone(true);
+        return;
       }
       await onInstalled(); flash(`${e.title} installed`); setDone(true);
     } catch (err) { flash((err as Error).message); } finally { setBusy(false); }

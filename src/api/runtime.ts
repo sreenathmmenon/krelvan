@@ -795,6 +795,27 @@ export class KrelvanRuntime {
     // 3) Which declared secrets are still missing? (drives the "set these to finish" step)
     const missingSecrets = [...new Set(template.secretRefs ?? [])].filter((s) => !this.secretStore.has(s));
 
+    // 4) If the manifest declares a schedule, auto-arm it so a "set it and forget it" agent
+    //    (a price monitor, a daily digest) genuinely runs itself the moment it's installed.
+    const sched = template.manifest.schedule;
+    if (sched) {
+      try {
+        const rec = {
+          id: `sched-${imported.agent.id.slice(0, 16)}-${this.now()}`,
+          agentId: imported.agent.id,
+          agentName: imported.agent.signed.manifest.name,
+          kind: sched.kind,
+          spec: sched.kind === "cron" ? sched.expr : String(sched.ms),
+          label: `Auto-scheduled on install (${sched.kind === "cron" ? sched.expr : sched.ms + "ms"})`,
+          enabled: true,
+          createdAt: this.now(),
+        };
+        this.scheduleRegistry.create(rec);
+        this.scheduler.arm(rec);
+        log.info({ agentId: imported.agent.id, schedule: sched }, "template auto-scheduled on install");
+      } catch (e) { log.warn({ err: (e as Error).message }, "could not auto-arm template schedule"); }
+    }
+
     log.info(
       { agentId: imported.agent.id, name: imported.agent.signed.manifest.name, installedCapabilities, missingSecrets },
       "template installed",
@@ -1390,6 +1411,11 @@ export class KrelvanRuntime {
 
   get hasLlm(): boolean {
     return !!(this.llmApiKey) || this.llmProvider === "ollama";
+  }
+
+  /** Readiness for the UI: is a model wired up, and which provider. Drives the build gate + pill. */
+  get modelStatus(): { hasLlm: boolean; provider: string } {
+    return { hasLlm: this.hasLlm, provider: this.llmProvider };
   }
 
   /** Build a fresh Compiler with current agent registry injected into the model prompt. */

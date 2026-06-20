@@ -183,6 +183,7 @@ function jsonError(res: ServerResponse, status: number, message: string): void {
 export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
   const routes: Route[] = [
     { method: "GET",    pattern: ["api", "health"],                  handler: handleHealth },
+    { method: "GET",    pattern: ["api", "status"],                  handler: (q, r) => handleStatus(q, r, runtime) },
     { method: "GET",    pattern: ["api", "auth", "status"],          handler: (q, r) => handleAuthStatus(q, r, runtime) },
     { method: "POST",   pattern: ["api", "auth", "setup"],           handler: (q, r) => handleAuthSetup(q, r, runtime) },
     { method: "POST",   pattern: ["api", "auth", "login"],           handler: (q, r) => handleAuthLogin(q, r, runtime) },
@@ -375,6 +376,11 @@ async function handleLedgerKeys(_req: IncomingMessage, res: ServerResponse, rt: 
 
 async function handleHealth(_req: IncomingMessage, res: ServerResponse): Promise<void> {
   json(res, 200, { ok: true, ts: Date.now() });
+}
+
+/** GET /api/status — readiness for the UI (is a model wired up?). Drives the build gate + pill. */
+async function handleStatus(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  json(res, 200, { ...rt.modelStatus });
 }
 
 async function handleListAgents(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {

@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 
 // API paths the browser may reach WITHOUT a session (you can't log in if login needs login).
 const PUBLIC_API = new Set([
-  "api/auth/status", "api/auth/login", "api/auth/logout", "api/auth/setup", "api/health",
+  "api/auth/status", "api/auth/login", "api/auth/logout", "api/auth/setup", "api/health", "api/status",
 ]);
 
 function json(status: number, body: unknown): Response {
