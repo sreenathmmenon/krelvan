@@ -273,12 +273,12 @@ process.stdout.write("\n");
 
 if (allOk) {
   if (isEd25519 && pinned) {
-    process.stdout.write(`${ok("✓ VERIFIED · authentic")} — ${bundle.events.length} events, every signature valid against your PINNED public key; the slice spans a whole run start-to-finish, in order.\n${dim("  This run provably came from the holder of that key and has not been altered or forged.")}\n`);
+    process.stdout.write(`${ok("✓ VERIFIED · authentic")} — ${bundle.events.length} events, every signature valid against your PINNED public key; begins at RunStarted and ends at a terminal event, offsets in order.\n${dim("  Every event shown provably came from the holder of that key and is unaltered. (Interior\n  completeness — that no middle event was dropped — is provable only by the issuing instance,\n  which holds the full chain; a single-run slice cannot re-link across other runs' events.)")}\n`);
   } else if (isEd25519) {
     // Unpinned: signatures are valid against keys the bundle SUPPLIES. That proves the bundle is
     // internally consistent (unaltered), NOT that it came from a particular instance — a forger
     // could supply their own keypair. Say exactly that, and tell the verifier how to upgrade it.
-    process.stdout.write(`${ok("✓ CONSISTENT")} — ${bundle.events.length} events, every signature valid against the keys included in the file; the slice spans a whole run start-to-finish, in order.\n${dim("  This proves the run is internally consistent and unaltered. It does NOT prove which instance\n  produced it — the keys came from the file itself. To prove origin, fetch the issuer's public key\n  from GET /api/ledger/keys and re-run with --key <that-key.pem>.")}\n`);
+    process.stdout.write(`${ok("✓ CONSISTENT")} — ${bundle.events.length} events, every signature valid against the keys included in the file; begins at RunStarted and ends at a terminal event, offsets in order.\n${dim("  This proves every event shown is internally consistent and unaltered. It does NOT prove which\n  instance produced it (keys came from the file — pin --key with the issuer's public key from\n  GET /api/ledger/keys to prove origin), nor that no interior event was dropped (only the issuing\n  instance can prove that).")}\n`);
   } else {
     // HMAC: NOT independently verifiable offline. The structural checks pass, but a third party
     // cannot confirm authenticity (a forger can fabricate an HMAC bundle with no secret), so we
