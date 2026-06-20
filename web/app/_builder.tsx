@@ -653,7 +653,9 @@ const EXAMPLE_EDGES: ManifestEdge[] = [
 interface HeroScene {
   label: string;
   nodes: [string, string, string];
-  rows: { hash: string; action: string }[];
+  /** index (0-2) of the node that pauses for human approval, if any. */
+  gateNode?: number;
+  rows: { hash: string; action: string; gate?: boolean }[];
 }
 const HERO_SCENES: HeroScene[] = [
   {
@@ -689,6 +691,19 @@ const HERO_SCENES: HeroScene[] = [
       { hash: "9a18f", action: "event.sign" },
     ],
   },
+  {
+    // The human-approval wedge: a risky step PAUSES for you before it acts.
+    label: "outreach · pauses for you",
+    nodes: ["draft", "approve", "send"],
+    gateNode: 1,
+    rows: [
+      { hash: "5c1a7", action: "agent.build" },
+      { hash: "b803e", action: "node.draft" },
+      { hash: "f27d4", action: "await.approval", gate: true },
+      { hash: "a6e9b", action: "node.send" },
+      { hash: "30cf2", action: "event.sign" },
+    ],
+  },
 ];
 
 export function HeroAnimation() {
@@ -717,29 +732,37 @@ export function HeroAnimation() {
           <path className="heroanim__edge heroanim__edge--1" d="M86 36 C112 36, 112 36, 132 36" fill="none" stroke="var(--dark-line,#2A3331)" strokeWidth="2" markerEnd="url(#ha-arrow)" />
           <path className="heroanim__edge heroanim__edge--2" d="M226 36 C252 36, 252 36, 272 36" fill="none" stroke="var(--dark-line,#2A3331)" strokeWidth="2" markerEnd="url(#ha-arrow)" />
           {[
-            { x: 16,  label: s.nodes[0], cls: "1" },
-            { x: 132, label: s.nodes[1], cls: "2" },
-            { x: 248, label: s.nodes[2], cls: "3" },
-          ].map(n => (
-            <g key={n.cls} className={`heroanim__node heroanim__node--${n.cls}`} transform={`translate(${n.x},16)`}>
-              <rect width="72" height="40" rx="9" fill="var(--dark-node-fill,#14201F)" stroke="var(--dark-line,#2A3331)" strokeWidth="1.4" />
-              <rect className="heroanim__node-bar" width="72" height="3" rx="1.5" fill="var(--dark-brand-bright,#1AA39A)" />
-              <circle className="heroanim__node-dot" cx="36" cy="18" r="4.5" fill="var(--dark-brand-bright,#1AA39A)" />
+            { x: 16,  label: s.nodes[0], cls: "1", i: 0 },
+            { x: 132, label: s.nodes[1], cls: "2", i: 1 },
+            { x: 248, label: s.nodes[2], cls: "3", i: 2 },
+          ].map(n => {
+            const gated = s.gateNode === n.i;
+            const accent = gated ? "var(--live, #D97706)" : "var(--dark-brand-bright,#1AA39A)";
+            return (
+            <g key={n.cls} className={`heroanim__node heroanim__node--${n.cls}${gated ? " heroanim__node--gate" : ""}`} transform={`translate(${n.x},16)`}>
+              <rect width="72" height="40" rx="9" fill="var(--dark-node-fill,#14201F)" stroke={gated ? accent : "var(--dark-line,#2A3331)"} strokeWidth="1.4" />
+              <rect className="heroanim__node-bar" width="72" height="3" rx="1.5" fill={accent} />
+              <circle className="heroanim__node-dot" cx="36" cy="18" r="4.5" fill={accent} />
               <text x="36" y="32" textAnchor="middle" fontSize="8" fontFamily="var(--font-mono)" fill="var(--dark-ink-soft,#C8C4BC)">{n.label}</text>
             </g>
-          ))}
+            );
+          })}
         </svg>
       </div>
 
       {/* signed ledger — rows write in as the graph executes */}
       <div className="heroanim__ledger" key={`l${scene}`}>
         {s.rows.map((r, i) => (
-          <div key={r.hash} className={`heroanim__row heroanim__row--${i}`}>
-            <span className="heroanim__check" aria-hidden="true">✓</span>
+          <div key={r.hash} className={`heroanim__row heroanim__row--${i}${r.gate ? " heroanim__row--gate" : ""}`}>
+            <span className="heroanim__check" aria-hidden="true">
+              {r.gate
+                ? <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><rect x="1" y="1" width="2.2" height="6" rx="0.6"/><rect x="4.8" y="1" width="2.2" height="6" rx="0.6"/></svg>
+                : "✓"}
+            </span>
             <span className="heroanim__hash">{r.hash}</span>
             <span className="heroanim__sep">::</span>
             <span className="heroanim__action">{r.action}</span>
-            <span className="heroanim__cost">signed</span>
+            <span className={r.gate ? "heroanim__gate-tag" : "heroanim__cost"}>{r.gate ? "waiting on you" : "signed"}</span>
           </div>
         ))}
       </div>

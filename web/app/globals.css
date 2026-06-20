@@ -1812,6 +1812,20 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 
 @media (max-width: 560px) { .cap-drawer--wide { width: 100vw; } .cap-sort { margin-left: 0; } }
 
+/* ───────────────────── Run tamper-proof seal (the #1 wedge, on load) ───────────────────── */
+.run-seal {
+  display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap;
+  margin-top: var(--s5); padding: var(--s3) var(--s4); border-radius: var(--r);
+  background: color-mix(in srgb, var(--ok) 9%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
+  text-decoration: none; color: inherit; transition: background 120ms;
+}
+.run-seal:hover { background: color-mix(in srgb, var(--ok) 14%, var(--surface)); }
+.run-seal--fail { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); border-color: color-mix(in srgb, var(--danger) 30%, transparent); cursor: default; }
+.run-seal__title { font-weight: 700; color: var(--ok); font-size: 14px; }
+.run-seal__detail { color: var(--ink-soft); font-size: 13px; flex: 1; min-width: 200px; }
+.run-seal__cta { color: var(--ok); font-weight: 600; font-size: 13px; flex-shrink: 0; }
+
 /* ───────────────────── Approval preview (what you're approving) ───────────────────── */
 .approval-preview {
   background: var(--brand-tint, #E6F4F2);
@@ -1830,6 +1844,17 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 }
 
 /* ───────────────────── Homepage example-agent gallery ───────────────────── */
+.home-stats {
+  display: flex; align-items: center; gap: var(--s5); flex-wrap: wrap;
+  margin-bottom: var(--s7); padding: var(--s4) 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.home-stat { display: inline-flex; align-items: baseline; gap: var(--s2); text-decoration: none; color: inherit; transition: opacity 120ms; }
+.home-stat:hover { opacity: .72; }
+.home-stat__n { font-size: 28px; font-weight: 700; color: var(--brand); line-height: 1; }
+.home-stat__l { font-size: 13px; color: var(--ink-soft); }
+.home-stat__div { width: 1px; height: 24px; background: var(--line); }
+@media (max-width: 560px) { .home-stat__div { display: none; } .home-stats { gap: var(--s4); } }
+
 .home-examples { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--s4); }
 .home-example {
   display: flex; gap: var(--s3); align-items: flex-start; padding: var(--s5);
@@ -1939,6 +1964,16 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .heroanim__sep { color: var(--dark-ink-muted,#8C928E); opacity: .6; }
 .heroanim__action { color: var(--dark-ink-soft,#C8C4BC); flex: 1; }
 .heroanim__cost { color: var(--dark-ink,#fff); font-weight: 600; }
+
+/* approval-gate beat: the row that PAUSES for the human reads in amber, not signed-teal */
+.heroanim__row--gate .heroanim__check,
+.heroanim__row--gate .heroanim__action { color: var(--live, #D97706); }
+.heroanim__gate-tag {
+  color: var(--live, #D97706); font-weight: 700; font-size: 9.5px;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.heroanim__node--gate .heroanim__node-dot { animation: pulse 1.3s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .heroanim__node--gate .heroanim__node-dot { animation: none; } }
 
 /* the VERIFIED seal lands after the last row signs, glows once per cycle */
 .heroanim__seal {

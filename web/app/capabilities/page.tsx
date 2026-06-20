@@ -311,7 +311,7 @@ function DiscoverTab({ catalog, q, query, setQuery, installedNames, autonomy, on
 
   return (
     <div className="cap-discover">
-      <SearchBar query={query} setQuery={setQuery} placeholder="Search 40+ connectors, agents & tools…" onAdd={onAdd} />
+      <SearchBar query={query} setQuery={setQuery} placeholder={`Search ${catalog.length} connectors, agents & tools…`} onAdd={onAdd} />
 
       {showFeatured && featured.length > 0 && (
         <div className="cap-featured">

@@ -42,11 +42,16 @@ const EXAMPLE_EDGES = [
 // "show the product" surface; it was previously hidden on /capabilities.
 function ExampleGallery() {
   const [items, setItems] = useState<CatalogEntry[]>([]);
+  const [counts, setCounts] = useState<{ total: number; agents: number; mcp: number }>({ total: 0, agents: 0, mcp: 0 });
   useEffect(() => {
     void loadRegistry().then(r => {
-      // lead with templates (whole installable agents); cap to a tidy grid
       const templates = r.entries.filter(e => e.kind === "template");
       setItems(templates.slice(0, 9));
+      setCounts({
+        total: r.entries.length,
+        agents: templates.length,
+        mcp: r.entries.filter(e => e.kind === "mcp").length,
+      });
     }).catch(() => {});
   }, []);
   if (items.length === 0) return null;
@@ -57,10 +62,18 @@ function ExampleGallery() {
         <h2 className="h1" style={{ marginBottom: "var(--s3)", maxWidth: "22ch" }}>
           Start from a <span style={{ color: "var(--brand)" }}>real agent</span>.
         </h2>
-        <p className="body-lg soft" style={{ maxWidth: "60ch", marginBottom: "var(--s7)" }}>
+        <p className="body-lg soft" style={{ maxWidth: "60ch", marginBottom: "var(--s5)" }}>
           Install any of these in one click and watch it run — every step signed, the risky
           ones pausing for your approval. Then edit it, or build your own from scratch above.
         </p>
+        {/* numbers-forward proof band — the real scale of what's shipped */}
+        <div className="home-stats">
+          <Link href="/capabilities" className="home-stat"><span className="home-stat__n mono">{counts.total}</span><span className="home-stat__l">capabilities</span></Link>
+          <span className="home-stat__div" aria-hidden="true" />
+          <Link href="/capabilities" className="home-stat"><span className="home-stat__n mono">{counts.agents}</span><span className="home-stat__l">ready-to-run agents</span></Link>
+          <span className="home-stat__div" aria-hidden="true" />
+          <Link href="/capabilities?install=&kind=mcp" className="home-stat"><span className="home-stat__n mono">{counts.mcp}</span><span className="home-stat__l">MCP connectors</span></Link>
+        </div>
         <div className="home-examples">
           {items.map(e => (
             <Link key={e.name} href={`/capabilities?install=${encodeURIComponent(e.name)}`} className="home-example card">
@@ -449,20 +462,21 @@ export default function Landing() {
           </p>
           <div className="build-on-grid">
             {[
-              { k: "Audit by default", v: "Every step signed to a tamper-evident record you can replay." },
-              { k: "Memory", v: "Episodic, semantic and trust-aware — right by default." },
-              { k: "Approval flows", v: "Human-in-the-loop pause / approve / resume on risky actions." },
-              { k: "Failure-reasoning", v: "It reasons about why a run failed — and rebuilds a fix." },
+              { k: "Audit by default", v: "Every step signed to a tamper-evident record you can replay.", href: "/runs", cta: "See a signed run" },
+              { k: "Memory", v: "Episodic, semantic and trust-aware — right by default.", href: "/capabilities?install=personal-advisor", cta: "Try the advisor" },
+              { k: "Approval flows", v: "Human-in-the-loop pause / approve / resume on risky actions.", href: "/approvals", cta: "Open approvals" },
+              { k: "Failure-reasoning", v: "It reasons about why a run failed — and rebuilds a fix.", href: "/runs", cta: "Explain a run" },
             ].map(c => (
-              <div key={c.k} className="card" style={{ padding: "var(--s5)" }}>
+              <Link key={c.k} href={c.href} className="card build-on-card" style={{ padding: "var(--s5)", textDecoration: "none", color: "inherit", display: "block" }}>
                 <div className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s2)", display: "flex", alignItems: "center", gap: "var(--s2)" }}>
                   <span aria-hidden="true" style={{ color: "var(--brand)", display: "inline-flex" }}>
                     <svg viewBox="0 0 16 16" width="16" height="16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   </span>
                   {c.k}
                 </div>
-                <p className="small soft" style={{ margin: 0, lineHeight: 1.55 }}>{c.v}</p>
-              </div>
+                <p className="small soft" style={{ margin: "0 0 var(--s3)", lineHeight: 1.55 }}>{c.v}</p>
+                <span className="small" style={{ color: "var(--brand)", fontWeight: 600 }}>{c.cta} →</span>
+              </Link>
             ))}
           </div>
         </div>

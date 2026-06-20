@@ -127,6 +127,15 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     void loadApprovals();
   }, [id, load, loadApprovals]);
 
+  // Auto-verify the signed ledger once the run has finished — the tamper-proof seal is the #1
+  // wedge, so it should be visible on load (a green seal above the tabs), not 2 clicks deep.
+  useEffect(() => {
+    if (!detail || verification != null) return;
+    const s = detail.run.status;
+    if (s === "completed" || s === "failed" || s === "halted") void runVerify();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.run.status]);
+
   // Once we have detail, decide whether to open SSE
   useEffect(() => {
     if (!detail) return;
@@ -471,6 +480,25 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         </div>
       )}
 
+      {/* ── tamper-proof seal — the #1 wedge, auto-verified on load, always visible ── */}
+      {verification?.ok && (
+        <a href="#tab-timeline" onClick={() => setTab("timeline")} className="run-seal" title="See the full cryptographic chain">
+          <Glyph kind="seal" size={15} color="var(--ok)" />
+          <span className="run-seal__title">Tamper-proof</span>
+          <span className="run-seal__detail">
+            <span className="mono">{verification.signedEvents}/{verification.runEvents}</span> events signed · full <span className="mono">{verification.ledgerEvents}</span>-event chain verified · {verification.algorithm}
+          </span>
+          <span className="run-seal__cta">View chain →</span>
+        </a>
+      )}
+      {verification && !verification.ok && (
+        <div className="run-seal run-seal--fail">
+          <Glyph kind="cross" size={15} color="var(--danger)" />
+          <span className="run-seal__title" style={{ color: "var(--danger)" }}>Verification failed</span>
+          <span className="run-seal__detail">{verification.error} — {verification.detail}</span>
+        </div>
+      )}
+
       {/* tabs */}
       <div role="tablist" aria-label="Run detail" style={{ display: "flex", gap: 0, marginBottom: "var(--s5)", borderBottom: "1px solid var(--line)", marginTop: "var(--s5)" }}>
         {(["output", "canvas", "timeline", "state", "explain"] as const).map(t => (
@@ -489,7 +517,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               marginBottom: -1,
             }}
           >
-            {t === "canvas" ? "Graph" : t === "explain" ? "Explain" : t === "output" ? "Output" : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === "canvas" ? "Graph" : t === "explain" ? "Explain" : t === "output" ? "Output" : t === "timeline" ? "Ledger" : t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
