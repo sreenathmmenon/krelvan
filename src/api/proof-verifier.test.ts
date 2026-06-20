@@ -109,6 +109,44 @@ test("FORGERY: a re-signed bundle with the forger's own keys passes UNPINNED but
   assert.match(pinned.out, /✗ WRONG SIGNER/);
 });
 
+test("FORGERY by omission: stripping all signatures (and payload rewrite) is rejected, even pinned", () => {
+  // The signature-stripping attack: rewrite every payload, recompute ids so the chain is
+  // internally consistent, then DELETE every signature and empty publicKeys[]. A verifier that
+  // only checked "no signer contradicted the pin" would pass this (0 signatures, 0 mismatches).
+  const bundle = JSON.parse(readFileSync(FIXTURE, "utf8"));
+  const canon = (v: unknown): string => {
+    if (v === null) return "null";
+    const t = typeof v;
+    if (t === "boolean") return v ? "true" : "false";
+    if (t === "number") return String(v);
+    if (t === "string") return JSON.stringify(v);
+    if (Array.isArray(v)) return "[" + v.map(canon).join(",") + "]";
+    if (t === "object") { const o = v as Record<string, unknown>; return "{" + Object.keys(o).sort().filter((k) => o[k] !== undefined).map((k) => JSON.stringify(k) + ":" + canon(o[k])).join(",") + "}"; }
+    return "null";
+  };
+  const pre = (e: any): string => canon({
+    type: e.type, scope: { tenantId: e.scope.tenantId, runId: e.scope.runId, ...(e.scope.nodeId !== undefined ? { nodeId: e.scope.nodeId } : {}), branchId: e.scope.branchId },
+    parents: [...(e.parents ?? [])], prev: e.prev ?? null, offset: e.offset, payload: e.payload, determinism: e.determinism, ts: e.ts, author: e.author,
+  });
+  for (const e of bundle.events) {
+    e.payload = { ...e.payload, FABRICATED: "the agent never did this" };
+    e.id = "sha256:" + createHash("sha256").update(pre(e), "utf8").digest("hex");
+    delete e.sig;
+  }
+  bundle.publicKeys = [];
+  const path = writeTemp(bundle);
+
+  const unpinned = runVerifier(path);
+  assert.equal(unpinned.code, 1, `unpinned stripped bundle must be rejected\n${unpinned.out}`);
+  assert.match(unpinned.out, /no signature/);
+
+  // The crucial case: even with the REAL keys pinned, an unsigned bundle must NOT read authentic.
+  const realKeys = writeBundleKeys(JSON.parse(readFileSync(FIXTURE, "utf8"))).flatMap((p) => ["--key", p]);
+  const pinned = runVerifier(path, ...realKeys);
+  assert.equal(pinned.code, 1, `pinned stripped bundle must be rejected\n${pinned.out}`);
+  assert.doesNotMatch(pinned.out, /authentic/);
+});
+
 test("a head-truncated bundle (RunStarted dropped) is rejected — no lie by omission", () => {
   const bundle = JSON.parse(readFileSync(FIXTURE, "utf8"));
   bundle.events = bundle.events.slice(1); // drop the RunStarted

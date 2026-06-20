@@ -179,19 +179,26 @@ for (const e of bundle.events) {
   const computed = contentAddress(preimageBytes(e));
   if (computed !== e.id) { idFailures++; process.stdout.write(`  ${bad("✗")} offset ${e.offset} ${e.type}: content address mismatch\n${dim(`      expected ${e.id}\n      computed ${computed}`)}\n`); }
 
-  // 2) signature (Ed25519 only) — verify the detached signature over the id against the public key.
-  if (isEd25519 && e.sig) {
-    const key = pubKeys.get(`${e.sig.keyId}#${e.sig.epoch}`);
-    if (!key) { sigFailures++; process.stdout.write(`  ${bad("✗")} offset ${e.offset}: no public key for ${e.sig.keyId}#${e.sig.epoch}\n`); }
-    else {
-      sigChecked++;
-      let valid = false;
-      try {
-        const sigBytes = Buffer.from(e.sig.value, "hex");
-        valid = sigBytes.length === 64 && cryptoVerify(null, Buffer.from(e.id, "utf8"), key, sigBytes);
-      } catch { valid = false; }
-      if (!valid) { sigFailures++; process.stdout.write(`  ${bad("✗")} offset ${e.offset} ${e.type}: signature does not verify\n`); }
-      else usedSigningKeys.add(`${e.sig.keyId}#${e.sig.epoch}`);
+  // 2) signature (Ed25519 only) — EVERY event must carry a signature that verifies. A missing
+  //    signature is a FAILURE, not a skip: otherwise a forger could strip all signatures (and the
+  //    publicKeys), rewrite payloads, and the bundle would sail through with "0 signatures, none
+  //    contradicted" — forgery by omission. So an unsigned ed25519 event fails closed.
+  if (isEd25519) {
+    if (!e.sig) {
+      sigFailures++; process.stdout.write(`  ${bad("✗")} offset ${e.offset} ${e.type}: no signature — an Ed25519 bundle must sign every event\n`);
+    } else {
+      const key = pubKeys.get(`${e.sig.keyId}#${e.sig.epoch}`);
+      if (!key) { sigFailures++; process.stdout.write(`  ${bad("✗")} offset ${e.offset}: no public key for ${e.sig.keyId}#${e.sig.epoch}\n`); }
+      else {
+        sigChecked++;
+        let valid = false;
+        try {
+          const sigBytes = Buffer.from(e.sig.value, "hex");
+          valid = sigBytes.length === 64 && cryptoVerify(null, Buffer.from(e.id, "utf8"), key, sigBytes);
+        } catch { valid = false; }
+        if (!valid) { sigFailures++; process.stdout.write(`  ${bad("✗")} offset ${e.offset} ${e.type}: signature does not verify\n`); }
+        else usedSigningKeys.add(`${e.sig.keyId}#${e.sig.epoch}`);
+      }
     }
   }
 
@@ -231,10 +238,13 @@ if (pinned) {
     }
   }
 }
-const allOk = idFailures === 0 && sigFailures === 0 && orderFailures === 0 && boundaryFailures === 0 && !pinMismatch;
+// For an Ed25519 bundle, authenticity requires EVERY event to be signed AND verified — no
+// "0 signatures, nothing contradicted" loophole. (Belt-and-braces with the per-event check above.)
+const fullySigned = !isEd25519 || (sigChecked === bundle.events.length && sigChecked > 0);
+const allOk = idFailures === 0 && sigFailures === 0 && orderFailures === 0 && boundaryFailures === 0 && !pinMismatch && fullySigned;
 process.stdout.write(`  content addresses : ${idFailures === 0 ? ok(`all ${bundle.events.length} match`) : bad(`${idFailures} mismatch`)}\n`);
 if (isEd25519) {
-  process.stdout.write(`  signatures        : ${sigFailures === 0 ? ok(`all ${sigChecked} valid`) : bad(`${sigFailures} invalid`)}\n`);
+  process.stdout.write(`  signatures        : ${(sigFailures === 0 && fullySigned) ? ok(`all ${sigChecked} valid`) : bad(`${sigFailures} invalid / ${bundle.events.length - sigChecked} unsigned`)}\n`);
   process.stdout.write(`  key trust         : ${pinMismatch ? bad("bundle key ≠ pinned key") : pinned ? ok("matches pinned key") : `${C.yellow}self-included (not pinned)${C.reset}`}\n`);
 }
 process.stdout.write(`  ordering          : ${orderFailures === 0 ? ok("strictly increasing") : bad(`${orderFailures} out of order`)}\n`);
