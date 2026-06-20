@@ -299,16 +299,17 @@ export default function Landing() {
           <div className="hero-grid">
             {/* left — payoff + CTAs (42%) */}
             <div>
-              <p className="micro" style={{ marginBottom: "var(--s4)" }}>Build it. Run it. Own it.</p>
+              <p className="micro" style={{ marginBottom: "var(--s4)" }}>The agent platform that proves its work</p>
               <h1
-                className="dark-ink"
-                style={{ fontSize: "clamp(40px, 5.5vw, 64px)", lineHeight: 1.05, fontWeight: 600, letterSpacing: "-0.03em", marginBottom: "var(--s5)" }}
+                className="display dark-ink"
+                style={{ fontSize: "clamp(40px, 5.5vw, 64px)", lineHeight: 1.04, fontWeight: 600, letterSpacing: "-0.03em", marginBottom: "var(--s5)" }}
               >
-                Your own AI agents. Built in seconds, <span className="dark-teal">running on your machine</span>.
+                AI agents that <span className="dark-teal">prove what they did</span>.
               </h1>
-              <p className="dark-ink-soft body-lg" style={{ maxWidth: "52ch", marginBottom: "var(--s7)" }}>
-                Describe a goal in plain English; Krelvan builds the agent, runs it on your
-                machine, and keeps a signed record of every step you can open and replay.
+              <p className="dark-ink-soft body-lg" style={{ maxWidth: "52ch", marginBottom: "var(--s5)" }}>
+                Describe a goal in plain English. Krelvan builds the agent, signs every step it
+                takes to a tamper-evident, replayable record, and pauses for your approval before
+                anything risky — all self-hosted, on infrastructure you own.
               </p>
               <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap" }}>
                 <button className="btn btn-dark-primary btn-lg" onClick={focusBuilder}>
@@ -316,13 +317,23 @@ export default function Landing() {
                 </button>
                 {latestCompleted ? (
                   <Link href={`/runs/${latestCompleted.runId}`} className="btn btn-dark-ghost btn-lg">
-                    See a real run
+                    See a signed run
                   </Link>
                 ) : (
                   <button className="btn btn-dark-ghost btn-lg" onClick={focusBuilder}>
                     Try an example
                   </button>
                 )}
+              </div>
+              <div className="hero-trustline">
+                <a href="https://github.com/sreenathmmenon/krelvan" className="hero-trustline__item">
+                  <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M8 1.6a6.4 6.4 0 0 0-2 12.5c.3.06.43-.14.43-.3v-1.1c-1.8.4-2.2-.85-2.2-.85-.3-.75-.72-.95-.72-.95-.6-.4.04-.4.04-.4.65.05 1 .67 1 .67.58 1 1.5.7 1.9.55.06-.43.23-.7.42-.87-1.45-.16-2.97-.72-2.97-3.2 0-.7.25-1.3.66-1.74-.07-.16-.29-.82.06-1.7 0 0 .54-.18 1.78.66a6.1 6.1 0 0 1 3.24 0c1.24-.84 1.78-.66 1.78-.66.35.88.13 1.54.06 1.7.41.44.66 1.04.66 1.74 0 2.49-1.52 3.04-2.97 3.2.23.2.44.6.44 1.2v1.78c0 .17.12.37.44.3A6.4 6.4 0 0 0 8 1.6z"/></svg>
+                  Open source
+                </a>
+                <span className="hero-trustline__sep" aria-hidden="true" />
+                <span className="hero-trustline__item">Apache-2.0</span>
+                <span className="hero-trustline__sep" aria-hidden="true" />
+                <span className="hero-trustline__item">Self-hosted · zero third-party auth deps</span>
               </div>
             </div>
 
@@ -384,7 +395,19 @@ export default function Landing() {
                 ))}
               </div>
 
-              {buildError && (
+              {buildError && /no llm provider/i.test(buildError) ? (
+                <div role="alert" className="build-needs-model" style={{ margin: "var(--s4) 0 0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", marginBottom: "var(--s2)" }}>
+                    <svg viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden="true"><path d="M8 1.6l1.7 4.7L14.4 8l-4.7 1.7L8 14.4l-1.7-4.7L1.6 8l4.7-1.7L8 1.6z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    <span style={{ fontWeight: 700 }}>Connect a model to build agents</span>
+                  </div>
+                  <p className="small soft" style={{ margin: "0 0 var(--s3)", lineHeight: 1.55 }}>
+                    Building an agent needs a language model. Point Krelvan at one — an API key
+                    (Anthropic, OpenAI…) or a local Ollama — then come back and build.
+                  </p>
+                  <Link href="/secrets#model" className="btn btn-primary btn-sm">Connect a model →</Link>
+                </div>
+              ) : buildError ? (
                 <div role="alert" className="state-error" style={{ margin: "var(--s4) 0 0", justifyContent: "space-between" }}>
                   <span>{buildError}</span>
                   <button
@@ -393,7 +416,7 @@ export default function Landing() {
                     style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontSize: 16, lineHeight: 1, flexShrink: 0, padding: "0 var(--s1)" }}
                   >×</button>
                 </div>
-              )}
+              ) : null}
 
               <div className="build-box__foot">
                 <div className="small" style={{ color: "var(--ink-muted)", minHeight: 18, textAlign: "left" }}>
@@ -447,6 +470,38 @@ export default function Landing() {
 
       {/* ════════════ 3.5 · EXAMPLE-AGENT GALLERY (the proof of breadth) ════════════ */}
       <ExampleGallery />
+
+      {/* ════════════ 3.7 · WHY NOT A RAW FRAMEWORK (the contrast) ════════════ */}
+      <section style={{ background: "var(--canvas)", borderTop: "1px solid var(--line)" }}>
+        <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
+          <p className="micro" style={{ marginBottom: "var(--s3)" }}>Why Krelvan</p>
+          <h2 className="display h1" style={{ marginBottom: "var(--s3)", maxWidth: "24ch" }}>
+            A framework gives you parts. Krelvan gives you the <span style={{ color: "var(--brand)" }}>whole thing — proven</span>.
+          </h2>
+          <p className="body-lg soft" style={{ maxWidth: "60ch", marginBottom: "var(--s7)" }}>
+            You could wire this yourself in a raw agent framework. Then you own the hard parts forever.
+          </p>
+          <div className="contrast-grid">
+            {[
+              { a: "Write the graph, the runner, the retries", b: "Describe a goal — the agent is built and run for you" },
+              { a: "Bolt on your own audit log (and trust it)", b: "Every step is signed to a tamper-evident, replayable record" },
+              { a: "Hand-roll a human-in-the-loop gate", b: "Risky steps pause and show you exactly what they'll do" },
+              { a: "Debug failures by reading logs", b: "It reasons about why a run failed — and rebuilds a fix" },
+            ].map((r, i) => (
+              <div key={i} className="contrast-row">
+                <div className="contrast-row__a">
+                  <span className="contrast-row__tag">Raw framework</span>
+                  <span>{r.a}</span>
+                </div>
+                <div className="contrast-row__b">
+                  <span className="contrast-row__tag contrast-row__tag--on">Krelvan</span>
+                  <span>{r.b}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* ════════════ 4 · FINAL CTA (dark) ════════════ */}
       {/* Build-on-Krelvan — the platform-base value prop: eliminated decisions. */}

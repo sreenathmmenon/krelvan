@@ -413,6 +413,14 @@ async function handleBuildAgent(req: IncomingMessage, res: ServerResponse, rt: K
   try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
   if (!body.intent?.trim()) { jsonError(res, 400, "intent is required"); return; }
 
+  // Building an agent REQUIRES a model (it's the compiler's brain). Without one we'd silently
+  // emit a junk placeholder agent and pass it off as success — the worst first-run outcome.
+  // Fail loudly with the same clear 503 the other LLM routes use, so the UI can prompt setup.
+  if (!rt.hasLlm) {
+    jsonError(res, 503, "no LLM provider configured — set KRELVAN_LLM_PROVIDER + KRELVAN_LLM_API_KEY (or KRELVAN_ANTHROPIC_KEY for Anthropic, or run Ollama locally)");
+    return;
+  }
+
   const result = await rt.buildAgent(body.intent.trim());
 
   if (!result.ok) {

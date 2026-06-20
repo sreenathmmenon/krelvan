@@ -736,7 +736,7 @@ export class KrelvanRuntime {
    * (HMAC or Ed25519): checks hash-chaining, contiguous offsets, content-addresses, and
    * every signature. Returns ok + a per-event signed count, or the first corruption found.
    */
-  async verifyRun(runId: string): Promise<{ ok: true; runEvents: number; signedEvents: number; ledgerEvents: number; algorithm: string } | { ok: false; error: string; detail: string }> {
+  async verifyRun(runId: string): Promise<{ ok: true; runEvents: number; signedEvents: number; ledgerEvents: number; algorithm: string; nonRepudiable: boolean } | { ok: false; error: string; detail: string }> {
     // The ledger is ONE hash-chained log per tenant (offsets are global, not per-run).
     // Verifying the run therefore means verifying the whole chain it lives in — a stronger
     // guarantee than a per-run slice: it proves the run's events sit in an intact,
@@ -753,6 +753,10 @@ export class KrelvanRuntime {
       signedEvents: runEvents.filter((e) => e.sig).length,
       ledgerEvents: all.length,
       algorithm,
+      // Ed25519 = non-repudiable (a public key proves it; the signer can't deny it). HMAC =
+      // tamper-EVIDENT but repudiable (the same per-install secret signs and verifies). The UI
+      // must not call the HMAC default "tamper-proof".
+      nonRepudiable: algorithm === "ed25519",
     };
   }
 
@@ -1612,21 +1616,11 @@ export class KrelvanRuntime {
 // ── Stub model port (when no Anthropic key is configured) ──────────────────────
 
 class StubModelPort {
-  async propose(intent: string): Promise<import("../core/compiler/compiler.js").ManifestProposal> {
-    // Returns a valid minimal manifest that exercises the full engine pipeline.
-    // In production, replace with a real AnthropicModelAdapter.
-    const name = intent.slice(0, 40).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "my-agent";
-    return {
-      version: 1,
-      name,
-      intent,
-      entry: "main",
-      runBudgetCents: 100,
-      maxNodeVisits: 3,
-      nodes: [
-        { id: "main", role: "primary task", autonomy: "full", capabilities: [{ name: "compose", sideEffect: "read", budgetCents: 50 }] },
-      ],
-      edges: [],
-    };
+  async propose(_intent: string): Promise<import("../core/compiler/compiler.js").ManifestProposal> {
+    // No LLM is configured. We MUST NOT silently emit a placeholder agent and pass it off as a
+    // real build — that's the worst first-run outcome (a confident junk result). Fail loudly.
+    // The API build route gates on hasLlm before reaching here, so this is a belt-and-braces guard.
+    void _intent;
+    throw new Error("no LLM provider configured — cannot build an agent. Set KRELVAN_LLM_PROVIDER + KRELVAN_LLM_API_KEY (or KRELVAN_ANTHROPIC_KEY, or run Ollama locally).");
   }
 }

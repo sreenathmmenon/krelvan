@@ -239,7 +239,16 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {buildError && (
+      {buildError && /no llm provider/i.test(buildError) ? (
+        <div role="alert" className="build-needs-model" style={{ margin: "0 var(--s5) var(--s4)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", marginBottom: "var(--s2)" }}>
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden="true"><path d="M8 1.6l1.7 4.7L14.4 8l-4.7 1.7L8 14.4l-1.7-4.7L1.6 8l4.7-1.7L8 1.6z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span style={{ fontWeight: 700 }}>Connect a model to build agents</span>
+          </div>
+          <p className="small soft" style={{ margin: "0 0 var(--s3)", lineHeight: 1.55 }}>Building needs a language model — an API key or a local Ollama. Point Krelvan at one, then build.</p>
+          <Link href="/secrets#model" className="btn btn-primary btn-sm">Connect a model →</Link>
+        </div>
+      ) : buildError ? (
         <div role="alert" className="state-error" style={{ margin: "0 var(--s5) var(--s4)", justifyContent: "space-between" }}>
           <span>{buildError}</span>
           <button
@@ -248,7 +257,7 @@ export default function Dashboard() {
             style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontSize: 16, lineHeight: 1, flexShrink: 0, padding: "0 var(--s1)" }}
           >×</button>
         </div>
-      )}
+      ) : null}
 
       <div className="build-box__foot">
         <div className="small" style={{ color: "var(--ink-muted)", minHeight: 18, textAlign: "left" }}>

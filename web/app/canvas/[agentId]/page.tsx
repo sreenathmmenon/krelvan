@@ -727,7 +727,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
         {/* tamper-evident ledger badge */}
         <Link
           href={selectedRunId ? `/runs/${selectedRunId}#timeline` : `/agents/${agentId}`}
-          title="Every event is HMAC-chained — the ledger cannot be altered without detection"
+          title="Every event is hash-chained and signed — any tampering is detectable on verify"
           className="badge badge-done canvas-ledger-badge"
           style={{ flexShrink: 0, textDecoration: "none" }}
         >
@@ -1089,7 +1089,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
               fontWeight: 600,
               transition: "bottom var(--t-standard)",
               cursor: "help",
-            }} title="Append-only ledger — each event is SHA-256 content-addressed, hash-chained, and HMAC-signed. No event can be altered after it is written.">
+            }} title="Append-only ledger — each event is SHA-256 content-addressed, hash-chained, and signed; any change is detectable when you verify the chain.">
               <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--ok)", display: "inline-block", flexShrink: 0 }} aria-hidden="true" />
               <span><span className="mono">{events.length}</span> events</span>
               <span style={{ color: "var(--ink-muted)" }} aria-hidden="true">·</span>

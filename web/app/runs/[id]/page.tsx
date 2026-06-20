@@ -484,9 +484,10 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       {verification?.ok && (
         <a href="#tab-timeline" onClick={() => setTab("timeline")} className="run-seal" title="See the full cryptographic chain">
           <Glyph kind="seal" size={15} color="var(--ok)" />
-          <span className="run-seal__title">Tamper-proof</span>
+          {/* HONESTY: HMAC (default) is tamper-EVIDENT but repudiable; only Ed25519 is non-repudiable. */}
+          <span className="run-seal__title">{verification.nonRepudiable ? "Tamper-proof · non-repudiable" : "Tamper-evident"}</span>
           <span className="run-seal__detail">
-            <span className="mono">{verification.signedEvents}/{verification.runEvents}</span> events signed · full <span className="mono">{verification.ledgerEvents}</span>-event chain verified · {verification.algorithm}
+            <span className="mono">{verification.signedEvents}/{verification.runEvents}</span> events signed · full <span className="mono">{verification.ledgerEvents}</span>-event chain verified · {verification.nonRepudiable ? "Ed25519 — anyone can verify from the public key" : "HMAC-SHA256 — verifiable on this instance"}
           </span>
           <span className="run-seal__cta">View chain →</span>
         </a>
@@ -1034,10 +1035,10 @@ function GraphCanvas({ manifest, projection, events, selectedNode, onSelectNode 
       <div
         className="badge badge-done mono"
         style={{ position: "absolute", top: "var(--s3)", right: "var(--s3)", zIndex: 10, cursor: "help" }}
-        title="Append-only ledger — each event is HMAC-signed and cannot be altered after writing"
+        title="Append-only ledger — each event is SHA-256 content-addressed, hash-chained, and signed; tampering is detectable on verify."
       >
         <span className="dot" />
-        <span className="mono">{events.length}</span> events · HMAC verified
+        <span className="mono">{events.length}</span> events · signed
       </div>
 
       <svg

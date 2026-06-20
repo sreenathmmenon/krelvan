@@ -97,7 +97,7 @@ export interface LedgerEvent {
 }
 
 export type RunVerification =
-  | { ok: true; runEvents: number; signedEvents: number; ledgerEvents: number; algorithm: string }
+  | { ok: true; runEvents: number; signedEvents: number; ledgerEvents: number; algorithm: string; nonRepudiable?: boolean }
   | { ok: false; error: string; detail: string };
 
 /** Re-verify the run's signed ledger chain (the "prove what happened" action). */

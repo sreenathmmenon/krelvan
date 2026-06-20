@@ -137,7 +137,8 @@ export default function NavClient() {
         {/* left — wordmark + desktop links */}
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s7)", minWidth: 0 }}>
           <Link href="/" style={{
-            fontWeight: 800, fontSize: 18, color: wordmarkColor,
+            fontFamily: "var(--font-display)",
+            fontWeight: 700, fontSize: 19, color: wordmarkColor,
             letterSpacing: "-.03em", textDecoration: "none", flexShrink: 0,
             transition: "color var(--t-standard) var(--ease)",
           }}>
