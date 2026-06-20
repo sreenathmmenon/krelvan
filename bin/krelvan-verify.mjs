@@ -12,15 +12,22 @@
  *
  * What it checks, per event:
  *   1. content address — recompute sha256 over the canonical preimage; must equal `id`.
- *   2. signature       — Ed25519 verify of `sig.value` over `id` against the public key.
- *   3. chain linkage   — events are offset-contiguous and each `prev` points at the
- *                        previous event's `id` (a re-ordered or spliced run fails here).
+ *   2. signature       — Ed25519: every event's `sig.value` must verify over `id` against a
+ *                        public key (and, with --key, against a PINNED one).
+ *   3. ordering        — offsets strictly increasing (catches reorder/duplication). NB: a run is
+ *                        a SLICE of one global ledger, so its events are not offset-contiguous and
+ *                        their `prev` hashes point at globally-adjacent events that may belong to
+ *                        OTHER runs — so cross-event `prev` linkage cannot be checked from a slice
+ *                        alone. `prev`/`offset` ARE bound into each event's signed id, so they are
+ *                        tamper-evident under Ed25519 even though the slice can't re-link them.
+ *   4. run boundaries  — the slice must begin at RunStarted and end at a terminal event.
  *
  * Usage:
- *   node bin/krelvan-verify.mjs <proof.json>
- *   npx krelvan verify <proof.json>
+ *   node bin/krelvan-verify.mjs <proof.json> [--key <issuer-pubkey.pem> ...]
+ *   npx krelvan verify <proof.json> [--key <issuer-pubkey.pem> ...]
  *
- * Exit code 0 = verified, 1 = verification failed / bad input.
+ * Exit: 0 = verified (Ed25519, all checks pass) · 1 = failed/forged/tampered ·
+ *       2 = could not independently verify (HMAC bundle — not third-party provable).
  */
 
 import { readFileSync } from "node:fs";
@@ -165,9 +172,15 @@ for (const k of bundle.publicKeys ?? []) {
 const usedSigningKeys = new Set(); // "keyId#epoch" actually used to verify a signature
 
 const isEd25519 = bundle.algorithm === "ed25519";
+// Pinning a key only makes sense for an asymmetric (Ed25519) bundle. Pinning against an
+// HMAC bundle is a category error — there's no public key to check — and silently ignoring
+// it would let a forger downgrade to HMAC and bypass the pin. Fail loudly.
+if (pinnedFps.size && !isEd25519) {
+  die(`--key was given but this bundle's algorithm is "${bundle.algorithm}", not ed25519. HMAC signatures have no public key to pin against and cannot be independently verified. Ask the issuer for an Ed25519-signed export.`);
+}
 if (!isEd25519) {
   process.stdout.write(`${C.yellow}!${C.reset} This bundle is signed with ${bundle.algorithm} (tamper-EVIDENT, instance-local).\n`);
-  process.stdout.write(dim("  Content addresses and chain linkage are checked below, but the signatures\n  cannot be independently verified without the instance's secret. For non-repudiable\n  proof, ask the sender to run Krelvan with KRELVAN_LEDGER_SIGNING=ed25519.\n"));
+  process.stdout.write(dim("  Content addresses, ordering and run boundaries are checked below, but the signatures\n  cannot be verified offline without the instance's secret — so a third party CANNOT\n  confirm this bundle is authentic. A forger can fabricate an HMAC bundle with no secret.\n  For verifiable proof, ask the sender to run Krelvan with KRELVAN_LEDGER_SIGNING=ed25519.\n"));
 }
 
 let idFailures = 0, sigFailures = 0, orderFailures = 0, sigChecked = 0;
@@ -267,8 +280,12 @@ if (allOk) {
     // could supply their own keypair. Say exactly that, and tell the verifier how to upgrade it.
     process.stdout.write(`${ok("✓ CONSISTENT")} — ${bundle.events.length} events, every signature valid against the keys included in the file; the slice spans a whole run start-to-finish, in order.\n${dim("  This proves the run is internally consistent and unaltered. It does NOT prove which instance\n  produced it — the keys came from the file itself. To prove origin, fetch the issuer's public key\n  from GET /api/ledger/keys and re-run with --key <that-key.pem>.")}\n`);
   } else {
-    // HMAC: tamper-EVIDENT and instance-local — signatures can't be checked by a third party.
-    process.stdout.write(`${C.yellow}~ PARTIALLY VERIFIED${C.reset} (instance-local) — ${bundle.events.length} events; content addresses, ordering and run boundaries all check out.\n${dim(`  Signatures use ${bundle.algorithm}, which is tamper-evident but NOT independently verifiable without the instance's secret. For third-party proof, ask the sender for an Ed25519-signed export.`)}\n`);
+    // HMAC: NOT independently verifiable offline. The structural checks pass, but a third party
+    // cannot confirm authenticity (a forger can fabricate an HMAC bundle with no secret), so we
+    // must NOT exit 0 — a CI/script treating exit 0 as "proven" would be fooled. Exit 2 = "could
+    // not independently verify" (distinct from exit 1 = "failed / forged").
+    process.stdout.write(`${C.yellow}~ NOT INDEPENDENTLY VERIFIABLE${C.reset} (${bundle.algorithm}) — ${bundle.events.length} events; content addresses, ordering and run boundaries are internally consistent.\n${dim(`  But ${bundle.algorithm} signatures cannot be checked offline without the instance's secret, so this is NOT proof a third party can rely on — anyone could fabricate it. Ask the sender for an Ed25519-signed export to verify authenticity.`)}\n`);
+    process.exit(2);
   }
   process.exit(0);
 } else if (pinMismatch && idFailures === 0 && sigFailures === 0 && orderFailures === 0 && boundaryFailures === 0) {

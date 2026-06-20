@@ -147,6 +147,45 @@ test("FORGERY by omission: stripping all signatures (and payload rewrite) is rej
   assert.doesNotMatch(pinned.out, /authentic/);
 });
 
+test("FORGERY by downgrade: a fabricated HMAC bundle does NOT pass as third-party proof (exit 2)", () => {
+  // Attack: fabricate a run, claim algorithm hmac-sha256 (no public key to check), recompute the
+  // content addresses yourself. A verifier that exited 0 on "structure consistent" would be fooled
+  // with no secret at all. An HMAC bundle must NOT exit 0 — it's not independently verifiable.
+  const bundle = JSON.parse(readFileSync(FIXTURE, "utf8"));
+  const canon = (v: unknown): string => {
+    if (v === null) return "null";
+    const t = typeof v;
+    if (t === "boolean") return v ? "true" : "false";
+    if (t === "number") return String(v);
+    if (t === "string") return JSON.stringify(v);
+    if (Array.isArray(v)) return "[" + v.map(canon).join(",") + "]";
+    if (t === "object") { const o = v as Record<string, unknown>; return "{" + Object.keys(o).sort().filter((k) => o[k] !== undefined).map((k) => JSON.stringify(k) + ":" + canon(o[k])).join(",") + "}"; }
+    return "null";
+  };
+  const pre = (e: any): string => canon({
+    type: e.type, scope: { tenantId: e.scope.tenantId, runId: e.scope.runId, ...(e.scope.nodeId !== undefined ? { nodeId: e.scope.nodeId } : {}), branchId: e.scope.branchId },
+    parents: [...(e.parents ?? [])], prev: e.prev ?? null, offset: e.offset, payload: e.payload, determinism: e.determinism, ts: e.ts, author: e.author,
+  });
+  bundle.algorithm = "hmac-sha256";
+  bundle.publicKeys = [];
+  for (const e of bundle.events) {
+    e.payload = { ...e.payload, FABRICATED: "never happened" };
+    e.id = "sha256:" + createHash("sha256").update(pre(e), "utf8").digest("hex");
+    e.sig = { keyId: "owner", epoch: 1, signedAt: e.sig.signedAt, value: "00".repeat(64) };
+  }
+  const path = writeTemp(bundle);
+  const { code, out } = runVerifier(path);
+  assert.equal(code, 2, `HMAC bundle must exit 2 (not independently verifiable), got ${code}\n${out}`);
+  assert.match(out, /NOT INDEPENDENTLY VERIFIABLE/);
+  assert.doesNotMatch(out, /✓ VERIFIED|✓ CONSISTENT/);
+
+  // And pinning a key against an HMAC bundle is a category error → hard fail, never a pass.
+  const realKeys = writeBundleKeys(JSON.parse(readFileSync(FIXTURE, "utf8"))).flatMap((p) => ["--key", p]);
+  const pinned = runVerifier(path, ...realKeys);
+  assert.equal(pinned.code, 1);
+  assert.doesNotMatch(pinned.out, /authentic/);
+});
+
 test("a head-truncated bundle (RunStarted dropped) is rejected — no lie by omission", () => {
   const bundle = JSON.parse(readFileSync(FIXTURE, "utf8"));
   bundle.events = bundle.events.slice(1); // drop the RunStarted
