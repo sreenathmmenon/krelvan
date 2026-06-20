@@ -10,7 +10,7 @@ import {
   BuildPreviewModal, MiniGraph, HeroAnimation, EXAMPLES, BUILD_STAGES,
 } from "./_builder";
 import { loadRegistry, type CatalogEntry } from "../lib/registry";
-import { glyphFor } from "../lib/glyphs";
+import { glyphFor, UI } from "../lib/glyphs";
 
 // ── Krelvan landing — product-first debut ──────────────────────────────────────
 // The homepage IS the working product. On first paint a visitor lands on a dark
@@ -154,10 +154,10 @@ function ProveItBand() {
             no trust in us. Then corrupt a single byte and watch it get rejected.
           </p>
           <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap", alignItems: "center" }}>
-            <a href="/sample-run.krproof.json" download className="btn btn-primary">
+            <a href="/sample-run.krproof.json" download className="btn btn-dark-primary">
               Download a signed run ↓
             </a>
-            <Link href="/runs" className="btn btn-ghost">See the ledger in the app →</Link>
+            <Link href="/runs" className="btn btn-dark-ghost">See the ledger in the app →</Link>
           </div>
         </div>
 
@@ -170,7 +170,7 @@ function ProveItBand() {
               <span className="proveit__dollar">$</span>
               <code>{VERIFY_CMD}</code>
               <button type="button" className="proveit__copy" data-copied={copied} onClick={copy} aria-label={copied ? "Copied" : "Copy verify command"}>
-                {copied ? "✓" : "Copy"}
+                {copied ? "Copied" : "Copy"}
               </button>
             </div>
             <pre className="proveit__out">{`  content addresses : `}<span className="proveit__ok">all 7 match</span>{`
@@ -216,7 +216,9 @@ function HeroArtifact({ run }: { run: RunRecord | null }) {
             {run.manifestName}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap" }}>
-            <span className="dark-verify-seal__mark" aria-hidden="true">✓</span>
+            <span className="dark-verify-seal__mark" aria-hidden="true">
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d={UI.check} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </span>
             <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>signed</span>
             <span className="dark-ink-muted" aria-hidden="true">·</span>
             <span className="dark-ink-soft mono" style={{ fontSize: 13 }}>
@@ -557,7 +559,7 @@ export default function Landing() {
                 <div className="micro" style={{ marginBottom: "var(--s2)" }}>Your latest run</div>
                 <div className="h3" style={{ color: "var(--ink)" }}>{latestCompleted.manifestName}</div>
                 <div className="small muted" style={{ marginTop: "var(--s1)" }}>
-                  {timeAgo(latestCompleted.createdAt)} · <span className="mono" style={{ color: "var(--brand)", fontWeight: 600 }}>✓ signed · replayable</span>
+                  {timeAgo(latestCompleted.createdAt)} · <span className="mono" style={{ color: "var(--brand)", fontWeight: 600 }}>signed · replayable</span>
                 </div>
               </div>
               <span className="btn btn-secondary">Open this record →</span>

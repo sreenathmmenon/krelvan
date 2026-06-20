@@ -46,7 +46,8 @@ async function main(): Promise<void> {
   const store = new InMemoryLedgerStore();
 
   // A 3-node content pipeline: research -> write -> deliver.
-  // "deliver" sends to a human → message-human → gated under act-with-veto autonomy.
+  // "deliver" sends to a human (message-human). Under "suggest" autonomy that gates for
+  // approval (act-with-veto would let a message-human effect proceed without a gate).
   const manifest: Manifest = {
     version: 1,
     name: "content-pipeline",
@@ -57,7 +58,7 @@ async function main(): Promise<void> {
     nodes: [
       { id: "researcher", role: "research the topic", autonomy: "full", capabilities: [{ name: "web_search", sideEffect: "read", budgetCents: 50 }] },
       { id: "writer", role: "write the brief", autonomy: "full", capabilities: [{ name: "compose", sideEffect: "read", budgetCents: 30 }] },
-      { id: "reporter", role: "deliver to the human", autonomy: "act-with-veto", capabilities: [{ name: "telegram_send", sideEffect: "message-human", budgetCents: 20 }] },
+      { id: "reporter", role: "deliver to the human", autonomy: "suggest", capabilities: [{ name: "telegram_send", sideEffect: "message-human", budgetCents: 20 }] },
     ],
     edges: [
       { from: "researcher", to: "writer" },
@@ -74,7 +75,7 @@ async function main(): Promise<void> {
   const supervisor = new Supervisor(plugins);
   const engine = new Engine(manifest, "acme", "run-42", { store, owner, supervisor, supervisorSigner, now });
 
-  // The reporter is "act-with-veto" with a message-human effect → it gates. Approve it.
+  // The reporter is "suggest" with a message-human effect → it gates. Approve it.
   console.log("\n── Running content-pipeline through the real kernel + engine ──\n");
   const res = await engine.run({ approve: (c) => (console.log(`  approval requested for ${c.capability} → APPROVED`), true) });
 

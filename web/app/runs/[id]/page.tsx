@@ -547,7 +547,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             className="replay-cta"
             style={{ gridColumn: "1 / -1" }}
           >
-            <span className="replay-cta__play" aria-hidden="true">▶</span>
+            <span className="replay-cta__play" aria-hidden="true">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6a.5.5 0 0 0 .77.42l5.7-3.8a.5.5 0 0 0 0-.84l-5.7-3.8A.5.5 0 0 0 3 2.2z" /></svg>
+            </span>
             <span className="replay-cta__body">
               <strong>Watch the full replay</strong>
               <span className="small dim">Step through every event on the live canvas — scrub the ledger node by node, see exactly what ran.</span>

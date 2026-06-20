@@ -149,7 +149,7 @@ Point an install at your own fork with
 
 | Layer | Where | Proven by |
 |---|---|---|
-| **Ledger** | `src/core/ledger/` | canonicalization, content-addressing, hash-chaining, signed events (HMAC by default; **opt-in Ed25519 = non-repudiable**, verifiable from the public key alone), CAS append (no forks), `verify()` catches every corruption |
+| **Ledger** | `src/core/ledger/` | canonicalization, content-addressing, hash-chaining, signed events (**Ed25519 by default = non-repudiable**, verifiable from the public key alone; HMAC available via env), CAS append (no forks), `verify()` catches every corruption |
 | **Manifest + safe expr** | `src/core/manifest/` | structural validation; conditional edges are a typed AST — never `eval` |
 | **Capability plane** | `src/core/capability/` | deny-by-default, autonomy gradient, supervisor co-sign |
 | **Pure kernel + engine** | `src/core/kernel/` | pure `decide()`; 3-event effect protocol; crash-hole HALT; resume |
@@ -190,17 +190,20 @@ npm run demo:live    # (needs KRELVAN_ANTHROPIC_KEY) a real model proposes a wor
 - **Failure-reasoning + auto-retry-with-fix** — diagnose a failed run from the ledger, rebuild a corrected agent, re-run
 - **7 LLM providers** behind one client (Anthropic/OpenAI/Gemini/Groq/Mistral/Ollama/OpenAI-compatible)
 
-**Asymmetric ledger signing (ed25519) — built, opt-in.** Set `KRELVAN_LEDGER_SIGNING=ed25519`
-and the ledger is signed with per-install Ed25519 keys. The **public** keys are published at
+**Asymmetric ledger signing (ed25519) — the default on a fresh install.** A new data dir signs
+the ledger with per-install Ed25519 keys. The **public** keys are published at
 `GET /api/ledger/keys` (no auth) so an auditor, regulator, or counterparty can **independently
-verify the entire ledger without any secret — and cannot forge an entry**. That is the step from
-tamper-*evident* (HMAC, the default) to tamper-evident **and non-repudiable**. The private key
-never leaves the signer.
+verify the entire ledger without any secret — and cannot forge an entry** (`npx krelvan verify`
+does exactly this, offline). That is **non-repudiable** proof, not just tamper-*evident*. The
+private key never leaves the signer.
 
-> **Choose this at first boot, on a fresh data dir.** Switching an existing HMAC data dir to
-> Ed25519 leaves events written *before* the switch signed with HMAC — the Ed25519 verifier can't
-> check those, so historical runs will read as "verification failed." New runs are fine. The boot
-> log warns if it detects this. For a clean non-repudiable history, start with Ed25519.
+Set `KRELVAN_LEDGER_SIGNING=hmac` to force the symmetric HMAC adapter instead (tamper-evident,
+but instance-local — not third-party verifiable). An **existing HMAC install keeps using HMAC**
+automatically, so the history it already signed stays verifiable.
+
+> **Don't switch an existing HMAC data dir to Ed25519.** Events written before the switch were
+> signed with HMAC, which the Ed25519 verifier can't check — historical runs would read as
+> "verification failed." The boot log warns if you try. Start fresh for a clean Ed25519 history.
 
 **Export & verify a run anywhere.** `GET /api/runs/:id/export` (or the "Download proof" button on
 any run) produces a portable bundle — every event with its signature, plus the public keys.

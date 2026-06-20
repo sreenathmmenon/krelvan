@@ -146,9 +146,21 @@ function loadOrCreateSigningKeypair(dataDir: string, role: "owner" | "supervisor
   return privateKeyPem;
 }
 
-/** Which ledger-signing adapter to use. Asymmetric Ed25519 is opt-in for back-compat. */
-function useAsymmetricSigning(): boolean {
-  return process.env["KRELVAN_LEDGER_SIGNING"]?.toLowerCase() === "ed25519";
+/**
+ * Which ledger-signing adapter to use.
+ *  - Explicit `KRELVAN_LEDGER_SIGNING=ed25519|hmac` always wins.
+ *  - Otherwise: a FRESH data dir defaults to Ed25519 (non-repudiable — the strong default the
+ *    product's "anyone can verify" wedge promises, and what the homepage demonstrates).
+ *  - An EXISTING HMAC data dir (it already has `signing-owner.key`) stays on HMAC, so the
+ *    history it already signed keeps verifying. Switching it would make old events look tampered.
+ */
+function useAsymmetricSigning(dataDir: string): boolean {
+  const explicit = process.env["KRELVAN_LEDGER_SIGNING"]?.toLowerCase();
+  if (explicit === "ed25519") return true;
+  if (explicit === "hmac") return false;
+  // No explicit choice: keep an existing HMAC install on HMAC; default everything else to Ed25519.
+  const hasPriorHmac = existsSync(join(dataDir, "signing-owner.key"));
+  return !hasPriorHmac;
 }
 
 // ── HITL approval record ───────────────────────────────────────────────────────
@@ -581,7 +593,7 @@ export class KrelvanRuntime {
     // published so an auditor/regulator/counterparty can verify the ledger without ever
     // being able to forge it. Both are per-install (never a shared repo constant).
     const window_ = { epoch: 1, validFrom: 0, validUntil: null };
-    if (useAsymmetricSigning()) {
+    if (useAsymmetricSigning(config.dataDir)) {
       // Footgun guard: switching an EXISTING HMAC-signed data dir to Ed25519 leaves the prior
       // events signed with HMAC under the same keyId/epoch — the Ed25519 verifier can't check
       // them, so they'd read as "tampered". Detect the switch (an old HMAC key file present)
