@@ -127,7 +127,15 @@ export default function CapabilitiesPage() {
       </div>
 
       {/* ── side-effect spectrum + approval simulator (the trust wedge) ── */}
-      <Spectrum caps={caps} autonomy={autonomy} setAutonomy={setAutonomy} />
+      {/* Marketplace items while browsing Discover (sells even with nothing installed); your
+          installed capabilities on the Installed tab. */}
+      <Spectrum
+        caps={tab === "discover"
+          ? catalog.map(e => ({ name: e.name, sideEffect: e.sideEffect }))
+          : caps.map(c => ({ name: c.name, sideEffect: c.sideEffect }))}
+        autonomy={autonomy} setAutonomy={setAutonomy}
+        source={tab === "discover" ? "marketplace" : "installed"}
+      />
 
       {/* ── tabs ── */}
       <div className="cap-tabs" role="tablist" aria-label="Capabilities views">
@@ -181,9 +189,13 @@ function Stat({ value, label }: { value: string; label: string }) {
 }
 
 // ── Spectrum band + live approval simulator ──────────────────────────────────
-function Spectrum({ caps, autonomy, setAutonomy }: { caps: CapabilityRecord[]; autonomy: Autonomy; setAutonomy: (a: Autonomy) => void }) {
+// Accepts any list of {name, sideEffect} — installed caps on the Installed tab, or the whole
+// catalog on Discover (so the trust wedge SELLS exactly when a visitor is browsing, even with
+// nothing installed yet). `source` just relabels the count copy.
+type SpecItem = { name: string; sideEffect: string };
+function Spectrum({ caps, autonomy, setAutonomy, source }: { caps: SpecItem[]; autonomy: Autonomy; setAutonomy: (a: Autonomy) => void; source: "installed" | "marketplace" }) {
   const [showAll, setShowAll] = useState(false);
-  const buckets: Record<0 | 1 | 2, CapabilityRecord[]> = { 0: [], 1: [], 2: [] };
+  const buckets: Record<0 | 1 | 2, SpecItem[]> = { 0: [], 1: [], 2: [] };
   for (const c of caps) buckets[sideEffectMeta(c.sideEffect).tier].push(c);
   const gatedCount = caps.filter(c => needsApproval(autonomy, c.sideEffect)).length;
   const PER_ZONE = 8;
@@ -193,7 +205,7 @@ function Spectrum({ caps, autonomy, setAutonomy }: { caps: CapabilityRecord[]; a
     <div className="cap-spectrum">
       <div className="cap-spectrum__row">
         <div className="cap-spectrum__head">
-          <span className="micro" style={{ color: "var(--ink-soft)" }}>Every capability, by what it can do</span>
+          <span className="micro" style={{ color: "var(--ink-soft)" }}>{source === "marketplace" ? "Every capability in the marketplace, by what it can touch" : "Every installed capability, by what it can do"}</span>
           <span className="small muted">
             At <b style={{ color: "var(--brand)" }}>{autonomy}</b> autonomy,{" "}
             <span className="mono" style={{ color: "var(--ink)" }}>{gatedCount}</span> of{" "}
