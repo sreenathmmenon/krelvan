@@ -748,6 +748,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 /* VERIFIED seal — the climax. Lands (scales/fades in) after row 5 writes, then
  * pulses its teal glow once per cycle as the run is sealed. Teal, never amber. */
 .dark-verify-seal {
+  position: relative;
   display: flex; align-items: center; gap: var(--s2);
   padding: var(--s3) var(--s4);
   border-radius: var(--r);
@@ -756,6 +757,18 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   color: var(--dark-brand-bright);
   animation: seal-land 3.6s var(--ease) infinite;
   transform-origin: center;
+}
+/* the signature "signed shut" shockwave — a teal ring expands once as the seal lands */
+.dark-verify-seal::after {
+  content: ""; position: absolute; inset: -1px; border-radius: var(--r);
+  border: 1px solid var(--dark-brand-bright); pointer-events: none;
+  animation: seal-shockwave 3.6s var(--ease) infinite;
+}
+@keyframes seal-shockwave {
+  0%, 76% { opacity: 0; transform: scale(1); }
+  80%     { opacity: .7; transform: scale(1); }
+  92%     { opacity: 0; transform: scale(1.12); }
+  100%    { opacity: 0; transform: scale(1.12); }
 }
 .dark-verify-seal__mark {
   display: inline-flex; align-items: center; justify-content: center;
@@ -1336,6 +1349,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   .dark-ledger-row__check { opacity: 1 !important; }
   .dark-ledger-head__live { opacity: 0 !important; }
   .dark-verify-seal { opacity: 1 !important; transform: none !important; box-shadow: var(--dark-verify-ring) !important; }
+  .dark-verify-seal::after { animation: none !important; opacity: 0 !important; }
   .dark-pulse-dot, .dark-pulse-halo { opacity: 0 !important; }
   .cap-toast { animation: none !important; }
 }
@@ -1902,6 +1916,116 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .proveit__out { margin: var(--s2) 0 0; color: var(--dark-ink-muted); white-space: pre-wrap; font-family: var(--font-mono); }
 .proveit__ok { color: var(--dark-brand-bright); font-weight: 600; }
 .proveit__bad { color: #ff8a8a; font-weight: 600; }
+
+/* ═══════════════════ Landing page — viral build (LP) ═══════════════════ */
+
+/* hero: the runnable verify command — the falsifiable gesture */
+.hero-verify-cmd {
+  display: inline-flex; align-items: center; gap: var(--s3);
+  padding: var(--s3) var(--s4); border-radius: var(--r);
+  background: color-mix(in srgb, var(--dark-brand-bright) 8%, var(--dark-surface));
+  border: 1px solid var(--dark-line-teal);
+  font-family: var(--font-mono); font-size: 13.5px;
+  box-shadow: inset 0 0 24px rgba(26,163,154,.06);
+}
+.hero-verify-cmd__prompt { color: var(--dark-brand-bright); font-weight: 700; }
+.hero-verify-cmd code { color: var(--dark-ink-soft); }
+.hero-verify-cmd__ok {
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 999px;
+  background: var(--dark-brand-bright); color: #06110f;
+  animation: verify-tick-in 2.4s var(--ease) infinite;
+}
+@keyframes verify-tick-in {
+  0%, 55% { transform: scale(.4); opacity: 0; }
+  64% { transform: scale(1.15); opacity: 1; }
+  70%, 96% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1); opacity: .9; }
+}
+
+/* prove-it: live verifier states + the tamper toggle */
+.proveit__term--live { transition: border-color 240ms var(--ease), box-shadow 240ms var(--ease); }
+.proveit__term--live.is-pass { border-color: var(--dark-line-teal); box-shadow: 0 18px 50px -20px rgba(0,0,0,.55), 0 0 0 1px rgba(26,163,154,.18); }
+.proveit__term--live.is-fail { border-color: rgba(248,113,113,.4); box-shadow: 0 18px 50px -20px rgba(0,0,0,.55), 0 0 28px -8px rgba(248,113,113,.4); }
+.proveit__term--live.is-fail .proveit__termbar { background: rgba(248,113,113,.06); }
+.proveit__termbar { position: relative; flex-wrap: wrap; }
+.proveit__termtitle { color: var(--dark-ink-muted); font-size: 11px; margin-left: var(--s2); }
+.proveit__tamper {
+  margin-left: auto; display: inline-flex; align-items: center; gap: var(--s2); white-space: nowrap;
+  font-size: 11.5px; color: var(--dark-ink-soft); cursor: pointer; user-select: none;
+  padding: 2px 8px; border-radius: var(--r-sm); border: 1px solid var(--dark-line);
+  transition: border-color 120ms, color 120ms;
+}
+.proveit__tamper span { white-space: nowrap; }
+.proveit__tamper:hover { border-color: rgba(248,113,113,.5); color: #ff8a8a; }
+.proveit__tamper input { accent-color: #f87171; cursor: pointer; }
+.proveit__inlinecopy {
+  background: none; border: none; color: var(--dark-brand-bright); cursor: pointer;
+  font-family: var(--font-mono); font-size: 12px; text-decoration: underline; padding: 0;
+}
+/* the verdict line punches in when it changes */
+.proveit__out .proveit__ok, .proveit__out .proveit__bad { animation: verdict-punch 320ms var(--ease); }
+@keyframes verdict-punch { 0% { transform: scale(.96); opacity: .4; } 60% { transform: scale(1.03); } 100% { transform: scale(1); opacity: 1; } }
+
+/* connector strip — real integrations, text wordmarks (no fake logos) */
+.connector-strip { margin-top: var(--s6); display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; }
+.connector-strip__label { color: var(--ink-muted); flex-shrink: 0; }
+.connector-strip__row { display: flex; gap: var(--s2); flex-wrap: wrap; }
+.connector-chip {
+  padding: 3px 10px; border-radius: 999px; font-size: 12px;
+  background: var(--surface-sunken); border: 1px solid var(--line); color: var(--ink-soft);
+  white-space: nowrap;
+}
+.connector-chip--more { color: var(--brand); border-color: var(--brand-ring); text-decoration: none; }
+.connector-chip--more:hover { background: var(--brand-tint); }
+
+/* depth grid — ranked capability cards, lead cards span wider */
+.depth-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--s4); }
+.depth-card {
+  grid-column: span 2; padding: var(--s5); text-decoration: none; color: inherit; display: flex; flex-direction: column;
+  transition: transform 160ms var(--ease), border-color 160ms var(--ease), box-shadow 160ms var(--ease);
+}
+.depth-card--lead { grid-column: span 3; background: color-mix(in srgb, var(--brand) 4%, var(--surface)); border-color: var(--brand-ring); }
+.depth-card:hover { transform: translateY(-2px); border-color: var(--brand-ring); box-shadow: 0 10px 30px -16px color-mix(in srgb, var(--brand) 50%, transparent); }
+.depth-card__title { display: flex; align-items: center; gap: var(--s2); font-weight: 650; color: var(--ink); font-size: 16px; margin-bottom: var(--s3); line-height: 1.25; }
+.depth-card--lead .depth-card__title { font-size: 18px; }
+.depth-card__check { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; background: var(--brand-tint); color: var(--brand); flex-shrink: 0; }
+.depth-card__body { margin: 0 0 var(--s4); line-height: 1.55; flex: 1; }
+.depth-card__cta { color: var(--brand); font-weight: 600; }
+@media (max-width: 900px) { .depth-grid { grid-template-columns: 1fr 1fr; } .depth-card, .depth-card--lead { grid-column: span 1; } }
+@media (max-width: 560px) { .depth-grid { grid-template-columns: 1fr; } }
+
+/* what-is / what-isn't */
+.isisnt { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s5); }
+@media (max-width: 760px) { .isisnt { grid-template-columns: 1fr; } }
+.isisnt__col { padding: var(--s5) var(--s6); border-radius: var(--r-lg); border: 1px solid var(--line); }
+.isisnt__col--is { background: color-mix(in srgb, var(--ok) 6%, var(--surface)); border-color: color-mix(in srgb, var(--ok) 26%, transparent); }
+.isisnt__col--isnt { background: var(--surface-sunken); }
+.isisnt__head { font-weight: 700; margin-bottom: var(--s4); font-size: 15px; }
+.isisnt__col--is .isisnt__head { color: var(--ok); }
+.isisnt__col--isnt .isisnt__head { color: var(--ink-muted); }
+.isisnt ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--s3); }
+.isisnt li { position: relative; padding-left: var(--s5); color: var(--ink-soft); line-height: 1.55; font-size: 14.5px; }
+.isisnt li::before { content: ""; position: absolute; left: 0; top: 9px; width: 7px; height: 7px; border-radius: 999px; }
+.isisnt__col--is li::before { background: var(--ok); }
+.isisnt__col--isnt li::before { background: var(--ink-muted); }
+
+/* final CTA — three time-boxed lanes */
+.cta-lanes { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s5); max-width: 920px; margin: 0 auto; text-align: left; }
+@media (max-width: 800px) { .cta-lanes { grid-template-columns: 1fr; max-width: 460px; } }
+.cta-lane {
+  display: flex; flex-direction: column; gap: var(--s3); padding: var(--s5); min-width: 0;
+  background: var(--dark-surface); border: 1px solid var(--dark-line-teal); border-radius: var(--r-lg);
+}
+.cta-lane__time { color: var(--dark-brand-bright); font-size: 12px; font-weight: 600; letter-spacing: .04em; }
+.cta-lane__title { color: var(--dark-ink); font-weight: 650; font-size: 18px; }
+.cta-lane__desc { color: var(--dark-ink-soft); font-size: 13.5px; line-height: 1.55; margin: 0; flex: 1; }
+.cta-lane .install-cmd { max-width: 100%; margin: 0; }
+.cta-lane .btn { align-self: flex-start; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-verify-cmd__ok { animation: none; opacity: 1; transform: none; }
+  .proveit__out .proveit__ok, .proveit__out .proveit__bad { animation: none; }
+}
 
 /* ───────────────────── Approval preview (what you're approving) ───────────────────── */
 .approval-preview {

@@ -11,6 +11,7 @@ import {
 } from "./_builder";
 import { loadRegistry, type CatalogEntry } from "../lib/registry";
 import { glyphFor, UI } from "../lib/glyphs";
+import { verifyBundle, type ProofBundle, type VerifyResult } from "../lib/verify-bundle";
 
 // ── Krelvan landing — product-first debut ──────────────────────────────────────
 // The homepage IS the working product. On first paint a visitor lands on a dark
@@ -40,6 +41,49 @@ const EXAMPLE_EDGES = [
 // watching, RAG support, a personal advisor, an LLM-wiki, influencer outreach with a
 // human-approval gate — installable in one click. This is the single highest-leverage
 // "show the product" surface; it was previously hidden on /capabilities.
+// Animate a number from 0 → n on first scroll-into-view (reduced-motion snaps to n).
+function CountUp({ n, className }: { n: number; className?: string }) {
+  const [val, setVal] = useState(0);
+  const ref = useRef<HTMLSpanElement>(null);
+  const done = useRef(false);
+  useEffect(() => {
+    if (n <= 0) return;
+    const el = ref.current;
+    if (!el) { setVal(n); return; }
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { setVal(n); return; }
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting && !done.current) {
+        done.current = true;
+        const start = performance.now(), dur = 850;
+        const tick = (t: number) => {
+          const p = Math.min(1, (t - start) / dur);
+          const eased = 1 - Math.pow(1 - p, 3);
+          setVal(Math.round(eased * n));
+          if (p < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }
+    }, { threshold: 0.5 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [n]);
+  return <span ref={ref} className={className}>{val}</span>;
+}
+
+// Real integrations only — the recognizable connectors that actually ship in the registry.
+const CONNECTORS = ["Stripe", "GitHub", "Notion", "Slack", "Linear", "Shopify", "HubSpot", "Airtable", "Qdrant", "ElevenLabs", "Google Workspace", "Resend"];
+function ConnectorStrip() {
+  return (
+    <div className="connector-strip" aria-label="Works with real integrations">
+      <span className="connector-strip__label micro">Works with</span>
+      <div className="connector-strip__row">
+        {CONNECTORS.map(c => <span key={c} className="connector-chip mono">{c}</span>)}
+        <Link href="/capabilities?install=&kind=mcp" className="connector-chip connector-chip--more mono">+13 more →</Link>
+      </div>
+    </div>
+  );
+}
+
 function ExampleGallery() {
   const [items, setItems] = useState<CatalogEntry[]>([]);
   const [counts, setCounts] = useState<{ total: number; agents: number; mcp: number }>({ total: 0, agents: 0, mcp: 0 });
@@ -58,22 +102,26 @@ function ExampleGallery() {
   return (
     <section style={{ background: "var(--surface)", borderTop: "1px solid var(--line)" }}>
       <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
-        <p className="micro" style={{ marginBottom: "var(--s3)" }}>Already built — not a demo</p>
-        <h2 className="h1" style={{ marginBottom: "var(--s3)", maxWidth: "22ch" }}>
-          Start from a <span style={{ color: "var(--brand)" }}>real agent</span>.
+        <p className="micro" style={{ marginBottom: "var(--s3)" }}>The marketplace is a Git repo — clone it, read it, run it</p>
+        <h2 className="display h1" style={{ marginBottom: "var(--s3)", maxWidth: "24ch" }}>
+          Start from a <span style={{ color: "var(--brand)" }}>real agent</span> — or audit one before you trust it.
         </h2>
-        <p className="body-lg soft" style={{ maxWidth: "60ch", marginBottom: "var(--s5)" }}>
-          Install any of these in one click and watch it run — every step signed, the risky
-          ones pausing for your approval. Then edit it, or build your own from scratch above.
+        <p className="body-lg soft" style={{ maxWidth: "62ch", marginBottom: "var(--s5)" }}>
+          No hosted black box. Every entry is an inspectable file in a public registry. Install any
+          in one click and watch it run — every step signed, the risky ones pausing for your approval.
         </p>
-        {/* numbers-forward proof band — the real scale of what's shipped */}
+        {/* numbers-forward proof band — real counts from the live registry, animated count-up */}
         <div className="home-stats">
-          <Link href="/capabilities" className="home-stat"><span className="home-stat__n mono">{counts.total}</span><span className="home-stat__l">capabilities</span></Link>
+          <Link href="/capabilities" className="home-stat"><CountUp n={counts.total} className="home-stat__n mono" /><span className="home-stat__l">capabilities</span></Link>
           <span className="home-stat__div" aria-hidden="true" />
-          <Link href="/capabilities" className="home-stat"><span className="home-stat__n mono">{counts.agents}</span><span className="home-stat__l">ready-to-run agents</span></Link>
+          <Link href="/capabilities" className="home-stat"><CountUp n={counts.agents} className="home-stat__n mono" /><span className="home-stat__l">ready-to-run agents</span></Link>
           <span className="home-stat__div" aria-hidden="true" />
-          <Link href="/capabilities?install=&kind=mcp" className="home-stat"><span className="home-stat__n mono">{counts.mcp}</span><span className="home-stat__l">MCP connectors</span></Link>
+          <Link href="/capabilities?install=&kind=mcp" className="home-stat"><CountUp n={counts.mcp} className="home-stat__n mono" /><span className="home-stat__l">MCP connectors</span></Link>
+          <span className="home-stat__div" aria-hidden="true" />
+          <span className="home-stat"><span className="home-stat__n mono">7</span><span className="home-stat__l">LLM providers</span></span>
         </div>
+        {/* real integrations — only connectors that actually ship in the registry */}
+        <ConnectorStrip />
         <div className="home-examples">
           {items.map(e => (
             <Link key={e.name} href={`/capabilities?install=${encodeURIComponent(e.name)}`} className="home-example card">
@@ -126,67 +174,108 @@ function InstallCommand() {
   );
 }
 
-// ── "Prove it" band: let a skeptic verify the core claim on their own machine ──
-// A real signed run ships at /sample-run.krproof.json (Ed25519, 7 events). The visitor
-// downloads it, runs the zero-dep verifier, and sees every signature check out — then
-// corrupts a byte and watches it get rejected. This is the wedge, demonstrated.
+// ── "Prove it" band — the viral hook: a REAL verifier running in YOUR browser ──
+// We fetch the genuine signed sample bundle (/sample-run.krproof.json, Ed25519, 7 events)
+// and verify it client-side with Web Crypto (web/lib/verify-bundle.ts) — the same checks
+// the CLI runs. The "tamper" toggle flips one byte of a payload and re-verifies LIVE, so a
+// skeptic watches ✓ VERIFIED flip to ✗ REJECTED in their own browser (open devtools — it's
+// genuinely computing SHA-256 + Ed25519). This isn't a re-enactment; it's the real check.
 const VERIFY_CMD = "npx krelvan verify sample-run.krproof.json";
+const TWEET = "Krelvan agent runs are Ed25519-signed — you can `npx krelvan verify` them offline, zero deps. Change one byte and it rejects. AI agents you can actually audit.";
+
 function ProveItBand() {
+  const [bundle, setBundle] = useState<ProofBundle | null>(null);
+  const [tampered, setTampered] = useState(false);
+  const [result, setResult] = useState<VerifyResult | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const [copied, setCopied] = useState(false);
-  const copy = useCallback(() => {
-    void navigator.clipboard.writeText(VERIFY_CMD).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    });
+  const [shared, setShared] = useState(false);
+
+  // Fetch the real bundle once (the same file the Download button serves).
+  useEffect(() => {
+    void fetch("/sample-run.krproof.json").then(r => r.json()).then((b: ProofBundle) => setBundle(b)).catch(() => {});
   }, []);
+
+  // Re-verify (really, in-browser) whenever the bundle loads or the tamper toggle flips.
+  useEffect(() => {
+    if (!bundle) return;
+    let cancelled = false;
+    setVerifying(true);
+    // Deep-clone; if "tampered", flip one byte of a payload WITHOUT touching id/sig — exactly
+    // what an attacker would try. The verifier recomputes the hash and catches the mismatch.
+    const candidate: ProofBundle = JSON.parse(JSON.stringify(bundle));
+    if (tampered) {
+      const target = candidate.events.find(e => e.payload && typeof e.payload === "object") ?? candidate.events[1];
+      target.payload = { ...(target.payload as object), tampered: "one byte changed" };
+    }
+    void verifyBundle(candidate).then(r => { if (!cancelled) { setResult(r); setVerifying(false); } });
+    return () => { cancelled = true; };
+  }, [bundle, tampered]);
+
+  const copy = useCallback(() => {
+    void navigator.clipboard.writeText(VERIFY_CMD).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1600); });
+  }, []);
+  const shareTweet = useCallback(() => {
+    void navigator.clipboard.writeText(TWEET).then(() => { setShared(true); setTimeout(() => setShared(false), 1600); });
+  }, []);
+
+  const pass = result?.verdict === "CONSISTENT";
   return (
     <section className="proveit" aria-labelledby="proveit-h">
       <div className="container proveit__grid">
         <div className="proveit__copy">
-          <p className="micro" style={{ marginBottom: "var(--s2)" }}>Don&apos;t take our word for it</p>
-          <h2 id="proveit-h" className="h1" style={{ marginBottom: "var(--s3)" }}>
-            Verify a signed run yourself — offline, in under a minute.
+          <p className="micro" style={{ marginBottom: "var(--s2)" }}>You shouldn&apos;t trust this page</p>
+          <h2 id="proveit-h" className="display h1" style={{ marginBottom: "var(--s3)" }}>
+            Don&apos;t trust the demo. <span style={{ color: "var(--dark-brand-bright)" }}>Verify it.</span>
           </h2>
-          <p className="body-lg soft" style={{ maxWidth: "46ch", marginBottom: "var(--s5)" }}>
-            Every step an agent takes is written to a signed, hash-chained ledger. Download a real
-            run below and check it with a zero-dependency CLI: it recomputes every hash and verifies
-            every signature. No account, no install, no trust in us. Corrupt a single byte and it&apos;s
-            rejected — and to prove which instance produced it, pin the issuer&apos;s key with{" "}
-            <code className="mono" style={{ color: "var(--dark-brand-bright)" }}>--key</code>.
+          <p className="body-lg soft" style={{ maxWidth: "48ch", marginBottom: "var(--s5)" }}>
+            This is a <strong>real signed run</strong> from a real agent. The verifier on the right
+            is running in <em>your</em> browser right now — recomputing every SHA-256 hash and checking
+            every Ed25519 signature, no server, no trust. Flip the tamper switch and watch it reject.
           </p>
           <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap", alignItems: "center" }}>
             <a href="/sample-run.krproof.json" download className="btn btn-dark-primary">
-              Download a signed run ↓
+              Download this run ↓
             </a>
-            <Link href="/runs" className="btn btn-dark-ghost">See the ledger in the app →</Link>
+            <button type="button" className="btn btn-dark-ghost" onClick={shareTweet}>
+              {shared ? "✓ Copied to clipboard" : "Copy the tweet"}
+            </button>
           </div>
+          <p className="dark-ink-muted small" style={{ marginTop: "var(--s5)", maxWidth: "48ch", lineHeight: 1.6 }}>
+            Then run it for real: <code className="mono" style={{ color: "var(--dark-ink-soft)" }}>{VERIFY_CMD}</code>{" "}
+            <button type="button" onClick={copy} className="proveit__inlinecopy">{copied ? "copied" : "copy"}</button>.
+            Adversarial review found three forgery vectors — all closed. The verifier is open;{" "}
+            <a href="https://github.com/sreenathmmenon/krelvan/blob/main/bin/krelvan-verify.mjs" className="dark-teal" style={{ textDecoration: "underline" }}>read it before you believe it</a>.
+          </p>
         </div>
 
-        <div className="proveit__term" role="img" aria-label="Terminal output: npx krelvan verify reports all 7 signatures valid, then rejects a tampered copy.">
-          <div className="proveit__termbar" aria-hidden="true">
-            <span /><span /><span />
+        <div className={`proveit__term proveit__term--live${pass ? " is-pass" : result ? " is-fail" : ""}`} aria-live="polite">
+          <div className="proveit__termbar">
+            <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
+            <span className="proveit__termtitle mono">krelvan verify · in your browser</span>
+            {/* the tamper toggle — the viral mechanic */}
+            <label className="proveit__tamper">
+              <input type="checkbox" checked={tampered} onChange={e => setTampered(e.target.checked)} />
+              <span>Tamper with one byte</span>
+            </label>
           </div>
           <div className="proveit__termbody">
             <div className="proveit__cmd">
               <span className="proveit__dollar">$</span>
-              <code>{VERIFY_CMD}</code>
-              <button type="button" className="proveit__copy" data-copied={copied} onClick={copy} aria-label={copied ? "Copied" : "Copy verify command"}>
-                {copied ? "Copied" : "Copy"}
-              </button>
+              <code>{VERIFY_CMD}{tampered ? "   # one byte changed" : ""}</code>
             </div>
-            <pre className="proveit__out">{`  content addresses : `}<span className="proveit__ok">all 7 match</span>{`
-  signatures        : `}<span className="proveit__ok">all 7 valid</span>{`
-  run boundaries    : `}<span className="proveit__ok">RunStarted → terminal</span>{`
+            {!result ? (
+              <pre className="proveit__out">{verifying ? "  verifying…" : "  loading sample run…"}</pre>
+            ) : (
+              <pre className="proveit__out">{`  content addresses : `}<span className={result.hashes.failed === 0 ? "proveit__ok" : "proveit__bad"}>{result.hashes.failed === 0 ? `all ${result.hashes.checked} match` : `${result.hashes.failed} mismatch`}</span>{`
+  signatures        : `}<span className={result.signatures.failed === 0 && result.signatures.allSigned ? "proveit__ok" : "proveit__bad"}>{result.signatures.failed === 0 && result.signatures.allSigned ? `all ${result.signatures.checked} valid` : `${result.signatures.failed} invalid`}</span>{`
+  run boundaries    : `}<span className={result.boundaries.startsAtRunStarted && result.boundaries.endsTerminal ? "proveit__ok" : "proveit__bad"}>{result.boundaries.startsAtRunStarted && result.boundaries.endsTerminal ? "RunStarted → terminal" : "broken"}</span>{`
 
-`}<span className="proveit__ok">{`✓ CONSISTENT`}</span>{` — internally consistent and unaltered.
-  (pin `}<span className="dim">--key</span>{` to also prove which instance signed it.)`}</pre>
-            <div className="proveit__cmd" style={{ marginTop: "var(--s3)" }}>
-              <span className="proveit__dollar">$</span>
-              <code className="dim"># corrupt one byte, then re-run:</code>
-            </div>
-            <pre className="proveit__out">{`  content addresses : `}<span className="proveit__bad">1 mismatch</span>{`
-
-`}<span className="proveit__bad">{`✗ VERIFICATION FAILED`}</span>{` — do not trust it.`}</pre>
+`}{pass
+  ? <><span className="proveit__ok">{`✓ CONSISTENT`}</span>{` — every event authentic and unaltered.
+  (pin `}<span className="dim">--key</span>{` to also prove which instance signed it.)`}</>
+  : <><span className="proveit__bad">{`✗ REJECTED`}</span>{` — the run was altered. Do not trust it.`}</>}</pre>
+            )}
           </div>
         </div>
       </div>
@@ -265,6 +354,10 @@ function focusBuilder() {
   const ta = section?.querySelector<HTMLTextAreaElement>("textarea");
   // focus after the smooth scroll begins so it doesn't jump the page
   window.setTimeout(() => ta?.focus({ preventScroll: true }), 320);
+}
+
+function scrollToProveIt() {
+  document.getElementById("proveit-h")?.closest("section")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 export default function Landing() {
@@ -383,41 +476,43 @@ export default function Landing() {
           <div className="hero-grid">
             {/* left — payoff + CTAs (42%) */}
             <div>
-              <p className="micro" style={{ marginBottom: "var(--s4)" }}>The agent platform that proves its work</p>
+              <p className="micro" style={{ marginBottom: "var(--s4)" }}>Open-source · self-hosted · the agent platform that proves its work</p>
               <h1
                 className="display dark-ink"
                 style={{ fontSize: "clamp(40px, 5.5vw, 64px)", lineHeight: 1.04, fontWeight: 600, letterSpacing: "-0.03em", marginBottom: "var(--s5)" }}
               >
                 AI agents that <span className="dark-teal">prove what they did</span>.
               </h1>
-              <p className="dark-ink-soft body-lg" style={{ maxWidth: "52ch", marginBottom: "var(--s5)" }}>
-                Describe a goal in plain English. Krelvan builds the agent, signs every step it
-                takes to a tamper-evident, replayable record, and pauses for your approval on the
-                steps you choose to gate — all self-hosted, on infrastructure you own.
+              <p className="dark-ink-soft body-lg" style={{ maxWidth: "53ch", marginBottom: "var(--s5)" }}>
+                Every step an agent takes is signed into an append-only ledger — and the canvas, the
+                audit trail, the cost meter are all just <em>reads</em> of that one log. So what you
+                see is what executed. Export any run and check the math yourself, offline:
               </p>
-              <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap" }}>
-                <button className="btn btn-dark-primary btn-lg" onClick={focusBuilder}>
-                  Build an agent
+              {/* the falsifiable hero gesture — a runnable command, not a promise */}
+              <div className="hero-verify-cmd" aria-label="Run npx krelvan verify to re-check a signed run offline">
+                <span className="hero-verify-cmd__prompt" aria-hidden="true">$</span>
+                <code>npx krelvan verify run.krproof.json</code>
+                <span className="hero-verify-cmd__ok" aria-hidden="true">
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d={UI.check} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap", marginTop: "var(--s5)" }}>
+                <button className="btn btn-dark-primary btn-lg" onClick={scrollToProveIt}>
+                  Verify a real run →
                 </button>
-                {latestCompleted ? (
-                  <Link href={`/runs/${latestCompleted.runId}`} className="btn btn-dark-ghost btn-lg">
-                    See a signed run
-                  </Link>
-                ) : (
-                  <button className="btn btn-dark-ghost btn-lg" onClick={focusBuilder}>
-                    Try an example
-                  </button>
-                )}
+                <a href="https://github.com/sreenathmmenon/krelvan" className="btn btn-dark-ghost btn-lg" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)" }}>
+                  <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M8 1.6a6.4 6.4 0 0 0-2 12.5c.3.06.43-.14.43-.3v-1.1c-1.8.4-2.2-.85-2.2-.85-.3-.75-.72-.95-.72-.95-.6-.4.04-.4.04-.4.65.05 1 .67 1 .67.58 1 1.5.7 1.9.55.06-.43.23-.7.42-.87-1.45-.16-2.97-.72-2.97-3.2 0-.7.25-1.3.66-1.74-.07-.16-.29-.82.06-1.7 0 0 .54-.18 1.78.66a6.1 6.1 0 0 1 3.24 0c1.24-.84 1.78-.66 1.78-.66.35.88.13 1.54.06 1.7.41.44.66 1.04.66 1.74 0 2.49-1.52 3.04-2.97 3.2.23.2.44.6.44 1.2v1.78c0 .17.12.37.44.3A6.4 6.4 0 0 0 8 1.6z"/></svg>
+                  Read the source
+                </a>
               </div>
               <div className="hero-trustline">
-                <a href="https://github.com/sreenathmmenon/krelvan" className="hero-trustline__item">
-                  <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M8 1.6a6.4 6.4 0 0 0-2 12.5c.3.06.43-.14.43-.3v-1.1c-1.8.4-2.2-.85-2.2-.85-.3-.75-.72-.95-.72-.95-.6-.4.04-.4.04-.4.65.05 1 .67 1 .67.58 1 1.5.7 1.9.55.06-.43.23-.7.42-.87-1.45-.16-2.97-.72-2.97-3.2 0-.7.25-1.3.66-1.74-.07-.16-.29-.82.06-1.7 0 0 .54-.18 1.78.66a6.1 6.1 0 0 1 3.24 0c1.24-.84 1.78-.66 1.78-.66.35.88.13 1.54.06 1.7.41.44.66 1.04.66 1.74 0 2.49-1.52 3.04-2.97 3.2.23.2.44.6.44 1.2v1.78c0 .17.12.37.44.3A6.4 6.4 0 0 0 8 1.6z"/></svg>
-                  Open source
-                </a>
-                <span className="hero-trustline__sep" aria-hidden="true" />
                 <span className="hero-trustline__item">Apache-2.0</span>
                 <span className="hero-trustline__sep" aria-hidden="true" />
-                <span className="hero-trustline__item">Self-hosted · zero third-party auth deps</span>
+                <span className="hero-trustline__item">Ed25519-signed by default</span>
+                <span className="hero-trustline__sep" aria-hidden="true" />
+                <span className="hero-trustline__item">7 LLM providers</span>
+                <span className="hero-trustline__sep" aria-hidden="true" />
+                <span className="hero-trustline__item">runs on your own box</span>
               </div>
             </div>
 
@@ -606,68 +701,104 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ════════════ 4 · FINAL CTA (dark) ════════════ */}
-      {/* Build-on-Krelvan — the platform-base value prop: eliminated decisions. */}
+      {/* ════════════ 4 · DEPTH GRID — surface ALL the real capability, ranked ════════════ */}
+      {/* Council: don't undersell. A flat even grid reads as junior. Rank by what survives a
+          skeptic — Tier-1 (the wedge) gets the lead, then real substance, then table-stakes terse. */}
       <section style={{ background: "var(--canvas)", borderTop: "1px solid var(--line)" }}>
         <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
-          <p className="micro" style={{ marginBottom: "var(--s3)" }}>Build on it</p>
-          <h2 className="h1" style={{ marginBottom: "var(--s3)", maxWidth: "24ch" }}>
-            The hard parts, <span style={{ color: "var(--brand)" }}>already solved</span>.
+          <p className="micro" style={{ marginBottom: "var(--s3)" }}>Not a wrapper</p>
+          <h2 className="display h1" style={{ marginBottom: "var(--s3)", maxWidth: "24ch" }}>
+            The infrastructure <span style={{ color: "var(--brand)" }}>underneath</span>.
           </h2>
-          <p className="body-lg soft" style={{ maxWidth: "58ch", marginBottom: "var(--s7)" }}>
-            Audit, memory, approvals and failure-reasoning come built in. You build the
-            domain logic and the client workflow — and ship agentic solutions in days.
+          <p className="body-lg soft" style={{ maxWidth: "60ch", marginBottom: "var(--s7)" }}>
+            The hard parts are solved — signed audit, self-healing, human control, a real sandbox —
+            so you build the domain logic and ship agentic solutions in days, not months.
           </p>
-          <div className="build-on-grid">
+          <div className="depth-grid">
             {[
-              { k: "Audit by default", v: "Every step signed to a tamper-evident record you can replay.", href: "/runs", cta: "See a signed run" },
-              { k: "Memory", v: "Episodic, semantic and trust-aware — right by default.", href: "/capabilities?install=personal-advisor", cta: "Try the advisor" },
-              { k: "Approval flows", v: "Human-in-the-loop pause / approve / resume on risky actions.", href: "/approvals", cta: "Open approvals" },
-              { k: "Failure-reasoning", v: "It reasons about why a run failed — and rebuilds a fix.", href: "/runs", cta: "Explain a run" },
+              { k: "The ledger IS the runtime", v: "Every step → an append-only, content-addressed, Ed25519-signed log. The canvas, audit trail and cost meter are pure reads of it — what you see is structurally what executed.", href: "/runs", cta: "See a signed run", lead: true },
+              { k: "Failure-reasoning + auto-retry", v: "When a run fails, Krelvan diagnoses why from the ledger, rebuilds a corrected agent, and re-runs it to completion — and the repair is itself signed in.", href: "/runs", cta: "Explain a run", lead: true },
+              { k: "Human-in-the-loop gate", v: "Dial autonomy per step — suggest, act-with-veto, full. It pauses before the steps you gate and shows the exact action, not a summary.", href: "/approvals", cta: "Open approvals" },
+              { k: "Real OS-process sandbox", v: "Untrusted TS plugins under node --permission, SSRF-guarded brokered egress, secrets injected only at the destination. Adversarially tested.", href: "/capabilities", cta: "Browse capabilities" },
+              { k: "Memory + RAG, offline-capable", v: "Episodic, semantic and trust-aware memory with provenance. rag.ingest / rag.search with local embeddings via Ollama — no key, no network.", href: "/capabilities?install=personal-advisor", cta: "Try the advisor" },
+              { k: "7 providers · self-running", v: "Anthropic, OpenAI, Gemini, Groq, Mistral, Ollama (local), any OpenAI-compatible. Cron & interval schedules. Self-hosted auth: scrypt, sessions, CSRF.", href: "/schedules", cta: "See schedules" },
             ].map(c => (
-              <Link key={c.k} href={c.href} className="card build-on-card" style={{ padding: "var(--s5)", textDecoration: "none", color: "inherit", display: "block" }}>
-                <div className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s2)", display: "flex", alignItems: "center", gap: "var(--s2)" }}>
-                  <span aria-hidden="true" style={{ color: "var(--brand)", display: "inline-flex" }}>
-                    <svg viewBox="0 0 16 16" width="16" height="16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              <Link key={c.k} href={c.href} className={`card depth-card${c.lead ? " depth-card--lead" : ""}`}>
+                <div className="depth-card__title">
+                  <span aria-hidden="true" className="depth-card__check">
+                    <svg viewBox="0 0 16 16" width="15" height="15" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   </span>
                   {c.k}
                 </div>
-                <p className="small soft" style={{ margin: "0 0 var(--s3)", lineHeight: 1.55 }}>{c.v}</p>
-                <span className="small" style={{ color: "var(--brand)", fontWeight: 600 }}>{c.cta} →</span>
+                <p className="small soft depth-card__body">{c.v}</p>
+                <span className="small depth-card__cta">{c.cta} →</span>
               </Link>
             ))}
           </div>
         </div>
       </section>
 
+      {/* ════════════ 5 · WHAT THIS IS / ISN'T (honest scoping — cynic catnip) ════════════ */}
+      <section style={{ background: "var(--surface)", borderTop: "1px solid var(--line)" }}>
+        <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
+          <p className="micro" style={{ marginBottom: "var(--s3)" }}>Straight about the edges</p>
+          <h2 className="display h1" style={{ marginBottom: "var(--s6)", maxWidth: "24ch" }}>
+            What this is — and what it isn&apos;t.
+          </h2>
+          <div className="isisnt">
+            <div className="isisnt__col isisnt__col--is">
+              <div className="isisnt__head">What it is</div>
+              <ul>
+                <li>A self-hostable, open-source agent platform whose runs are Ed25519-signed and offline-verifiable.</li>
+                <li>A real proof core — the ledger, the signing, the export, and <code className="mono">npx krelvan verify</code> are the load-bearing, adversarially-tested parts.</li>
+                <li>Infrastructure you own: your keys, your data, your machine. The cloud is optional, not the product.</li>
+              </ul>
+            </div>
+            <div className="isisnt__col isisnt__col--isnt">
+              <div className="isisnt__head">What it isn&apos;t</div>
+              <ul>
+                <li>Not a hosted SaaS with an open-source husk — the whole thing runs on your box.</li>
+                <li>Not magic. An agent can still be wrong; that&apos;s why every step is signed, gated, and replayable.</li>
+                <li>Not v-final. This is a first version — we tell you exactly which parts are proven so you can judge for yourself.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════ 6 · FINAL CTA — three time-boxed lanes (verify / clone / star) ════════════ */}
       <section className="hero-dark" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
         <div className="container" style={{ position: "relative", zIndex: 1, textAlign: "center" }}>
-          <p className="micro" style={{ marginBottom: "var(--s4)" }}>Self-hosted</p>
+          <p className="micro" style={{ marginBottom: "var(--s4)" }}>You&apos;ve read the claims</p>
           <h2 className="dark-ink display" style={{ marginBottom: "var(--s4)" }}>
-            Run it on your <span className="dark-teal">own machine</span>.
+            Now <span className="dark-teal">verify</span> them.
           </h2>
-          <p className="dark-ink-soft body-lg" style={{ maxWidth: "54ch", margin: "0 auto var(--s6)" }}>
-            Download it and run it yourself — for you, your team, or your clients.
-            Your keys, your data, your infrastructure.
+          <p className="dark-ink-soft body-lg" style={{ maxWidth: "52ch", margin: "0 auto var(--s7)" }}>
+            Self-hosted. Open source. Apache-2.0. Infrastructure you own. Pick a lane —
+            each sized to how much you want to commit.
           </p>
-          <div style={{ marginBottom: "var(--s6)" }}>
-            <InstallCommand />
-            <p className="dark-ink-muted small" style={{ marginTop: "var(--s3)" }}>
-              Boots the API and web UI on <span className="mono">localhost:3100</span> · or run{" "}
-              <span className="mono">docker compose up</span>
-            </p>
-          </div>
-          <p className="dark-ink-soft body-lg" style={{ maxWidth: "54ch", margin: "0 auto var(--s6)" }}>
-            When someone asks what your agent did, you hand them a signed record —
-            not a vendor&apos;s word.
-          </p>
-          <div style={{ display: "flex", gap: "var(--s3)", justifyContent: "center", flexWrap: "wrap" }}>
-            <a href="https://github.com/sreenathmmenon/krelvan" className="btn btn-dark-primary btn-lg">
-              View on GitHub
-            </a>
-            <button className="btn btn-dark-ghost btn-lg" onClick={focusBuilder}>
-              Try the builder
-            </button>
+          <div className="cta-lanes">
+            <div className="cta-lane">
+              <div className="cta-lane__time mono">~15 sec</div>
+              <div className="cta-lane__title">Verify a run</div>
+              <p className="cta-lane__desc">Download the sample and re-check it offline — no install of Krelvan itself, no account.</p>
+              <button type="button" className="btn btn-dark-primary btn-sm" onClick={scrollToProveIt}>Verify now →</button>
+            </div>
+            <div className="cta-lane">
+              <div className="cta-lane__time mono">~60 sec</div>
+              <div className="cta-lane__title">Clone &amp; run</div>
+              <p className="cta-lane__desc">One command boots the API + web UI on <span className="mono">localhost:3100</span>, or <span className="mono">docker compose up</span>.</p>
+              <InstallCommand />
+            </div>
+            <div className="cta-lane">
+              <div className="cta-lane__time mono">~3 sec</div>
+              <div className="cta-lane__title">Read the source</div>
+              <p className="cta-lane__desc">It&apos;s all there — the ledger, the verifier, the sandbox. Star it if it&apos;s your kind of thing.</p>
+              <a href="https://github.com/sreenathmmenon/krelvan" className="btn btn-dark-ghost btn-sm" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)" }}>
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 1.6a6.4 6.4 0 0 0-2 12.5c.3.06.43-.14.43-.3v-1.1c-1.8.4-2.2-.85-2.2-.85-.3-.75-.72-.95-.72-.95-.6-.4.04-.4.04-.4.65.05 1 .67 1 .67.58 1 1.5.7 1.9.55.06-.43.23-.7.42-.87-1.45-.16-2.97-.72-2.97-3.2 0-.7.25-1.3.66-1.74-.07-.16-.29-.82.06-1.7 0 0 .54-.18 1.78.66a6.1 6.1 0 0 1 3.24 0c1.24-.84 1.78-.66 1.78-.66.35.88.13 1.54.06 1.7.41.44.66 1.04.66 1.74 0 2.49-1.52 3.04-2.97 3.2.23.2.44.6.44 1.2v1.78c0 .17.12.37.44.3A6.4 6.4 0 0 0 8 1.6z"/></svg>
+                Star on GitHub
+              </a>
+            </div>
           </div>
         </div>
       </section>

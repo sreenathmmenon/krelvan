@@ -145,9 +145,14 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     if (csrf) headers["X-CSRF-Token"] = csrf;
   }
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
-  if (res.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
-    // Session expired/invalid — bounce to login.
-    window.location.href = "/login";
+  // A 401 inside the authenticated app means the session expired → bounce to login. But the
+  // PUBLIC pages (marketing homepage, login, setup) intentionally make API calls that may 401
+  // for a logged-out visitor and degrade gracefully — never redirect THOSE to login, or a
+  // visitor can never see the homepage.
+  if (res.status === 401 && typeof window !== "undefined") {
+    const p = window.location.pathname;
+    const isPublic = p === "/" || p.startsWith("/login") || p.startsWith("/setup");
+    if (!isPublic) window.location.href = "/login";
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
