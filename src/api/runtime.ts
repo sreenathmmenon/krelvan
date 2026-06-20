@@ -582,6 +582,13 @@ export class KrelvanRuntime {
     // being able to forge it. Both are per-install (never a shared repo constant).
     const window_ = { epoch: 1, validFrom: 0, validUntil: null };
     if (useAsymmetricSigning()) {
+      // Footgun guard: switching an EXISTING HMAC-signed data dir to Ed25519 leaves the prior
+      // events signed with HMAC under the same keyId/epoch — the Ed25519 verifier can't check
+      // them, so they'd read as "tampered". Detect the switch (an old HMAC key file present)
+      // and warn loudly; the right move is a fresh data dir for Ed25519. New events sign fine.
+      if (existsSync(join(config.dataDir, "signing-owner.key"))) {
+        log.warn({}, "KRELVAN_LEDGER_SIGNING=ed25519 enabled on a data dir that previously used HMAC signing. Events written before this switch were signed with HMAC and will FAIL Ed25519 verification (they will look tampered). Use a FRESH data dir for Ed25519, or expect historical runs to show 'verification failed'. New runs are unaffected.");
+      }
       const ring = new Ed25519Keyring();
       this.ownerSigner = ring.addKey("owner", loadOrCreateSigningKeypair(config.dataDir, "owner"), window_);
       this.supervisorSigner = ring.addKey("supervisor", loadOrCreateSigningKeypair(config.dataDir, "supervisor"), window_);

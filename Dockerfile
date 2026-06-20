@@ -20,10 +20,11 @@ WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
-# Baked at build time; the runtime URL is same-host so localhost works behind
-# the published port. Overridable via NEXT_PUBLIC_API_URL at build time.
-ARG NEXT_PUBLIC_API_URL=http://localhost:3201
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# IMPORTANT: do NOT bake NEXT_PUBLIC_API_URL. The browser must call the API through the
+# same-origin /proxy route (web/app/proxy/[...path]/route.ts), which injects the auth
+# session server-side. Pointing the browser straight at the API origin would send no
+# session header and every authenticated request would 401 — a logged-in-but-broken app.
+# api.ts already defaults the base URL to "/proxy" when this var is unset, which is correct.
 RUN npm run build
 # Prune to production deps so the runner image stays small.
 RUN npm prune --omit=dev

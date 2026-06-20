@@ -1,0 +1,216 @@
+{
+  "krelvanProofBundle": 1,
+  "runId": "run-1781961669874-m0xf2",
+  "exportedAt": 1781961687973,
+  "algorithm": "ed25519",
+  "nonRepudiable": true,
+  "publicKeys": [
+    {
+      "keyId": "owner",
+      "epoch": 1,
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAhEkTwfzSezbv76JJ1n1AfEKUp7YKxWXMwrSZBFw8vP4=\n-----END PUBLIC KEY-----\n"
+    },
+    {
+      "keyId": "supervisor",
+      "epoch": 1,
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA/VH9SNGwOPzplhRTSgURr4XdOMQYW/E9dO/QzKzjzgo=\n-----END PUBLIC KEY-----\n"
+    }
+  ],
+  "verification": {
+    "ok": true,
+    "runEvents": 7,
+    "signedEvents": 7
+  },
+  "hashAlgorithm": "sha256",
+  "events": [
+    {
+      "type": "RunStarted",
+      "scope": {
+        "tenantId": "default",
+        "runId": "run-1781961669874-m0xf2",
+        "branchId": "main"
+      },
+      "parents": [],
+      "prev": null,
+      "offset": 0,
+      "payload": {
+        "manifest": "Text Summarizer"
+      },
+      "determinism": "pure",
+      "ts": 1781961669880,
+      "author": "owner",
+      "id": "sha256:12b515ba0764b1f16c3abe0e524345eeb9b252572e3052a790f3e30cd15609a0",
+      "sig": {
+        "keyId": "owner",
+        "epoch": 1,
+        "signedAt": 1781961669880,
+        "value": "915d10d09a80f7c8eaff8cc57cf439b167ab56baaa9bb00d73d8dcf28a41f2becb20ab3e6dbd40b6a6ad34816eadca692a89e0b9b84fa9e6ffb4d33f4edc2100"
+      }
+    },
+    {
+      "type": "NodeEntered",
+      "scope": {
+        "tenantId": "default",
+        "runId": "run-1781961669874-m0xf2",
+        "nodeId": "summarize",
+        "branchId": "main"
+      },
+      "parents": [],
+      "prev": "sha256:12b515ba0764b1f16c3abe0e524345eeb9b252572e3052a790f3e30cd15609a0",
+      "offset": 1,
+      "payload": {},
+      "determinism": "pure",
+      "ts": 1781961669881,
+      "author": "owner",
+      "id": "sha256:af99a2118ad9160b85587ec936bd567ee680db3cf4d3d45eb5109ed8aca59657",
+      "sig": {
+        "keyId": "owner",
+        "epoch": 1,
+        "signedAt": 1781961669881,
+        "value": "ab3f22ad340bf971e7c502d906df8cce9359581621f935cdd6b78b03331007b2a2a35cb56425c23254b1c91bcd93dca0560b52e5af463975f76d800ee639d600"
+      }
+    },
+    {
+      "type": "AdmissionDecision",
+      "scope": {
+        "tenantId": "default",
+        "runId": "run-1781961669874-m0xf2",
+        "nodeId": "summarize",
+        "branchId": "main"
+      },
+      "parents": [],
+      "prev": "sha256:af99a2118ad9160b85587ec936bd567ee680db3cf4d3d45eb5109ed8aca59657",
+      "offset": 2,
+      "payload": {
+        "idem": "summarize:compose:sha256:e9bc6d98aba55feabc824b32961a1030cb2c3e2c53325838a11b3b6f13561d6a",
+        "admitted": true,
+        "reservedCents": 15,
+        "capKey": "summarize:compose"
+      },
+      "determinism": "pure",
+      "ts": 1781961669882,
+      "author": "owner",
+      "id": "sha256:b454efae7594ac369995229dd86c7f029f0c3932d6f4a819d109236d4eb01d78",
+      "sig": {
+        "keyId": "owner",
+        "epoch": 1,
+        "signedAt": 1781961669882,
+        "value": "accb5fb9c9aa0fe4a4eaa47934459d9eccb0d01ca331c0d7827fc88be19df99ff174621e9fcee54f8c99da4e1f32f311d4ddca791a087c1da6f5ed944245870e"
+      }
+    },
+    {
+      "type": "EffectRequested",
+      "scope": {
+        "tenantId": "default",
+        "runId": "run-1781961669874-m0xf2",
+        "nodeId": "summarize",
+        "branchId": "main"
+      },
+      "parents": [],
+      "prev": "sha256:b454efae7594ac369995229dd86c7f029f0c3932d6f4a819d109236d4eb01d78",
+      "offset": 3,
+      "payload": {
+        "idem": "summarize:compose:sha256:e9bc6d98aba55feabc824b32961a1030cb2c3e2c53325838a11b3b6f13561d6a",
+        "capability": "compose"
+      },
+      "determinism": "pure",
+      "ts": 1781961669883,
+      "author": "owner",
+      "id": "sha256:a9299b97d4e7cb5d1e02557f85463b2ccddce3ae0292055dc7cb9ae55328cfae",
+      "sig": {
+        "keyId": "owner",
+        "epoch": 1,
+        "signedAt": 1781961669883,
+        "value": "d7641d7638e7fee278faf07b3d4f6a822f5e856b8c14c3638d6eecb6287ce3567d7fe086b92f483bd456267d18160bfe3b60725c15592f6b36ab7b361ef82d0b"
+      }
+    },
+    {
+      "type": "EffectResult",
+      "scope": {
+        "tenantId": "default",
+        "runId": "run-1781961669874-m0xf2",
+        "nodeId": "summarize",
+        "branchId": "main"
+      },
+      "parents": [],
+      "prev": "sha256:a9299b97d4e7cb5d1e02557f85463b2ccddce3ae0292055dc7cb9ae55328cfae",
+      "offset": 4,
+      "payload": {
+        "idem": "summarize:compose:sha256:e9bc6d98aba55feabc824b32961a1030cb2c3e2c53325838a11b3b6f13561d6a",
+        "costCents": 1,
+        "output": {
+          "result": "Krelvan is a self-hostable AI agent platform that ensures transparency and control by logging each action to a secure ledger and requiring human approval for certain tasks.",
+          "text": "Krelvan is a self-hostable AI agent platform that ensures transparency and control by logging each action to a secure ledger and requiring human approval for certain tasks.",
+          "words": 27,
+          "model": "qwen2.5:14b"
+        },
+        "pluginClaim": {
+          "claimedCostCents": 1
+        }
+      },
+      "determinism": "captured",
+      "ts": 1781961676315,
+      "author": "supervisor",
+      "id": "sha256:5d80d786190ab52d9d1e32a0161a2ffdc1ebc2307b9034702f3d95b617ce44bd",
+      "sig": {
+        "keyId": "supervisor",
+        "epoch": 1,
+        "signedAt": 1781961676315,
+        "value": "987ded4cb485e9a0392c2eb4a7f25a7814a7db8c199944e0430986bf66020530eb7f509874474bc1f49214dab50e2053b3f77aefabfcdee9085302e57cddd80b"
+      }
+    },
+    {
+      "type": "NodeConcluded",
+      "scope": {
+        "tenantId": "default",
+        "runId": "run-1781961669874-m0xf2",
+        "nodeId": "summarize",
+        "branchId": "main"
+      },
+      "parents": [],
+      "prev": "sha256:5d80d786190ab52d9d1e32a0161a2ffdc1ebc2307b9034702f3d95b617ce44bd",
+      "offset": 5,
+      "payload": {
+        "state": {
+          "summarize.result": "Krelvan is a self-hostable AI agent platform that ensures transparency and control by logging each action to a secure ledger and requiring human approval for certain tasks.",
+          "summarize.text": "Krelvan is a self-hostable AI agent platform that ensures transparency and control by logging each action to a secure ledger and requiring human approval for certain tasks.",
+          "summarize.words": 27,
+          "summarize.model": "qwen2.5:14b"
+        }
+      },
+      "determinism": "pure",
+      "ts": 1781961676334,
+      "author": "owner",
+      "id": "sha256:0f14b7bd8494d3b700fba60a32916e3fce0e045828abe4c48e87cae4c575b6e4",
+      "sig": {
+        "keyId": "owner",
+        "epoch": 1,
+        "signedAt": 1781961676334,
+        "value": "6d28ac470ae0d6ee2446678b8c322f4a67f9612e9cbbfbcf8bb557616abe67e8f9fd37b9f0e1f93f02dec125004fd5f982d5347554a6931ff29b71882f32000e"
+      }
+    },
+    {
+      "type": "RunCompleted",
+      "scope": {
+        "tenantId": "default",
+        "runId": "run-1781961669874-m0xf2",
+        "branchId": "main"
+      },
+      "parents": [],
+      "prev": "sha256:0f14b7bd8494d3b700fba60a32916e3fce0e045828abe4c48e87cae4c575b6e4",
+      "offset": 6,
+      "payload": {},
+      "determinism": "pure",
+      "ts": 1781961676337,
+      "author": "owner",
+      "id": "sha256:95bca42d4a419fa6abc0d4080bbebbd534d8c6e0a157fef4fe475f71f6587490",
+      "sig": {
+        "keyId": "owner",
+        "epoch": 1,
+        "signedAt": 1781961676337,
+        "value": "9e9ac5f89370e258c50ea81c5e2db93f0772b30333f431b9118b93d1c095f06d9be88c4ab9c8ebcb935639fced63b33500489d7b1f8956e9db3a3ee3e230a80d"
+      }
+    }
+  ],
+  "howToVerify": "Run `npx krelvan verify <this-file>` (or `node bin/krelvan-verify.mjs <this-file>`). It recomputes every event's SHA-256 content address and checks each Ed25519 signature against the included public keys — no Krelvan install or trust required."
+}

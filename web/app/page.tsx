@@ -126,6 +126,74 @@ function InstallCommand() {
   );
 }
 
+// ── "Prove it" band: let a skeptic verify the core claim on their own machine ──
+// A real signed run ships at /sample-run.krproof.json (Ed25519, 7 events). The visitor
+// downloads it, runs the zero-dep verifier, and sees every signature check out — then
+// corrupts a byte and watches it get rejected. This is the wedge, demonstrated.
+const VERIFY_CMD = "npx krelvan verify sample-run.krproof.json";
+function ProveItBand() {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(() => {
+    void navigator.clipboard.writeText(VERIFY_CMD).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    });
+  }, []);
+  return (
+    <section className="proveit" aria-labelledby="proveit-h">
+      <div className="container proveit__grid">
+        <div className="proveit__copy">
+          <p className="micro" style={{ marginBottom: "var(--s2)" }}>Don&apos;t take our word for it</p>
+          <h2 id="proveit-h" className="h1" style={{ marginBottom: "var(--s3)" }}>
+            Verify a signed run yourself — offline, in under a minute.
+          </h2>
+          <p className="body-lg soft" style={{ maxWidth: "46ch", marginBottom: "var(--s5)" }}>
+            Every step an agent takes is written to a signed, hash-chained ledger. Download a real
+            run below and check it with a zero-dependency CLI: it recomputes every hash and
+            verifies every signature against the public keys in the file. No account, no install,
+            no trust in us. Then corrupt a single byte and watch it get rejected.
+          </p>
+          <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap", alignItems: "center" }}>
+            <a href="/sample-run.krproof.json" download className="btn btn-primary">
+              Download a signed run ↓
+            </a>
+            <Link href="/runs" className="btn btn-ghost">See the ledger in the app →</Link>
+          </div>
+        </div>
+
+        <div className="proveit__term" role="img" aria-label="Terminal output: npx krelvan verify reports all 7 signatures valid, then rejects a tampered copy.">
+          <div className="proveit__termbar" aria-hidden="true">
+            <span /><span /><span />
+          </div>
+          <div className="proveit__termbody">
+            <div className="proveit__cmd">
+              <span className="proveit__dollar">$</span>
+              <code>{VERIFY_CMD}</code>
+              <button type="button" className="proveit__copy" data-copied={copied} onClick={copy} aria-label={copied ? "Copied" : "Copy verify command"}>
+                {copied ? "✓" : "Copy"}
+              </button>
+            </div>
+            <pre className="proveit__out">{`  content addresses : `}<span className="proveit__ok">all 7 match</span>{`
+  signatures        : `}<span className="proveit__ok">all 7 valid</span>{`
+  ordering          : `}<span className="proveit__ok">strictly increasing</span>{`
+  run boundaries    : `}<span className="proveit__ok">RunStarted → terminal</span>{`
+
+`}<span className="proveit__ok">{`✓ VERIFIED`}</span>{` — every signature checks out
+  against the included public keys.`}</pre>
+            <div className="proveit__cmd" style={{ marginTop: "var(--s3)" }}>
+              <span className="proveit__dollar">$</span>
+              <code className="dim"># corrupt one byte, then re-run:</code>
+            </div>
+            <pre className="proveit__out">{`  content addresses : `}<span className="proveit__bad">1 mismatch</span>{`
+
+`}<span className="proveit__bad">{`✗ VERIFICATION FAILED`}</span>{` — do not trust it.`}</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ── Hero artifact: a REAL run (signed · N events · cost), or a labelled example ──
 // When a completed run exists we render its honest header and link to /runs/[id].
 // Until then we show the pre-built example graph self-running, clearly framed as a
@@ -360,6 +428,13 @@ export default function Landing() {
           </div>
         </div>
       </section>
+
+      {/* ════════════ 1b · PROVE IT — the wedge, shown not told ════════════ */}
+      {/* The product's whole claim is "agents that prove what they did." This band lets a
+          skeptic reproduce that claim on their own machine in under a minute: download a real
+          signed run, verify it offline with a zero-dep CLI, then corrupt a byte and watch it
+          get rejected. No account, no install, no trust in us. */}
+      <ProveItBand />
 
       {/* ════════════ 2 · EMBEDDED LIVE BUILDER ════════════ */}
       {/* The exact workspace composer + BuildPreviewModal + stat strip + agents/runs.

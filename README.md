@@ -163,7 +163,7 @@ Point an install at your own fork with
 ```bash
 npm install
 npm run typecheck    # strict TS, clean
-npm test             # 246 / 249 pass (3 are live-model API tests that need a key)
+npm test             # 297 / 300 pass (3 are live-model API tests that need a key)
 npm run demo:ledger  # canvas + audit all fold from one log
 npm run demo:resume  # kill mid-run, resume — each irreversible effect runs EXACTLY once
 npm run demo:e2e     # a real 3-agent pipeline drives itself off the ledger
@@ -176,7 +176,7 @@ npm run demo:live    # (needs KRELVAN_ANTHROPIC_KEY) a real model proposes a wor
 
 ## Status — honest
 
-**Built & verified** (typecheck clean · 246/249 tests · web build green):
+**Built & verified** (typecheck clean · 297/300 tests · web build green):
 - Ledger + SQLite durable store (real on-disk crash/resume)
 - Identity, secrets & time (key rotation/revocation, secret broker, monotonic clock)
 - Capability plane (deny-by-default, autonomy gradient, supervisor co-sign)
@@ -196,6 +196,42 @@ and the ledger is signed with per-install Ed25519 keys. The **public** keys are 
 verify the entire ledger without any secret — and cannot forge an entry**. That is the step from
 tamper-*evident* (HMAC, the default) to tamper-evident **and non-repudiable**. The private key
 never leaves the signer.
+
+> **Choose this at first boot, on a fresh data dir.** Switching an existing HMAC data dir to
+> Ed25519 leaves events written *before* the switch signed with HMAC — the Ed25519 verifier can't
+> check those, so historical runs will read as "verification failed." New runs are fine. The boot
+> log warns if it detects this. For a clean non-repudiable history, start with Ed25519.
+
+**Export & verify a run anywhere.** `GET /api/runs/:id/export` (or the "Download proof" button on
+any run) produces a portable bundle — every event with its signature, plus the public keys.
+Anyone can re-check it offline with **zero dependencies**:
+
+```bash
+npx krelvan verify krelvan-proof-<run>.json
+#   content addresses : all 7 match
+#   signatures        : all 7 valid        (ed25519 only)
+#   run boundaries    : RunStarted → terminal
+#   ✓ VERIFIED — every signature checks out against the included public keys
+```
+
+It recomputes each content address, verifies every Ed25519 signature against the bundled public
+keys, and rejects a bundle whose run start/end was omitted. (HMAC bundles report *partially
+verified · instance-local* — tamper-evident, but not third-party verifiable by design.)
+
+## Backups & the data directory
+
+Everything Krelvan persists lives in one place (`KRELVAN_DATA_DIR`, default `./data`). **Back it up
+as a unit** — several files are unrecoverable if lost:
+
+| File | What it holds | If lost |
+| --- | --- | --- |
+| `ledger.db` (+ `-wal`, `-shm`) | the signed event log — every run | the history is gone |
+| `secret.key` | AES-256-GCM key for the secret store | **all stored secrets + in-app model config decrypt to nothing** |
+| `signing-{owner,supervisor}.key` (HMAC) or `signing-*-ed25519.{key,pub}` | ledger signing keys | **the existing ledger can no longer be verified** |
+| `*.json`, `admin.auth`, `launcher.token` | agents/runs/registries, the admin credential, the launcher token | re-provision |
+
+Snapshot the whole directory atomically (stop the process or use a consistent volume snapshot).
+Do **not** back up `ledger.db` alone — without `secret.key` and the signing keys it is unusable.
 
 **Not yet built:** PostgreSQL multi-tenant store adapter; asymmetric *publisher* signing for
 third-party marketplace trust (distinct from ledger signing above). Tracked in `docs/PREMORTEM.md`.

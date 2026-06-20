@@ -40,8 +40,29 @@ function writeTemp(bundle: unknown): string {
 test("a genuine Ed25519 proof bundle verifies offline (every signature valid)", () => {
   const { code, out } = runVerifier(FIXTURE);
   assert.equal(code, 0, `expected exit 0, got ${code}\n${out}`);
-  assert.match(out, /VERIFIED/);
+  assert.match(out, /✓ VERIFIED/);
   assert.match(out, /all \d+ valid/); // signatures line
+  assert.match(out, /RunStarted → terminal/); // run-boundary completeness line
+});
+
+test("a head-truncated bundle (RunStarted dropped) is rejected — no lie by omission", () => {
+  const bundle = JSON.parse(readFileSync(FIXTURE, "utf8"));
+  bundle.events = bundle.events.slice(1); // drop the RunStarted
+  if (bundle.verification) bundle.verification.runEvents = bundle.events.length;
+  const { code, out } = runVerifier(writeTemp(bundle));
+  assert.equal(code, 1, `expected exit 1, got ${code}\n${out}`);
+  assert.match(out, /VERIFICATION FAILED/);
+  assert.match(out, /RunStarted/);
+});
+
+test("a tail-truncated bundle (terminal event dropped) is rejected", () => {
+  const bundle = JSON.parse(readFileSync(FIXTURE, "utf8"));
+  bundle.events = bundle.events.slice(0, -1); // drop the terminal RunCompleted
+  if (bundle.verification) bundle.verification.runEvents = bundle.events.length;
+  const { code, out } = runVerifier(writeTemp(bundle));
+  assert.equal(code, 1, `expected exit 1, got ${code}\n${out}`);
+  assert.match(out, /VERIFICATION FAILED/);
+  assert.match(out, /terminal/);
 });
 
 test("tampering with an event payload is detected (content-address mismatch)", () => {

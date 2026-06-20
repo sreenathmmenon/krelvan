@@ -2,10 +2,15 @@
 #
 #   docker compose up --build
 #
-# Web UI   -> http://localhost:3100
-# API      -> http://localhost:3201/api/health
+# Web UI   -> http://localhost:3100   (the only port you talk to)
 #
-# SQLite ledger + registries persist in the named volume `krelvan-data`.
+# The API runs INSIDE the container on a fixed internal port and is reached only by the
+# web UI's same-origin proxy over localhost — it is deliberately NOT published. All
+# browser traffic goes through http://localhost:3100, which injects the auth session.
+#
+# SQLite ledger + registries persist in the named volume `krelvan-data`. Back up that
+# volume as a UNIT — it holds the encryption key and signing keys; losing them is
+# unrecoverable (see README "Backups & the data directory").
 # LLM features are optional: drop a .env next to this file (see .env.example) or
 # pass the vars inline. The UI boots with no secrets.
 
@@ -15,12 +20,12 @@ services:
       context: .
       dockerfile: Dockerfile
     image: krelvan:latest
+    # Publish ONLY the web UI. The API port is internal-only by design.
     ports:
-      - "3201:3201"   # API
       - "3100:3100"   # web UI
     environment:
-      PORT: "3201"
-      KRELVAN_WEB_PORT: "3100"
+      PORT: "3100"            # public web UI
+      KRELVAN_API_PORT: "3201" # internal API (not published)
       KRELVAN_DATA_DIR: /data
       # Optional LLM config — uncomment / supply via an .env file:
       # KRELVAN_LLM_PROVIDER: ${KRELVAN_LLM_PROVIDER:-}
