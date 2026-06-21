@@ -101,7 +101,10 @@ export default function SecretsPage() {
           {/* Needed-but-not-set: the actionable to-do list */}
           {stillMissing.length > 0 && (
             <section style={{ marginBottom: "var(--s7)" }}>
-              <p className="micro" style={{ marginBottom: "var(--s3)" }}>Needed by your installed capabilities</p>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "var(--s3)", marginBottom: "var(--s3)", flexWrap: "wrap" }}>
+                <p className="micro" style={{ margin: 0 }}>Needed by your installed capabilities</p>
+                <span className="small muted">{dedupeByName(required).length - stillMissing.length} of {dedupeByName(required).length} configured</span>
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "var(--s3)" }}>
                 {stillMissing.map(m => (
                   <div
@@ -114,7 +117,10 @@ export default function SecretsPage() {
                     }}
                   >
                     <div style={{ minWidth: 0 }}>
-                      <code className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{m.name}</code>
+                      <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap" }}>
+                        <code className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{m.name}</code>
+                        <span className="secret-status secret-status--unset">Not set</span>
+                      </div>
                       <div className="small muted" style={{ marginTop: 2 }}>
                         Required by <span className="mono">{m.capability}</span>
                         {m.others.length > 0 && <span> +{m.others.length} more</span>}

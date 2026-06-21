@@ -134,14 +134,17 @@ export function MiniGraph({ nodes, edges, entry, variant = "light", maxHeight = 
           const labelColor = dark ? "var(--dark-ink-soft, #C8C4BC)" : "var(--ink-soft)";
           return (
             <g key={n.id} transform={`translate(${p.x},${p.y})`}>
+              {/* Clean single-stroke node — no heavy double ring (which read as a stray
+                  'selected' lasso on a one-node preview). The entry is marked by a quiet
+                  teal left accent bar, not a thick full border. */}
               <rect width={MNW} height={MNH} rx={8}
                 fill={nodeFill}
-                stroke={isEntry ? entryStroke : lineColor}
-                strokeWidth={isEntry ? 2 : 1.4}
+                stroke={lineColor}
+                strokeWidth={1.4}
               />
-              {isEntry && <rect width={MNW} height={3} rx={1.5} fill={entryStroke} />}
-              <circle cx={11} cy={MNH / 2} r={3} fill={dotColor} opacity={dark ? 0.95 : 0.75} />
-              <text x={22} y={MNH / 2} dominantBaseline="central" fontSize={11} fill={labelColor} fontFamily="var(--font-mono)">{label}</text>
+              {isEntry && <rect width={3} height={MNH} rx={1.5} fill={entryStroke} />}
+              <circle cx={14} cy={MNH / 2} r={3} fill={dotColor} opacity={dark ? 0.95 : 0.75} />
+              <text x={25} y={MNH / 2} dominantBaseline="central" fontSize={11} fill={labelColor} fontFamily="var(--font-mono)">{label}</text>
             </g>
           );
         })}
