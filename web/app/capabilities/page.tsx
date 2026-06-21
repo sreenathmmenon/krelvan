@@ -103,7 +103,6 @@ export default function CapabilitiesPage() {
   const installedNames = useMemo(() => new Set(caps.map(c => c.name).concat(servers.map(s => s.name))), [caps, servers]);
 
   const activeCount = caps.filter(c => c.kind === "builtin" || c.status === "enabled").length;
-  const builtinCount = caps.filter(c => c.kind === "builtin").length;
 
   return (
     <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
@@ -117,9 +116,10 @@ export default function CapabilitiesPage() {
             touch and when it pauses to ask you. Install in a click. Nothing hidden.
           </p>
         </div>
+        {/* Two clear, non-overlapping figures that match the tab counters exactly
+            (Installed N / Discover N) — no ambiguous 'built-in' subset competing. */}
         <div className="cap-stats">
-          <Stat value={String(activeCount)} label="installed" />
-          <Stat value={String(builtinCount)} label="built-in" />
+          <Stat value={String(activeCount)} label="installed & ready" />
           <Stat value={String(catalog.length)} label="in marketplace" />
         </div>
       </div>
