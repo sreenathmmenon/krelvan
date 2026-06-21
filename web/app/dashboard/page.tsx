@@ -304,12 +304,13 @@ export default function Dashboard() {
                 </p>
               </div>
               {/* The agent/run counts live in the stat strip just below — don't repeat them
-                  here. Reinforce the wedge instead: a single trust chip in the right gutter. */}
-              <div className="workspace-head__snapshot" aria-label="workspace trust">
-                <div className="workspace-head__snap workspace-head__snap--trust">
-                  <span className="workspace-head__snap-n workspace-head__snap-n--ok">signed</span>
-                  <span className="workspace-head__snap-l">every step · replayable</span>
-                </div>
+                  here. Reinforce the wedge: a deliberate trust pill (seal + label). */}
+              <div className="workspace-trust" aria-label="every run is signed">
+                <span className="workspace-trust__mark" aria-hidden="true"><SealGlyph size={13} /></span>
+                <span className="workspace-trust__text">
+                  <strong>Every run signed</strong>
+                  <span>tamper-evident · replayable</span>
+                </span>
               </div>
             </div>
           </div>

@@ -926,7 +926,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 }
 .builder-agents {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
   gap: var(--s5);
 }
 .footer-grid {
@@ -1152,6 +1152,21 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 @media (max-width: 560px) {
   .workspace-head .btn { width: 100%; }
 }
+/* right-gutter trust pill — a deliberate brand element (seal + label), not a floating
+   stat box. Reads as the page's proof signature, aligned with the headline. */
+.workspace-trust {
+  display: inline-flex; align-items: center; gap: var(--s3); flex-shrink: 0;
+  padding: var(--s3) var(--s4); border-radius: var(--r-pill);
+  background: var(--ok-tint); border: 1px solid color-mix(in srgb, var(--ok) 22%, transparent);
+}
+.workspace-trust__mark {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 999px;
+  background: var(--surface); color: var(--ok); flex-shrink: 0;
+}
+.workspace-trust__text { display: flex; flex-direction: column; line-height: 1.25; }
+.workspace-trust__text strong { font-size: 13px; font-weight: 650; color: var(--ok); letter-spacing: -0.005em; }
+.workspace-trust__text span { font-size: 11px; color: var(--ink-soft); }
+@media (max-width: 680px) { .workspace-trust { display: none; } }
 /* compact right-gutter snapshot so the header band is balanced, not 50% empty */
 .workspace-head__snapshot {
   display: flex; align-items: center; gap: var(--s4); flex-shrink: 0;
