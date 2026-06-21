@@ -2146,6 +2146,11 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 
 /* ───────────────────── Hero trust line + framework contrast ───────────────────── */
 /* hero stat strip — surfaces depth loudly under the CTAs (numbers > micro-copy) */
+.gh-stars {
+  display: inline-flex; align-items: center; margin-left: 8px; padding: 1px 8px;
+  border-radius: var(--r-pill); font-size: 12px; font-weight: 700;
+  background: rgba(255,255,255,.1); color: var(--dark-ink, #F4F2EC);
+}
 .hero-statstrip {
   display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--s5) var(--s6);
   margin-top: var(--s6); padding-top: var(--s6);

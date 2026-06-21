@@ -91,6 +91,22 @@ function ConnectorStrip() {
   );
 }
 
+// Live GitHub star count — REAL number from the GitHub API, never fabricated. Renders
+// nothing until a real count loads (a brand-new repo with 0 stars simply shows no badge,
+// so we never invent social proof). Honest by construction.
+function GitHubStars() {
+  const [stars, setStars] = useState<number | null>(null);
+  useEffect(() => {
+    void fetch("https://api.github.com/repos/sreenathmmenon/krelvan")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && typeof d.stargazers_count === "number" && d.stargazers_count > 0) setStars(d.stargazers_count); })
+      .catch(() => {});
+  }, []);
+  if (stars === null) return null;
+  const label = stars >= 1000 ? `${(stars / 1000).toFixed(1)}k` : String(stars);
+  return <span className="gh-stars" aria-label={`${stars} GitHub stars`}>★ {label}</span>;
+}
+
 // Hero stat strip — surfaces the depth (real registry counts) loudly under the hero
 // CTAs instead of whispering "7 LLM providers" in micro-copy. Numbers are live.
 function HeroStatStrip() {
@@ -550,6 +566,7 @@ export default function Landing() {
                 <a href="https://github.com/sreenathmmenon/krelvan" className="btn btn-dark-ghost btn-lg" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)" }}>
                   <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M8 1.6a6.4 6.4 0 0 0-2 12.5c.3.06.43-.14.43-.3v-1.1c-1.8.4-2.2-.85-2.2-.85-.3-.75-.72-.95-.72-.95-.6-.4.04-.4.04-.4.65.05 1 .67 1 .67.58 1 1.5.7 1.9.55.06-.43.23-.7.42-.87-1.45-.16-2.97-.72-2.97-3.2 0-.7.25-1.3.66-1.74-.07-.16-.29-.82.06-1.7 0 0 .54-.18 1.78.66a6.1 6.1 0 0 1 3.24 0c1.24-.84 1.78-.66 1.78-.66.35.88.13 1.54.06 1.7.41.44.66 1.04.66 1.74 0 2.49-1.52 3.04-2.97 3.2.23.2.44.6.44 1.2v1.78c0 .17.12.37.44.3A6.4 6.4 0 0 0 8 1.6z"/></svg>
                   Star on GitHub
+                  <GitHubStars />
                 </a>
               </div>
               <div className="hero-trustline">
