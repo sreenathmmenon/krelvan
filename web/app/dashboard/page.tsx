@@ -303,21 +303,12 @@ export default function Dashboard() {
                   Describe a goal, review the plan, then run it. Every step is recorded to a record you own and can replay.
                 </p>
               </div>
-              {/* balance the right gutter — a compact live snapshot instead of empty space */}
-              <div className="workspace-head__snapshot" aria-label="workspace snapshot">
-                <div className="workspace-head__snap">
-                  <span className="workspace-head__snap-n mono">{agents.length}</span>
-                  <span className="workspace-head__snap-l">{agents.length === 1 ? "agent" : "agents"}</span>
-                </div>
-                <span className="workspace-head__snap-div" aria-hidden="true" />
-                <div className="workspace-head__snap">
-                  <span className="workspace-head__snap-n mono">{runs.length}</span>
-                  <span className="workspace-head__snap-l">{runs.length === 1 ? "run" : "runs"}</span>
-                </div>
-                <span className="workspace-head__snap-div" aria-hidden="true" />
-                <div className="workspace-head__snap">
+              {/* The agent/run counts live in the stat strip just below — don't repeat them
+                  here. Reinforce the wedge instead: a single trust chip in the right gutter. */}
+              <div className="workspace-head__snapshot" aria-label="workspace trust">
+                <div className="workspace-head__snap workspace-head__snap--trust">
                   <span className="workspace-head__snap-n workspace-head__snap-n--ok">signed</span>
-                  <span className="workspace-head__snap-l">every step</span>
+                  <span className="workspace-head__snap-l">every step · replayable</span>
                 </div>
               </div>
             </div>
