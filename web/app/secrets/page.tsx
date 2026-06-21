@@ -101,14 +101,14 @@ export default function SecretsPage() {
           {stillMissing.length > 0 && (
             <section style={{ marginBottom: "var(--s7)" }}>
               <p className="micro" style={{ marginBottom: "var(--s3)" }}>Needed by your installed capabilities</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: "var(--s3)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "var(--s3)" }}>
                 {stillMissing.map(m => (
                   <div
                     key={m.name}
                     className="card"
                     style={{
                       padding: "var(--s4) var(--s5)", display: "flex", alignItems: "center",
-                      justifyContent: "space-between", gap: "var(--s4)", flexWrap: "wrap",
+                      justifyContent: "space-between", gap: "var(--s4)",
                       borderLeft: "3px solid var(--line-strong)",
                     }}
                   >

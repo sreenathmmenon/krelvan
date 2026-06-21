@@ -2050,7 +2050,12 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .cta-lane__time { color: var(--dark-brand-bright); font-size: 12px; font-weight: 600; letter-spacing: .04em; }
 .cta-lane__title { color: var(--dark-ink); font-weight: 650; font-size: 18px; }
 .cta-lane__desc { color: var(--dark-ink-soft); font-size: 13.5px; line-height: 1.55; margin: 0; flex: 1; }
-.cta-lane .install-cmd { max-width: 100%; margin: 0; }
+.cta-lane .install-cmd { max-width: 100%; margin: 0; align-items: flex-start; }
+/* In the narrow final-CTA lane the one-liner can't fit on a single row — a
+   horizontal-scroll code box reads as a truncated command ("git clone https:…").
+   Let it wrap so the FULL command is visible, and top-align the Copy button. */
+.cta-lane .install-cmd__code { white-space: normal; overflow-x: visible; word-break: break-word; }
+.cta-lane .install-cmd__copy { align-self: flex-start; }
 .cta-lane .btn { align-self: flex-start; }
 
 @media (prefers-reduced-motion: reduce) {
