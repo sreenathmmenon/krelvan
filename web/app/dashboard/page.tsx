@@ -207,6 +207,10 @@ export default function Dashboard() {
     // reads as an intentional chart, never a broken/no-data state.
     return counts.map(c => ({ h: c > 0 ? Math.max(0.34, c / max) : 0.18, empty: c === 0 }));
   })();
+  const runsThisWeek = (() => {
+    const now = Date.now(), window = 6 * 86_400_000;
+    return runs.filter(r => Number.isFinite(r.createdAt) && now - r.createdAt <= window).length;
+  })();
 
   // ── shared composer markup — the SAME build-box used on the homepage, for a
   // consistent build experience across both surfaces. ─────────────────────────
@@ -433,7 +437,8 @@ export default function Dashboard() {
                   <span className="stat-label">{s.label}</span>
                 </div>
               ))}
-              <div className="stat-cell">
+              <div className="stat-cell stat-cell--spark">
+                <span className="stat-value">{runsThisWeek}</span>
                 <div className="stat-spark" aria-hidden="true">
                   {sparkBuckets.map((b, i) => (
                     <span key={i} className={b.empty ? "is-empty" : ""} style={{ height: `${Math.round(b.h * 100)}%`, animationDelay: `${i * 60}ms` }} />

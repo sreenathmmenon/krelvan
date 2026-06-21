@@ -93,21 +93,29 @@ function HeroStatStrip() {
       mcp: r.entries.filter(e => e.kind === "mcp").length,
     })).catch(() => {});
   }, []);
+  // Four parallel count stats in a clean grid; "100% offline-verifiable" is NOT a
+  // count — it's the proof claim, so it gets its own distinct highlight chip below
+  // the row instead of hanging as an orphaned 5th cell.
   const stats = [
     { n: c ? String(c.total) : "—", l: "capabilities" },
     { n: c ? String(c.agents) : "—", l: "ready-to-run agents" },
     { n: c ? String(c.mcp) : "—", l: "MCP connectors" },
     { n: "7", l: "LLM providers" },
-    { n: "100%", l: "offline-verifiable" },
   ];
   return (
-    <div className="hero-statstrip" aria-label="what ships with Krelvan">
-      {stats.map((s) => (
-        <div key={s.l} className="hero-statstrip__cell">
-          <span className="hero-statstrip__n mono">{s.n}</span>
-          <span className="hero-statstrip__l">{s.l}</span>
-        </div>
-      ))}
+    <div className="hero-statwrap">
+      <div className="hero-statstrip" aria-label="what ships with Krelvan">
+        {stats.map((s) => (
+          <div key={s.l} className="hero-statstrip__cell">
+            <span className="hero-statstrip__n mono">{s.n}</span>
+            <span className="hero-statstrip__l">{s.l}</span>
+          </div>
+        ))}
+      </div>
+      <span className="hero-statwrap__claim">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d={UI.check} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        100% offline-verifiable
+      </span>
     </div>
   );
 }
