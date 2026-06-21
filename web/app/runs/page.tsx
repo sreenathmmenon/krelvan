@@ -275,6 +275,7 @@ export default function RunsPage() {
                   <th style={{ width: 28, paddingRight: 0 }}><span className="sr-only">Status</span></th>
                   <th>Agent</th>
                   <th style={{ width: 120 }}>Status</th>
+                  <th style={{ width: 130 }}>Proof</th>
                   <th className="col-runid" style={{ width: 150 }}>Run ID</th>
                   <th className="num" style={{ width: 110 }}>When</th>
                   <th className="col-chevron" style={{ width: 32 }} aria-hidden="true"></th>
@@ -318,6 +319,18 @@ export default function RunsPage() {
                           {r.status === "running" && <span className="dot" />}
                           {STATUS_LABEL[r.status]}
                         </span>
+                      </td>
+                      <td>
+                        {/* Every terminal run is signed into the ledger — the platform
+                            guarantee. Surfaced per-row so the audit trail carries the proof. */}
+                        {(r.status === "completed" || r.status === "failed" || r.status === "halted") ? (
+                          <span className="runs-proof">
+                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                            Signed
+                          </span>
+                        ) : (
+                          <span className="small muted">—</span>
+                        )}
                       </td>
                       <td className="col-runid"><RunIdCell runId={r.runId} /></td>
                       <td className="num">
