@@ -1036,7 +1036,7 @@ function ExplainPanel({ runId, status, explanation, loading, error, onGenerate }
             </div>
           )}
           <div style={{ fontSize: 14, lineHeight: 1.7, color: "var(--ink)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-            {explanation.explanation}
+            {cleanExplanation(explanation.explanation)}
           </div>
         </div>
       ) : (
@@ -1104,6 +1104,11 @@ function GraphCanvas({ manifest, projection, events, selectedNode, onSelectNode 
         background: "var(--graph-bg)",
         overflow: "auto",
         position: "relative",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        minHeight: 220,
+        padding: "var(--s5)",
       }}
     >
       {/* verified badge */}
