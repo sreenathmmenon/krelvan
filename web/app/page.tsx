@@ -47,23 +47,30 @@ function CountUp({ n, className }: { n: number; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const done = useRef(false);
   useEffect(() => {
-    if (n <= 0) return;
+    if (n <= 0) { setVal(0); return; }
+    // Correctness first: the displayed number must always equal the real count. The
+    // count-up is a progressive enhancement layered on top — it must never be able to
+    // leave the value stuck at 0 (e.g. when the band is above the fold and the
+    // IntersectionObserver's first callback lands before the registry data arrives).
+    setVal(n);
     const el = ref.current;
-    if (!el) { setVal(n); return; }
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { setVal(n); return; }
+    if (!el || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if (done.current) return;
+    const animate = () => {
+      if (done.current) return;
+      done.current = true;
+      const start = performance.now(), dur = 850;
+      const tick = (t: number) => {
+        const p = Math.min(1, (t - start) / dur);
+        const eased = 1 - Math.pow(1 - p, 3);
+        setVal(Math.round(eased * n));
+        if (p < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    };
     const io = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting && !done.current) {
-        done.current = true;
-        const start = performance.now(), dur = 850;
-        const tick = (t: number) => {
-          const p = Math.min(1, (t - start) / dur);
-          const eased = 1 - Math.pow(1 - p, 3);
-          setVal(Math.round(eased * n));
-          if (p < 1) requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      }
-    }, { threshold: 0.5 });
+      if (entries[0]?.isIntersecting) animate();
+    }, { threshold: 0.4 });
     io.observe(el);
     return () => io.disconnect();
   }, [n]);
