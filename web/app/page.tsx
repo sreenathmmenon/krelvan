@@ -278,6 +278,19 @@ function VerifyTerminal({ tampered, setTampered, result, verifying, idleNudge, c
 // a real completed-run artifact when one exists.
 function HeroVerifyPanel() {
   const v = useLiveVerify();
+  // One-time auto-demo so a first-time visitor SEES the wedge without interacting:
+  // once the real run verifies CONSISTENT, flip a byte (→ REJECTED, red), hold, flip
+  // back. Runs once, skips on reduced-motion, then the visitor can drive it themselves.
+  const played = useRef(false);
+  const firstConsistent = v.result?.verdict === "CONSISTENT";
+  useEffect(() => {
+    if (played.current || !firstConsistent) return;
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    played.current = true; // latch BEFORE scheduling so result-driven re-renders never re-enter or tear this down
+    setTimeout(() => v.setTampered(true), 1400);
+    setTimeout(() => v.setTampered(false), 1400 + 2200);
+    // intentionally no cleanup: this one-shot demo must complete even as v.result changes
+  }, [firstConsistent]); // eslint-disable-line react-hooks/exhaustive-deps
   return <VerifyTerminal {...v} idleNudge compact />;
 }
 
