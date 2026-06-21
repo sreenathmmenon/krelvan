@@ -1070,7 +1070,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 /* a deliberate dashed "add" affordance — NOT a filled box that clones a real agent card */
 .add-agent-tile {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s1);
-  min-height: 200px;
+  min-height: 200px; height: 100%;
   border: 1.5px dashed var(--line-strong); border-radius: var(--r);
   background: transparent;
   color: var(--ink-soft); text-decoration: none;
