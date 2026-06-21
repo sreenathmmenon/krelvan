@@ -165,11 +165,12 @@ export function authenticate(
   const ip = clientIp(req);
   const now = Date.now();
 
-  if (isLockedOut(ip, now)) {
-    return { ok: false, status: 429, message: "too many failed attempts — try again later" };
-  }
+  // Check credentials FIRST: a request that presents a VALID bearer token or session must
+  // always be served, even if this IP previously tripped the login throttle. The brute-force
+  // lockout is for UNAUTHENTICATED guessing, not for already-authenticated reads — otherwise a
+  // few bad logins would lock a logged-in user out of the whole app with a misleading message.
 
-  // 1) Bearer token (machines / CI / agents) — the original path, unchanged.
+  // 1) Bearer token (machines / CI / agents).
   const token = presentedToken(req);
   if (token) {
     const presentedHash = sha256Hex(token);
@@ -179,7 +180,7 @@ export function authenticate(
     }
   }
 
-  // 2) Human session (forwarded by the proxy as X-Krelvan-Session) — additive.
+  // 2) Human session (forwarded by the proxy as X-Krelvan-Session).
   if (sessionValid) {
     const sess = req.headers["x-krelvan-session"];
     if (typeof sess === "string" && sessionValid(sess)) {
@@ -188,6 +189,10 @@ export function authenticate(
     }
   }
 
+  // No valid credential. NOW apply the per-IP lockout (this is the path an attacker hammers).
+  if (isLockedOut(ip, now)) {
+    return { ok: false, status: 429, message: "too many failed attempts — try again later" };
+  }
   recordFail(ip, now);
   return { ok: false, status: 401, message: "authentication required" };
 }
