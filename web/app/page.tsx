@@ -487,10 +487,10 @@ export default function Landing() {
           <div className="hero-grid">
             {/* left — payoff + CTAs (42%) */}
             <div>
-              <p className="micro" style={{ marginBottom: "var(--s4)" }}>Open-source · self-hosted · the agents are yours, the proof is in the ledger</p>
+              <p className="micro" style={{ marginBottom: "var(--s4)" }}>Open-source · self-hosted</p>
               <h1
                 className="display dark-ink"
-                style={{ fontSize: "clamp(40px, 5.5vw, 64px)", lineHeight: 1.04, fontWeight: 600, letterSpacing: "-0.03em", marginBottom: "var(--s5)" }}
+                style={{ fontSize: "clamp(40px, 5vw, 60px)", lineHeight: 1.05, fontWeight: 600, letterSpacing: "-0.03em", marginBottom: "var(--s5)", textWrap: "balance", maxWidth: "13ch" }}
               >
                 AI agents that <span className="dark-teal" style={{ fontWeight: 800 }}>prove what they did</span>.
               </h1>

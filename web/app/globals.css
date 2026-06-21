@@ -890,10 +890,13 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
  * Desktop grids; collapse to single column on narrow viewports. */
 .hero-grid {
   display: grid;
-  grid-template-columns: minmax(0, 42fr) minmax(0, 58fr);
-  gap: var(--s9);
+  grid-template-columns: minmax(0, 46fr) minmax(0, 54fr);
+  gap: var(--s8);
   align-items: center;
 }
+/* the hero verifier panel carries real weight — don't let it float small next to the big h1 */
+.hero-grid .proveit__term--live { min-height: 320px; display: flex; flex-direction: column; }
+.hero-grid .proveit__term--live .proveit__termbody { flex: 1; }
 /* dashboard hero: composer is the primary action, so it gets the larger column
  * (homepage gives the artifact the lead; the workspace gives the composer). */
 .hero-grid--workspace {
