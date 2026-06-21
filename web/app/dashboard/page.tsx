@@ -538,6 +538,7 @@ export default function Dashboard() {
                             <div className="run-ledger-strip">
                               <span className="run-ledger-strip__seal" style={{ display: "inline-flex" }}><SealGlyph size={11} /></span>
                               <span className="run-ledger-strip__tag">signed · replayable</span>
+                              <span className="run-ledger-strip__hash mono">{r.runId.replace(/^run-/, "").slice(-6)}</span>
                             </div>
                           )}
                         </div>

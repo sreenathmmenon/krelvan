@@ -1016,16 +1016,18 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
  * run that re-states the signed total, keeping the ledger metaphor alive in the
  * live demo. Honest fields only (real signed total + "signed"); no fake steps. */
 .run-ledger-strip {
-  display: inline-flex; align-items: center; gap: var(--s2);
-  margin-top: 6px; padding: 2px var(--s2);
-  border-radius: var(--r-sm);
-  background: var(--brand-tint);
-  border: 1px solid var(--brand-ring);
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 6px; padding: 3px 9px;
+  border-radius: var(--r-pill);
+  background: var(--ok-tint);
+  border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-  font-size: 11px; line-height: 1.4; color: var(--ink-soft);
+  font-size: 11px; line-height: 1.4; color: var(--ok);
   max-width: 100%;
 }
-.run-ledger-strip__seal { color: var(--brand); font-weight: 700; flex-shrink: 0; }
+.run-ledger-strip__tag { font-weight: 700; letter-spacing: .02em; }
+.run-ledger-strip__hash { color: var(--ink-muted); padding-left: 6px; border-left: 1px solid color-mix(in srgb, var(--ok) 22%, transparent); }
+.run-ledger-strip__seal { color: var(--ok); font-weight: 700; flex-shrink: 0; }
 .run-ledger-strip__cost { color: var(--brand); font-weight: 600; }
 .run-ledger-strip__sep  { color: var(--ink-muted); }
 .run-ledger-strip__tag {
