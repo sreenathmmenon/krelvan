@@ -977,6 +977,8 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .stat-cell__row { display: flex; align-items: center; gap: var(--s3); }
 .stat-cell--spark .stat-spark { margin: 0; height: 22px; flex-shrink: 0; }
 .stat-cell.is-live .stat-value { color: var(--live); }
+.stat-cell--proof .stat-value { color: var(--ok); }
+.stat-value__sub { font-size: 14px; font-weight: 500; color: var(--ink-muted); }
 .stat-cell.is-live .stat-value::after {
   content: ""; width: 7px; height: 7px; border-radius: 50%;
   background: var(--live); box-shadow: 0 0 0 0 rgba(217,119,6,0.5);
