@@ -1908,9 +1908,9 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   display: grid; grid-template-columns: 1fr 1fr; gap: var(--s8); align-items: center;
 }
 @media (max-width: 860px) { .proveit__grid { grid-template-columns: 1fr; gap: var(--s6); } }
-.proveit__copy .micro { color: var(--dark-brand-bright); }
-.proveit__copy h2 { line-height: 1.1; color: var(--dark-ink); }
-.proveit__copy .soft { color: var(--dark-ink-soft); }
+.proveit__lede .micro { color: var(--dark-brand-bright); }
+.proveit__lede h2 { line-height: 1.1; color: var(--dark-ink); }
+.proveit__lede .soft { color: var(--dark-ink-soft); }
 
 /* terminal card — built on the dark-hero surface tokens, not bespoke hex */
 .proveit__term {
@@ -1923,19 +1923,12 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   padding: var(--s3) var(--s4); background: rgba(255,255,255,.03);
   border-bottom: 1px solid var(--dark-line);
 }
-.proveit__termbar span { width: 11px; height: 11px; border-radius: 999px; background: rgba(255,255,255,.14); }
+.proveit__termbar > span[aria-hidden] { width: 11px; height: 11px; border-radius: 999px; background: rgba(255,255,255,.14); }
 .proveit__termbody { padding: var(--s4) var(--s5) var(--s5); font-family: var(--font-mono); font-size: 12.5px; line-height: 1.55; }
 .proveit__cmd { display: flex; align-items: center; gap: var(--s2); }
 .proveit__dollar { color: var(--dark-brand-bright); font-weight: 700; flex-shrink: 0; }
 .proveit__cmd code { color: var(--dark-ink-soft); word-break: break-all; }
 .proveit__cmd code.dim { color: var(--dark-ink-muted); }
-.proveit__copy {
-  margin-left: auto; flex-shrink: 0; min-width: 52px; text-align: center;
-  padding: 2px 9px; border-radius: var(--r-sm);
-  background: var(--dark-verify-bg); color: var(--dark-brand-bright); border: 1px solid var(--dark-line-teal);
-  font-size: 11px; cursor: pointer; transition: background 120ms;
-}
-.proveit__copy:hover { background: rgba(26,163,154,.22); }
 .proveit__out { margin: var(--s2) 0 0; color: var(--dark-ink-muted); white-space: pre-wrap; font-family: var(--font-mono); }
 .proveit__ok { color: var(--dark-brand-bright); font-weight: 600; }
 .proveit__bad { color: #ff8a8a; font-weight: 600; }
@@ -1971,7 +1964,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .proveit__term--live.is-fail { border-color: rgba(248,113,113,.4); box-shadow: 0 18px 50px -20px rgba(0,0,0,.55), 0 0 28px -8px rgba(248,113,113,.4); }
 .proveit__term--live.is-fail .proveit__termbar { background: rgba(248,113,113,.06); }
 .proveit__termbar { position: relative; flex-wrap: nowrap; }
-.proveit__termtitle { color: var(--dark-ink-muted); font-size: 11px; margin-left: var(--s2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proveit__termtitle { color: var(--dark-ink-muted); font-size: 11px; margin-left: var(--s2); flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* mobile: the narrow panel can't fit dots + title + the tamper pill on one line, and the pill
    (the viral hook) must never clip. Hide the title and let the pill take its space. */
 @media (max-width: 560px) {
@@ -1980,7 +1973,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   .proveit__tamper { margin-left: auto; }
 }
 .proveit__tamper {
-  margin-left: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: var(--s2); white-space: nowrap;
+  margin-left: auto; flex: 0 0 auto; min-width: max-content; display: inline-flex; align-items: center; gap: var(--s2); white-space: nowrap;
   font-size: 12.5px; font-weight: 600; color: #ffb3b3; cursor: pointer; user-select: none;
   padding: 4px 12px; border-radius: var(--r-pill);
   background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.32);

@@ -262,7 +262,7 @@ function ProveItBand() {
   return (
     <section className="proveit" aria-labelledby="proveit-h">
       <div className="container proveit__grid">
-        <div className="proveit__copy">
+        <div className="proveit__lede">
           <p className="micro" style={{ marginBottom: "var(--s2)" }}>You shouldn&apos;t trust this page</p>
           <h2 id="proveit-h" className="display h1" style={{ marginBottom: "var(--s3)" }}>
             Don&apos;t trust the demo. <span className="dark-teal" style={{ fontWeight: 800 }}>Verify it.</span>
