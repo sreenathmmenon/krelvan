@@ -166,11 +166,7 @@ export default function RunsPage() {
             each step and decision, in order.
           </p>
         </div>
-        {runs.length > 0 && (
-          <Link href="/" className="btn btn-primary" style={{ flexShrink: 0 }}>
-            Build an agent →
-          </Link>
-        )}
+        {/* no header CTA — the global nav already has "Build agent"; the empty state carries the hero action */}
       </div>
 
       {/* ── summary strip: only when runs exist ── */}
@@ -304,14 +300,11 @@ export default function RunsPage() {
                           style={{ color: "var(--ink)", textDecoration: "none", display: "block", minWidth: 0 }}
                         >
                           <span className="h3" style={{ display: "block" }}>{r.manifestName}</span>
+                          {/* show the summary when ready, or the failure reason; never an
+                              indefinite "Summarizing…" spinner that can get stuck. */}
                           {summary ? (
                             <span className="small muted text-truncate" style={{ display: "block", marginTop: 2, maxWidth: "52ch" }}>
                               {summary}
-                            </span>
-                          ) : summary === null ? (
-                            <span className="small" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)", marginTop: 2, color: "var(--ink-muted)" }}>
-                              <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} aria-hidden="true" />
-                              Summarizing…
                             </span>
                           ) : r.reason ? (
                             <span className="small muted text-truncate" style={{ display: "block", marginTop: 2, maxWidth: "52ch" }}>

@@ -325,6 +325,10 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--brand); outline
 
 /* disabled buttons */
 .btn:disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }
+/* a disabled PRIMARY shouldn't look like a washed-out/broken live button — render it as a
+   clear muted surface instead of faded teal, so the hero CTA reads "fill the field" not "dead". */
+.btn-primary:disabled { opacity: 1; background: var(--surface-sunken); color: var(--ink-muted); border: 1px solid var(--line-strong); box-shadow: none; }
+.btn-dark-primary:disabled { opacity: 1; background: rgba(255,255,255,0.06); color: var(--dark-ink-muted); border: 1px solid var(--dark-line); box-shadow: none; }
 
 /* input / textarea — single source of truth */
 .input {
