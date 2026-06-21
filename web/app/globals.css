@@ -974,7 +974,8 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   font-size: 11px; font-weight: 500; letter-spacing: .05em; text-transform: uppercase;
   color: var(--ink-muted);
 }
-.stat-cell--spark .stat-spark { margin: 2px 0; }
+.stat-cell__row { display: flex; align-items: center; gap: var(--s3); }
+.stat-cell--spark .stat-spark { margin: 0; height: 22px; flex-shrink: 0; }
 .stat-cell.is-live .stat-value { color: var(--live); }
 .stat-cell.is-live .stat-value::after {
   content: ""; width: 7px; height: 7px; border-radius: 50%;
@@ -1170,7 +1171,9 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .workspace-trust__text { display: flex; flex-direction: column; line-height: 1.25; }
 .workspace-trust__text strong { font-size: 13px; font-weight: 650; color: var(--ok); letter-spacing: -0.005em; }
 .workspace-trust__text span { font-size: 11px; color: var(--ink-soft); }
-@media (max-width: 680px) { .workspace-trust { display: none; } }
+/* Keep the proof badge on mobile — it's the core wedge and must never be the element
+   that gets dropped at small breakpoints. Let it sit inline under the subhead. */
+@media (max-width: 680px) { .workspace-trust { margin-top: var(--s2); } }
 /* compact right-gutter snapshot so the header band is balanced, not 50% empty */
 .workspace-head__snapshot {
   display: flex; align-items: center; gap: var(--s4); flex-shrink: 0;

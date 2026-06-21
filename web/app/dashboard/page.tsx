@@ -438,11 +438,13 @@ export default function Dashboard() {
                 </div>
               ))}
               <div className="stat-cell stat-cell--spark">
-                <span className="stat-value">{runsThisWeek}</span>
-                <div className="stat-spark" aria-hidden="true">
-                  {sparkBuckets.map((b, i) => (
-                    <span key={i} className={b.empty ? "is-empty" : ""} style={{ height: `${Math.round(b.h * 100)}%`, animationDelay: `${i * 60}ms` }} />
-                  ))}
+                <div className="stat-cell__row">
+                  <span className="stat-value">{runsThisWeek}</span>
+                  <div className="stat-spark" aria-hidden="true">
+                    {sparkBuckets.map((b, i) => (
+                      <span key={i} className={b.empty ? "is-empty" : ""} style={{ height: `${Math.round(b.h * 100)}%`, animationDelay: `${i * 60}ms` }} />
+                    ))}
+                  </div>
                 </div>
                 <span className="stat-label">last 6 days</span>
               </div>
