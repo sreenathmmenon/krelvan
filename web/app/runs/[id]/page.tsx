@@ -507,7 +507,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           {/* HONESTY: HMAC (default) is tamper-EVIDENT but repudiable; only Ed25519 is non-repudiable. */}
           <span className="run-seal__title">{verification.nonRepudiable ? "Tamper-proof · non-repudiable" : "Tamper-evident"}</span>
           <span className="run-seal__detail">
-            <span className="mono">{verification.signedEvents}/{verification.runEvents}</span> events signed · full <span className="mono">{verification.ledgerEvents}</span>-event chain verified · {verification.nonRepudiable ? "Ed25519 — anyone can verify from the public key" : "HMAC-SHA256 — verifiable on this instance"}
+            <span className="mono">{verification.signedEvents}/{verification.runEvents}</span> agent events signed · <span className="mono">{verification.ledgerEvents}</span>-link hash chain verified end-to-end · {verification.nonRepudiable ? "Ed25519 — anyone can verify from the public key" : "HMAC-SHA256 — verifiable on this instance"}
           </span>
           <a
             href={`/proxy/api/runs/${id}/export`}
@@ -618,7 +618,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                 {verification == null && <span className="soft">Click verify to re-check the cryptographic chain.</span>}
                 {verification?.ok && (
                   <span style={{ color: "var(--ok)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <Glyph kind="check" size={14} color="var(--ok)" /> Verified — {verification.signedEvents}/{verification.runEvents} run events signed, full {verification.ledgerEvents}-event chain intact ({verification.algorithm}).
+                    <Glyph kind="check" size={14} color="var(--ok)" /> Verified — {verification.signedEvents}/{verification.runEvents} agent events signed, {verification.ledgerEvents}-link hash chain intact end-to-end ({verification.algorithm}).
                   </span>
                 )}
                 {verification && !verification.ok && (

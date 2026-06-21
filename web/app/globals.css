@@ -2054,7 +2054,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 /* In the narrow final-CTA lane the one-liner can't fit on a single row — a
    horizontal-scroll code box reads as a truncated command ("git clone https:…").
    Let it wrap so the FULL command is visible, and top-align the Copy button. */
-.cta-lane .install-cmd__code { white-space: normal; overflow-x: visible; word-break: break-word; }
+.cta-lane .install-cmd__code { white-space: normal; overflow-x: visible; word-break: normal; overflow-wrap: anywhere; font-size: 13px; }
 .cta-lane .install-cmd__copy { align-self: flex-start; }
 .cta-lane .btn { align-self: flex-start; }
 
