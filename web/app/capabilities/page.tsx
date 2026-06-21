@@ -104,7 +104,6 @@ export default function CapabilitiesPage() {
 
   const activeCount = caps.filter(c => c.kind === "builtin" || c.status === "enabled").length;
   const builtinCount = caps.filter(c => c.kind === "builtin").length;
-  const connectorCount = servers.filter(s => s.connected).length;
 
   return (
     <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
@@ -119,9 +118,8 @@ export default function CapabilitiesPage() {
           </p>
         </div>
         <div className="cap-stats">
-          <Stat value={String(activeCount)} label="active" />
+          <Stat value={String(activeCount)} label="installed" />
           <Stat value={String(builtinCount)} label="built-in" />
-          <Stat value={String(connectorCount)} label="connectors" />
           <Stat value={String(catalog.length)} label="in marketplace" />
         </div>
       </div>

@@ -303,6 +303,23 @@ export default function Dashboard() {
                   Describe a goal, review the plan, then run it. Every step is recorded to a record you own and can replay.
                 </p>
               </div>
+              {/* balance the right gutter — a compact live snapshot instead of empty space */}
+              <div className="workspace-head__snapshot" aria-label="workspace snapshot">
+                <div className="workspace-head__snap">
+                  <span className="workspace-head__snap-n mono">{agents.length}</span>
+                  <span className="workspace-head__snap-l">{agents.length === 1 ? "agent" : "agents"}</span>
+                </div>
+                <span className="workspace-head__snap-div" aria-hidden="true" />
+                <div className="workspace-head__snap">
+                  <span className="workspace-head__snap-n mono">{runs.length}</span>
+                  <span className="workspace-head__snap-l">{runs.length === 1 ? "run" : "runs"}</span>
+                </div>
+                <span className="workspace-head__snap-div" aria-hidden="true" />
+                <div className="workspace-head__snap">
+                  <span className="workspace-head__snap-n workspace-head__snap-n--ok">signed</span>
+                  <span className="workspace-head__snap-l">every step</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -328,7 +345,7 @@ export default function Dashboard() {
                   <p className="micro" style={{ marginBottom: "var(--s4)" }}>Your workspace</p>
                   <h1
                     className="dark-ink"
-                    style={{ fontSize: "clamp(28px, 4.4vw, 42px)", lineHeight: 1.1, fontWeight: 300, letterSpacing: "-0.025em", marginBottom: "var(--s5)", maxWidth: "16ch" }}
+                    style={{ fontSize: "clamp(28px, 4.4vw, 42px)", lineHeight: 1.1, fontWeight: 600, letterSpacing: "-0.025em", marginBottom: "var(--s5)", maxWidth: "16ch" }}
                   >
                     Describe a goal. Get a real agent, <span className="dark-teal">running on your machine</span>.
                   </h1>
@@ -401,10 +418,11 @@ export default function Dashboard() {
           POPULATED STATE — compact composer, stat strip, agents + runs. */}
       {hasData && (
         <>
-          {/* compact composer — always accessible, never steals focus */}
+          {/* compact composer — left-anchored to the same container spine as the header
+              (no center-floating box; one alignment system down the page) */}
           <section style={{ background: "var(--canvas)", paddingTop: "var(--s7)", paddingBottom: "var(--s5)" }}>
-            <div id="dashboard-composer" className="container" style={{ maxWidth: 760 }}>
-              {composerInner}
+            <div id="dashboard-composer" className="container">
+              <div style={{ maxWidth: 760 }}>{composerInner}</div>
             </div>
           </section>
 
@@ -462,7 +480,9 @@ export default function Dashboard() {
                       onClick={e => { e.preventDefault(); focusComposer(); }}
                       className="add-agent-tile"
                     >
-                      <span className="add-agent-tile__plus" aria-hidden="true">+</span> New agent
+                      <span className="add-agent-tile__plus" aria-hidden="true">+</span>
+                      <span className="add-agent-tile__label">New agent</span>
+                      <span className="add-agent-tile__sub">Describe another goal</span>
                     </a>
                   </div>
                 ) : (

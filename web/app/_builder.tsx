@@ -39,9 +39,9 @@ export const BUILD_STAGES = ["Proposing graph…", "Validating…", "Finalising 
 
 interface MiniNodePos { x: number; y: number; }
 
-const MNW = 56;
+const MNW = 104;
 const MNH = 30;
-const MHG = 32;
+const MHG = 34;
 const MVG = 20;
 
 function miniLayout(nodes: ManifestNode[], edges: ManifestEdge[], entry: string): Map<string, MiniNodePos> {
@@ -127,6 +127,11 @@ export function MiniGraph({ nodes, edges, entry, variant = "light", maxHeight = 
           const dotColor = caps.some(c => c.name === "think") ? (dark ? "var(--dark-brand-bright, #1AA39A)" : "var(--brand)")
             : caps.some(c => c.name === "remember" || c.name === "recall") ? "var(--ok)"
             : (dark ? "var(--dark-ink-muted, #8C928E)" : "var(--ink-muted)");
+          // a short, human label inside the node so even a 1-node graph reads as a real
+          // step (not an anonymous grey dot): the primary capability or the node role.
+          const primaryCap = caps[0]?.name?.replace(/^[a-z]+\./, "") ?? "";
+          const label = (primaryCap || n.role || n.id).slice(0, 14);
+          const labelColor = dark ? "var(--dark-ink-soft, #C8C4BC)" : "var(--ink-soft)";
           return (
             <g key={n.id} transform={`translate(${p.x},${p.y})`}>
               <rect width={MNW} height={MNH} rx={8}
@@ -135,20 +140,23 @@ export function MiniGraph({ nodes, edges, entry, variant = "light", maxHeight = 
                 strokeWidth={isEntry ? 2 : 1.4}
               />
               {isEntry && <rect width={MNW} height={3} rx={1.5} fill={entryStroke} />}
-              <circle cx={MNW / 2} cy={MNH / 2} r={4.5} fill={dotColor} opacity={dark ? 0.95 : 0.7} />
+              <circle cx={11} cy={MNH / 2} r={3} fill={dotColor} opacity={dark ? 0.95 : 0.75} />
+              <text x={22} y={MNH / 2} dominantBaseline="central" fontSize={11} fill={labelColor} fontFamily="var(--font-mono)">{label}</text>
             </g>
           );
         })}
       </svg>
-      {/* node count overlay */}
-      <div className="mono" style={{
-        position: "absolute", bottom: "var(--s1)", right: "var(--s1)",
-        fontSize: 11, color: dark ? "var(--dark-ink-muted, #8C928E)" : "var(--ink-muted)",
-        background: dark ? "rgba(255,255,255,0.06)" : "var(--surface-sunken)",
-        padding: "var(--s1)", borderRadius: "var(--r-sm)",
-      }}>
-        {nodes.length} node{nodes.length !== 1 ? "s" : ""}
-      </div>
+      {/* node count overlay — only when there are multiple nodes (a "1 node" pill reads as filler) */}
+      {nodes.length > 1 && (
+        <div className="mono" style={{
+          position: "absolute", bottom: "var(--s1)", right: "var(--s1)",
+          fontSize: 11, color: dark ? "var(--dark-ink-muted, #8C928E)" : "var(--ink-muted)",
+          background: dark ? "rgba(255,255,255,0.06)" : "var(--surface-sunken)",
+          padding: "var(--s1)", borderRadius: "var(--r-sm)",
+        }}>
+          {nodes.length} nodes
+        </div>
+      )}
     </div>
   );
 }
@@ -594,9 +602,9 @@ export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
           </div>
         ) : (
           <p className="small soft" style={{ lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", flex: 1 }}>
-            {summary === null ? (
-              <span style={{ color: "var(--ink-muted)", fontStyle: "italic" }}>Generating summary…</span>
-            ) : agent.signed.provenance.intent}
+            {/* Always show real text — the agent's intent. The auto-summary, when it resolves,
+                replaces it; we never sit on an indefinite "Generating…" placeholder. */}
+            {summary || agent.signed.provenance.intent}
           </p>
         )}
 

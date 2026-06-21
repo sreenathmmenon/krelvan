@@ -482,7 +482,7 @@ export default function Landing() {
       )}
 
       {/* ════════════ 1 · DARK HERO ════════════ */}
-      <section className="hero-dark" style={{ minHeight: "88vh", display: "flex", alignItems: "center", paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
+      <section className="hero-dark" style={{ minHeight: "clamp(620px, 80vh, 840px)", display: "flex", alignItems: "center", paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
         <div className="container" style={{ position: "relative", zIndex: 1, width: "100%" }}>
           <div className="hero-grid">
             {/* left — payoff + CTAs (42%) */}

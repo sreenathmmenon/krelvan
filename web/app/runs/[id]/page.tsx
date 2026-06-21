@@ -29,6 +29,26 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
 };
 
 
+// The model sometimes returns its explanation wrapped in JSON (e.g.
+// {"agent":"…","explanation":"…"}) or fenced in ```json. Unwrap it to the prose
+// so the flagship "Agent reasoning" surface never shows raw JSON or a dangling brace.
+function cleanExplanation(raw: string): string {
+  if (!raw) return raw;
+  let s = raw.trim();
+  // strip a leading ```json / ``` fence if present
+  const fence = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fence) s = fence[1].trim();
+  if (s.startsWith("{") || s.startsWith("[")) {
+    try {
+      const o = JSON.parse(s);
+      const text = typeof o === "string" ? o
+        : (o.explanation ?? o.summary ?? o.text ?? o.reasoning ?? o.result);
+      if (typeof text === "string" && text.trim()) return text.trim();
+    } catch { /* not valid JSON — fall through and show as-is */ }
+  }
+  return s;
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function RunPage({ params }: { params: Promise<{ id: string }> }) {
@@ -463,7 +483,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                 </div>
               </div>
               <div style={{ fontSize: 14, lineHeight: 1.75, color: "var(--ink)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                {explanation.explanation}
+                {cleanExplanation(explanation.explanation)}
               </div>
             </div>
           )}
@@ -623,7 +643,10 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               </div>
             </div>
           )}
+          {/* horizontal-scroll wrapper so the 4-col ledger never clips on narrow/mobile widths */}
           {events.length > 0 && (
+          <div style={{ overflowX: "auto" }}>
+            <div style={{ minWidth: 520 }}>
             <div style={{
               display: "grid", gridTemplateColumns: "40px 170px 1fr 110px",
               gap: "var(--s3)", padding: "var(--s2) var(--s4)",
@@ -634,8 +657,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               <span className="micro">detail</span>
               <span className="micro" style={{ textAlign: "right" }}>signature</span>
             </div>
-          )}
-          {events.map((e, i) => (
+            {events.map((e, i) => (
             <div key={e.id} style={{
               display: "grid", gridTemplateColumns: "40px 170px 1fr 110px",
               gap: "var(--s3)", padding: "var(--s3) var(--s4)",
@@ -656,7 +678,10 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                   </span>
                 : <span className="mono" style={{ textAlign: "right", fontSize: 11, color: "var(--ink-muted)" }}>{e.author.slice(0, 8)}</span>}
             </div>
-          ))}
+            ))}
+            </div>
+          </div>
+          )}
         </div>
       )}
 
@@ -774,12 +799,26 @@ function OutputPanel({ projection, manifest, run }: {
     }
   }
 
+  // Dedupe primary outputs by VALUE — a node often writes the same string to both .text and
+  // .result (e.g. a summarizer), which would otherwise render the same answer two/three times.
+  const seenValues = new Set<string>();
+  const dedupedOutputs: OutputBlock[] = [];
+  for (const o of outputs) {
+    const norm = o.value.trim();
+    if (seenValues.has(norm)) continue;
+    seenValues.add(norm);
+    dedupedOutputs.push(o);
+  }
+  outputs.length = 0;
+  outputs.push(...dedupedOutputs);
+
   // Scalar summary: all non-internal non-long keys grouped by node
   const scalarsByNode: Record<string, { key: string; value: string }[]> = {};
   for (const [k, v] of Object.entries(state)) {
     if (k.startsWith("_")) continue;
     const val = String(v);
     if (val.length > 300) continue; // long text already shown above
+    if (seenValues.has(val.trim())) continue; // already shown as a primary output above
     if (k.endsWith(".thought") || k.endsWith(".next") || k.endsWith(".body")) continue;
     const dot = k.indexOf(".");
     const nodeId = dot >= 0 ? k.slice(0, dot) : k;

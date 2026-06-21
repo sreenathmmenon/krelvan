@@ -46,31 +46,49 @@ export default function LoginPage() {
   if (!ready) return null;
 
   return (
-    <div style={{ maxWidth: 380, margin: "12vh auto 0", padding: "0 var(--s4)" }}>
-      <div className="card" style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
-        <div>
-          <div className="h2" style={{ color: "var(--ink)" }}>Sign in to Krelvan</div>
-          <p className="small" style={{ color: "var(--ink-soft)", margin: "var(--s2) 0 0" }}>
-            Own, run, and trust your own AI agents.
+    <div className="auth-split">
+      {/* left — branded proof panel (dark), matches the home hero identity */}
+      <aside className="auth-split__brand">
+        <div className="auth-split__brand-inner">
+          <div className="auth-split__wordmark display">Krelvan</div>
+          <h1 className="auth-split__tagline display">
+            AI agents that <span className="dark-teal">prove what they did</span>.
+          </h1>
+          <p className="auth-split__sub">
+            Every step an agent takes is signed into a tamper-evident ledger you own —
+            and can replay and verify yourself.
           </p>
+          <div className="auth-split__trust">
+            <span>Open source</span><span aria-hidden="true">·</span>
+            <span>Apache-2.0</span><span aria-hidden="true">·</span>
+            <span>Self-hosted</span>
+          </div>
         </div>
-        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: "var(--s3)" }}>
-          <label className="small" style={{ display: "flex", flexDirection: "column", gap: 4, color: "var(--ink-soft)" }}>
-            Username
-            <input className="input" value={username} onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username" autoFocus required />
-          </label>
-          <label className="small" style={{ display: "flex", flexDirection: "column", gap: 4, color: "var(--ink-soft)" }}>
-            Password
-            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password" required />
-          </label>
-          {error && <div className="small" style={{ color: "var(--danger)" }}>{error}</div>}
-          <button className="btn btn-primary" type="submit" disabled={busy || !username || !password}>
-            {busy ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-      </div>
+      </aside>
+
+      {/* right — the form */}
+      <main className="auth-split__form">
+        <div className="auth-split__card">
+          <div className="micro" style={{ marginBottom: "var(--s2)" }}>Welcome back</div>
+          <div className="h2" style={{ color: "var(--ink)", marginBottom: "var(--s5)" }}>Sign in to your workspace</div>
+          <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
+            <label className="small" style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink-soft)", fontWeight: 500 }}>
+              Username
+              <input className="input" value={username} onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username" autoFocus required />
+            </label>
+            <label className="small" style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink-soft)", fontWeight: 500 }}>
+              Password
+              <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password" required />
+            </label>
+            {error && <div className="state-error" role="alert" style={{ margin: 0 }}>{error}</div>}
+            <button className="btn btn-primary btn-lg" type="submit" disabled={busy} style={{ marginTop: "var(--s2)" }}>
+              {busy ? "Signing in…" : "Sign in →"}
+            </button>
+          </form>
+        </div>
+      </main>
     </div>
   );
 }

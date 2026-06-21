@@ -419,7 +419,7 @@ export default function ApprovalsPage() {
 
         {/* explanation panel — how the human-in-the-loop gate works */}
         {!loading && (
-          <div className="card" style={{ padding: "var(--s5)", marginTop: "var(--s7)", maxWidth: 720, background: "var(--brand-tint)", border: "1px solid var(--brand-ring)" }}>
+          <div className="card" style={{ padding: "var(--s5)", marginTop: "var(--s7)", maxWidth: 720, margin: "var(--s7) auto 0", background: "var(--brand-tint)", border: "1px solid var(--brand-ring)" }}>
             <div className="h3" style={{ marginBottom: "var(--s4)", color: "var(--brand)" }}>How an agent decides whether to pause</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
               {[
