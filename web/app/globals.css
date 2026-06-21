@@ -17,26 +17,26 @@
   /* ink — warm near-black */
   --ink:          #11201F;
   --ink-soft:     #4A5957;
-  --ink-muted:    #8A938F;
+  --ink-muted:    #5E6A66;  /* WCAG AA on white (5.6:1) and on --surface (5.3:1) — was #8A938F (3.2:1, failed) */
 
   /* borders — warm sand, not cool slate */
   --line:         #E7E3DC;
   --line-strong:  #D6D0C6;
 
   /* brand teal — primary actions, structure, health */
-  --brand:        #0E7C75;
+  --brand:        #0C726B;  /* AA on white (5.8:1) AND on tinted card bgs (5.1:1) — was #0E7C75 (4.47 on tints, failed) */
   --brand-hover:  #0A655F;
   --brand-tint:   #E6F4F2;
   --brand-ring:   rgba(14,124,117,0.14);
   --brand-ink:    #FFFFFF;
 
   /* amber — LIVE / ENERGY ONLY: running edges, active-node ring, ticking cost, running badge */
-  --live:         #D97706;
+  --live:         #B45309;  /* AA on --live-tint (4.6:1) and white (5.0:1) — was #D97706 (2.9:1, failed on tint) */
   --live-tint:    #FEF3E0;
   --live-ink:     #FFFFFF;
 
   /* semantic */
-  --ok:           #16794C;
+  --ok:           #15734A;  /* AA on white (5.9:1) and on --ok-tint (5.2:1) */
   --ok-tint:      #DCFCE7;
   --danger:       #B91C1C;
   --danger-tint:  #FEE2E2;
@@ -545,6 +545,9 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .hero-dark .dark-ink       { color: var(--dark-ink); }
 .hero-dark .dark-ink-soft  { color: var(--dark-ink-soft); }
 .hero-dark .dark-ink-muted { color: var(--dark-ink-muted); }
+/* Standalone teal accent for dark sections (prove-it band etc.) — not just inside
+   .hero-dark. Uses the AA-bright teal so small/underlined links stay readable. */
+.dark-teal { color: #3DC7BD; }
 .hero-dark .dark-teal      { color: var(--dark-brand-bright); }
 .hero-dark .micro          { color: var(--dark-brand-bright); }
 
@@ -1014,7 +1017,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   background: var(--brand-tint);
   border: 1px solid var(--brand-ring);
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-  font-size: 10.5px; line-height: 1.4; color: var(--ink-soft);
+  font-size: 11px; line-height: 1.4; color: var(--ink-soft);
   max-width: 100%;
 }
 .run-ledger-strip__seal { color: var(--brand); font-weight: 700; flex-shrink: 0; }
@@ -1022,7 +1025,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .run-ledger-strip__sep  { color: var(--ink-muted); }
 .run-ledger-strip__tag {
   color: var(--brand); font-weight: 600;
-  letter-spacing: .04em; text-transform: uppercase; font-size: 9.5px;
+  letter-spacing: .04em; text-transform: uppercase; font-size: 11px;
 }
 
 /* ── DASHBOARD (workspace) polish ─────────────────────────────────────────────
@@ -1816,7 +1819,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 }
 .cap-chip:hover { color: var(--ink); }
 .cap-chip[data-on="true"] { background: var(--brand-tint); color: var(--brand); border-color: var(--brand-ring); font-weight: 600; }
-.cap-chip__n { font-family: var(--font-mono); font-size: 10px; opacity: .7; }
+.cap-chip__n { font-family: var(--font-mono); font-size: 11px; opacity: .8; }
 
 /* rich catalog card */
 .cap-card__top { display: flex; gap: var(--s3); align-items: flex-start; }
@@ -2098,7 +2101,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 }
 .contrast-row__a { background: var(--surface-sunken); color: var(--ink-muted); border: 1px solid var(--line); }
 .contrast-row__b { background: var(--brand-tint, #E6F4F2); color: var(--ink); border: 1px solid var(--brand-ring, rgba(14,124,117,.22)); font-weight: 500; }
-.contrast-row__tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-muted); }
+.contrast-row__tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-muted); }
 .contrast-row__tag--on { color: var(--brand); }
 @media (max-width: 640px) { .contrast-row { grid-template-columns: 1fr; } }
 

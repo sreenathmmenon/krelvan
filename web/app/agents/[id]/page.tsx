@@ -335,7 +335,7 @@ function AgentGraphCanvas({
                   x={p.w / 2}
                   y={60}
                   textAnchor="middle"
-                  fontSize={9}
+                  fontSize={11}
                   fill="var(--brand)"
                   fontFamily="var(--font-mono)"
                   letterSpacing={0.3}
