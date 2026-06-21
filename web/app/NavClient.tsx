@@ -201,7 +201,7 @@ export default function NavClient() {
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M7 12.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zM11 11l3.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
             </svg>
-            <kbd>{isMac ? "⌘K" : "Ctrl K"}</kbd>
+            <kbd>{isMac ? <><span className="kbd-sym">⌘</span>K</> : "Ctrl K"}</kbd>
           </button>
           <a
             href="/dashboard"

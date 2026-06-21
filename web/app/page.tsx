@@ -41,16 +41,6 @@ const EXAMPLE_EDGES = [
 // watching, RAG support, a personal advisor, an LLM-wiki, influencer outreach with a
 // human-approval gate — installable in one click. This is the single highest-leverage
 // "show the product" surface; it was previously hidden on /capabilities.
-// Animate a number from 0 → n on first scroll-into-view (reduced-motion snaps to n).
-// CORRECTNESS OVER FLOURISH: on a product whose wedge is verifiable numbers, the
-// counter must NEVER display a value other than the true count — not even for a frame.
-// A 0→N ramp animation passes through wrong intermediate numbers (e.g. 41 on the way
-// to 56), and a screenshot taken mid-ramp makes the hero (instant) and this band
-// (ramping) look like they contradict each other. So we render the real number
-// immediately, with only a CSS fade-in for life — no number ramp.
-function CountUp({ n, className }: { n: number; className?: string }) {
-  return <span className={`${className ?? ""} countup-in`}>{n > 0 ? n : ""}</span>;
-}
 
 // Real integrations only — the recognizable connectors that actually ship in the registry.
 const CONNECTORS = ["Stripe", "GitHub", "Notion", "Slack", "Linear", "Shopify", "HubSpot", "Airtable", "Qdrant", "ElevenLabs", "Google Workspace", "Resend"];
@@ -122,16 +112,9 @@ function HeroStatStrip() {
 
 function ExampleGallery() {
   const [items, setItems] = useState<CatalogEntry[]>([]);
-  const [counts, setCounts] = useState<{ total: number; agents: number; mcp: number }>({ total: 0, agents: 0, mcp: 0 });
   useEffect(() => {
     void loadRegistry().then(r => {
-      const templates = r.entries.filter(e => e.kind === "template");
-      setItems(templates.slice(0, 9));
-      setCounts({
-        total: r.entries.length,
-        agents: templates.length,
-        mcp: r.entries.filter(e => e.kind === "mcp").length,
-      });
+      setItems(r.entries.filter(e => e.kind === "template").slice(0, 9));
     }).catch(() => {});
   }, []);
   if (items.length === 0) return null;
@@ -146,16 +129,9 @@ function ExampleGallery() {
           No hosted black box. Every entry is an inspectable file in a public registry. Install any
           in one click and watch it run — every step signed, the risky ones pausing for your approval.
         </p>
-        {/* numbers-forward proof band — real counts from the live registry, animated count-up */}
-        <div className="home-stats">
-          <Link href="/capabilities" className="home-stat"><CountUp n={counts.total} className="home-stat__n mono" /><span className="home-stat__l">capabilities</span></Link>
-          <span className="home-stat__div" aria-hidden="true" />
-          <Link href="/capabilities" className="home-stat"><CountUp n={counts.agents} className="home-stat__n mono" /><span className="home-stat__l">ready-to-run agents</span></Link>
-          <span className="home-stat__div" aria-hidden="true" />
-          <Link href="/capabilities?install=&kind=mcp" className="home-stat"><CountUp n={counts.mcp} className="home-stat__n mono" /><span className="home-stat__l">MCP connectors</span></Link>
-          <span className="home-stat__div" aria-hidden="true" />
-          <span className="home-stat"><span className="home-stat__n mono">7</span><span className="home-stat__l">LLM providers</span></span>
-        </div>
+        {/* The depth numbers live in the hero stat strip above the fold; this section is
+            about BROWSING, so it leads with the real integrations + the example agents
+            instead of repeating the same four counts verbatim (council: earn the space). */}
         {/* real integrations — only connectors that actually ship in the registry */}
         <ConnectorStrip />
         <div className="home-examples">

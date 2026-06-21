@@ -2469,3 +2469,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 
 /* runs table per-row proof badge — reinforces the signed-ledger wedge in the audit trail */
 .runs-proof { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--ok); }
+
+/* ⌘ (U+2318) isn't in the self-hosted mono/display fonts → renders as tofu. Render the
+   symbol with a system-font stack that always has it; the rest of the kbd stays on-brand. */
+.kbd-sym { font-family: -apple-system, "SF Pro Text", "Segoe UI Symbol", system-ui, sans-serif; }
