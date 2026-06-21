@@ -207,6 +207,7 @@ export default function Dashboard() {
     // reads as an intentional chart, never a broken/no-data state.
     return counts.map(c => ({ h: c > 0 ? Math.max(0.34, c / max) : 0.18, empty: c === 0 }));
   })();
+  const sparkActiveDays = sparkBuckets.filter(b => !b.empty).length;
   const runsThisWeek = (() => {
     const now = Date.now(), window = 6 * 86_400_000;
     return runs.filter(r => Number.isFinite(r.createdAt) && now - r.createdAt <= window).length;
@@ -437,15 +438,22 @@ export default function Dashboard() {
                   <span className="stat-label">{s.label}</span>
                 </div>
               ))}
-              <div className="stat-cell stat-cell--spark">
-                <div className="stat-cell__row">
-                  <span className="stat-value">{runsThisWeek}</span>
-                  <div className="stat-spark" aria-hidden="true">
-                    {sparkBuckets.map((b, i) => (
-                      <span key={i} className={b.empty ? "is-empty" : ""} style={{ height: `${Math.round(b.h * 100)}%`, animationDelay: `${i * 60}ms` }} />
-                    ))}
+              <div className="stat-cell">
+                {/* A single-bar sparkline on near-zero data reads as a rendering glitch.
+                    Only show the chart once there's enough activity to BE a chart (>=2
+                    active days); otherwise show a clean number like the sibling stats. */}
+                {sparkActiveDays >= 2 ? (
+                  <div className="stat-cell__row">
+                    <span className="stat-value">{runsThisWeek}</span>
+                    <div className="stat-spark" aria-hidden="true">
+                      {sparkBuckets.map((b, i) => (
+                        <span key={i} className={b.empty ? "is-empty" : ""} style={{ height: `${Math.round(b.h * 100)}%`, animationDelay: `${i * 60}ms` }} />
+                      ))}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <span className="stat-value">{runsThisWeek}</span>
+                )}
                 <span className="stat-label">last 6 days</span>
               </div>
             </div>

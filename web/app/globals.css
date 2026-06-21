@@ -2120,12 +2120,12 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .cta-lane__time { color: var(--dark-brand-bright); font-size: 12px; font-weight: 600; letter-spacing: .04em; }
 .cta-lane__title { color: var(--dark-ink); font-weight: 650; font-size: 18px; }
 .cta-lane__desc { color: var(--dark-ink-soft); font-size: 13.5px; line-height: 1.55; margin: 0; flex: 1; }
-.cta-lane .install-cmd { max-width: 100%; margin: 0; align-items: flex-start; }
-/* In the narrow final-CTA lane the one-liner can't fit on a single row — a
-   horizontal-scroll code box reads as a truncated command ("git clone https:…").
-   Let it wrap so the FULL command is visible, and top-align the Copy button. */
-.cta-lane .install-cmd__code { white-space: normal; overflow-x: visible; word-break: normal; overflow-wrap: anywhere; font-size: 13px; }
-.cta-lane .install-cmd__copy { align-self: flex-start; }
+.cta-lane .install-cmd { max-width: 100%; margin: 0; align-items: center; }
+/* Keep the clone command on ONE logical line (mid-token 'github.co / m' wrapping reads
+   as broken). Horizontal-scroll if it overflows; the Copy button carries the full string. */
+.cta-lane .install-cmd__code { white-space: nowrap; overflow-x: auto; word-break: normal; overflow-wrap: normal; font-size: 12.5px; scrollbar-width: none; }
+.cta-lane .install-cmd__code::-webkit-scrollbar { display: none; }
+.cta-lane .install-cmd__copy { align-self: center; }
 .cta-lane .btn { align-self: flex-start; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2476,3 +2476,9 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 /* ⌘ (U+2318) isn't in the self-hosted mono/display fonts → renders as tofu. Render the
    symbol with a system-font stack that always has it; the rest of the kbd stays on-brand. */
 .kbd-sym { font-family: -apple-system, "SF Pro Text", "Segoe UI Symbol", system-ui, sans-serif; }
+
+/* Agent-card Delete: a quiet ghost action so the primary 'Run now' clearly dominates;
+   only escalates to red on hover / when confirming (council: destructive ≠ primary weight). */
+.agent-card__delete { background: transparent; border: 1px solid var(--line); color: var(--ink-muted); }
+.agent-card__delete:hover:not(:disabled) { border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); background: var(--danger-tint); }
+.agent-card__delete.is-confirming { border-color: var(--danger); color: var(--danger); background: var(--danger-tint); font-weight: 600; }

@@ -620,7 +620,7 @@ export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
             <button
               onClick={handleDeleteClick}
               disabled={deleting || status === "running"}
-              className="btn btn-sm btn-danger"
+              className={`btn btn-sm agent-card__delete${confirmDelete ? " is-confirming" : ""}`}
               style={{ minWidth: 60 }}
             >
               {deleting ? "…" : confirmDelete ? "Sure?" : "Delete"}
