@@ -321,7 +321,8 @@ function DiscoverTab({ catalog, q, query, setQuery, installedNames, autonomy, on
       )}
 
       {/* kind facets */}
-      <div className="cap-facets" role="tablist" aria-label="Filter by kind">
+      <div className="cap-facets" role="tablist" aria-label="Filter by type">
+        <span className="cap-axis-label micro" aria-hidden="true">Type</span>
         {KIND_FACETS.map(f => {
           const n = catalog.filter(e => f.test(e) && (!q || `${e.name} ${e.title} ${e.oneLiner} ${e.category}`.toLowerCase().includes(q))).length;
           if (f.key !== "all" && n === 0) return null;
@@ -344,7 +345,8 @@ function DiscoverTab({ catalog, q, query, setQuery, installedNames, autonomy, on
       {/* category chips */}
       {categories.length > 1 && (
         <div className="cap-chips">
-          <button className="cap-chip" data-on={!cat} onClick={() => setCat(null)}>All <span className="cap-chip__n">{base.length}</span></button>
+          <span className="cap-axis-label micro" aria-hidden="true">Category</span>
+          <button className="cap-chip" data-on={!cat} onClick={() => setCat(null)}>All categories <span className="cap-chip__n">{base.length}</span></button>
           {categories.map(([c, n]) => (
             <button key={c} className="cap-chip" data-on={cat === c} onClick={() => setCat(cat === c ? null : c)}>{c} <span className="cap-chip__n">{n}</span></button>
           ))}

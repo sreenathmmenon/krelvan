@@ -203,7 +203,9 @@ export default function Dashboard() {
       if (idx >= 0 && idx < 6) counts[idx]! += 1;
     }
     const max = Math.max(1, ...counts);
-    return counts.map(c => Math.max(0.12, c / max));
+    // empty days render as a visible low "ghost" bar (not a dot) so a sparse week
+    // reads as an intentional chart, never a broken/no-data state.
+    return counts.map(c => ({ h: c > 0 ? Math.max(0.34, c / max) : 0.18, empty: c === 0 }));
   })();
 
   // ── shared composer markup — the SAME build-box used on the homepage, for a
@@ -422,9 +424,9 @@ export default function Dashboard() {
           <div className="container" style={{ paddingBottom: "var(--s4)" }}>
             <div className="stat-strip">
               {[
-                { label: "agents",      value: String(agents.length), live: false },
+                { label: agents.length === 1 ? "agent" : "agents", value: String(agents.length), live: false },
                 { label: "running now", value: String(running),       live: running > 0 },
-                { label: "total runs",  value: String(runs.length),   live: false },
+                { label: runs.length === 1 ? "total run" : "total runs", value: String(runs.length), live: false },
               ].map(s => (
                 <div key={s.label} className={`stat-cell${s.live ? " is-live" : ""}`}>
                   <span className="stat-value">{s.value}</span>
@@ -433,8 +435,8 @@ export default function Dashboard() {
               ))}
               <div className="stat-cell">
                 <div className="stat-spark" aria-hidden="true">
-                  {sparkBuckets.map((h, i) => (
-                    <span key={i} style={{ height: `${Math.round(h * 100)}%`, animationDelay: `${i * 60}ms` }} />
+                  {sparkBuckets.map((b, i) => (
+                    <span key={i} className={b.empty ? "is-empty" : ""} style={{ height: `${Math.round(b.h * 100)}%`, animationDelay: `${i * 60}ms` }} />
                   ))}
                 </div>
                 <span className="stat-label">last 6 days</span>

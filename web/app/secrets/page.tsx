@@ -65,16 +65,17 @@ export default function SecretsPage() {
       {/* header */}
       <div style={{ marginBottom: "var(--s6)" }}>
         <p className="micro" style={{ marginBottom: "var(--s2)" }}>Connections</p>
-        <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Secrets</h1>
+        <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Model &amp; secrets</h1>
         <p className="soft body-lg" style={{ margin: 0, maxWidth: "62ch" }}>
-          Your API keys and deploy hooks — stored encrypted on <em>your</em> instance and used
-          only to let your agents act in <em>your</em> accounts. A capability that needs a secret
-          (like deploying to your Vercel) reads it from here. Values are never shown in full again.
+          The language model that powers your agents, and the API keys &amp; deploy hooks they use —
+          all stored encrypted on <em>your</em> instance so agents act only in <em>your</em> accounts.
+          Values are never shown in full again.
         </p>
       </div>
 
       {/* Model — the LLM that builds and powers agents. Lives here so a self-hoster can
           wire up a provider from the UI instead of editing env vars. */}
+      <p className="micro" style={{ marginBottom: "var(--s3)" }}>Language model</p>
       <ModelSection />
 
       {error && (
@@ -133,7 +134,7 @@ export default function SecretsPage() {
 
           {/* Set secrets */}
           <section style={{ marginTop: "var(--s7)" }}>
-            <p className="micro" style={{ marginBottom: "var(--s3)" }}>Your secrets</p>
+            <p className="micro" style={{ marginBottom: "var(--s3)" }}>Secrets you&apos;ve saved</p>
             {secrets.length === 0 ? (
               <div className="state-empty" style={{ padding: "var(--s8) var(--s6)", gap: "var(--s3)" }}>
                 <div
@@ -149,10 +150,10 @@ export default function SecretsPage() {
                     <path d="M11.2 11.2L20 20M16 16l2-2M18.5 18.5l2-2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
                   </svg>
                 </div>
-                <div className="h3" style={{ color: "var(--ink)" }}>No secrets yet</div>
-                <div className="small soft" style={{ maxWidth: "44ch" }}>
-                  When you install a capability that talks to your accounts — a deploy hook,
-                  an API key — add the secret here and your agents can use it.
+                <div className="h3" style={{ color: "var(--ink)" }}>No secrets saved yet</div>
+                <div className="small soft" style={{ maxWidth: "46ch" }}>
+                  The hooks your installed capabilities need are listed above — set one to save
+                  it here, encrypted on your instance. Saved secrets never leave your machine in full.
                 </div>
               </div>
             ) : (

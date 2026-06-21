@@ -985,14 +985,15 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   100% { box-shadow: 0 0 0 0 rgba(217,119,6,0); opacity: 1; }
 }
 /* 6-bar mini volume chart for the stat strip */
-.stat-spark { display: flex; align-items: flex-end; gap: 3px; height: 26px; }
+.stat-spark { display: flex; align-items: flex-end; gap: 4px; height: 26px; padding-bottom: 3px; border-bottom: 1px solid var(--line); }
 .stat-spark span {
-  width: 5px; border-radius: 2px 2px 0 0;
-  background: var(--brand); opacity: .55;
+  width: 6px; border-radius: 2px 2px 0 0;
+  background: var(--brand); opacity: .7;
   transform-origin: bottom;
   animation: spark-rise 420ms var(--ease) backwards;
 }
-.stat-spark span:last-child { opacity: 1; }
+.stat-spark span.is-empty { background: var(--line-strong); opacity: .5; }
+.stat-spark span:last-child:not(.is-empty) { opacity: 1; }
 @keyframes spark-rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 
 /* ── INTERACTIVE ZONE — the embedded live builder, visually contained ─────────*/
@@ -1811,6 +1812,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 
 /* facets + sort */
 .cap-facets { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; margin-bottom: var(--s4); }
+.cap-axis-label { color: var(--ink-muted); margin-right: var(--s2); flex-shrink: 0; }
 .cap-facet {
   height: 32px; padding: 0 var(--s3); border-radius: var(--r-pill);
   border: 1px solid var(--line); background: var(--surface); cursor: pointer;

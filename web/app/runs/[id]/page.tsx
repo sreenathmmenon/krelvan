@@ -465,7 +465,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           </div>
           <div className="run-seal__chips">
             <span className="run-seal__chip"><span className="mono">{verification.signedEvents}/{verification.runEvents}</span> events signed</span>
-            <span className="run-seal__chip"><span className="mono">{verification.ledgerEvents}</span>-link hash chain intact</span>
+            <span className="run-seal__chip"><span className="mono">{verification.ledgerEvents}-link</span> hash chain intact</span>
             <span className="run-seal__chip mono">{verification.algorithm}</span>
           </div>
           <div className="run-seal__actions">
