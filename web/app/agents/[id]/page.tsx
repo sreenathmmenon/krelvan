@@ -223,6 +223,11 @@ function AgentGraphCanvas({
         background: "var(--graph-bg)",
         overflow: "auto",
         position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: nodes.length <= 2 ? 200 : 280,
+        padding: "var(--s5)",
       }}
     >
       {/* dot-grid background */}

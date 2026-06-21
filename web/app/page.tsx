@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -87,6 +87,36 @@ function ConnectorStrip() {
         {CONNECTORS.map(c => <span key={c} className="connector-chip mono">{c}</span>)}
         <Link href="/capabilities?install=&kind=mcp" className="connector-chip connector-chip--more mono">+13 more →</Link>
       </div>
+    </div>
+  );
+}
+
+// Hero stat strip — surfaces the depth (real registry counts) loudly under the hero
+// CTAs instead of whispering "7 LLM providers" in micro-copy. Numbers are live.
+function HeroStatStrip() {
+  const [c, setC] = useState<{ total: number; agents: number; mcp: number } | null>(null);
+  useEffect(() => {
+    void loadRegistry().then(r => setC({
+      total: r.entries.length,
+      agents: r.entries.filter(e => e.kind === "template").length,
+      mcp: r.entries.filter(e => e.kind === "mcp").length,
+    })).catch(() => {});
+  }, []);
+  const stats = [
+    { n: c ? String(c.total) : "—", l: "capabilities" },
+    { n: c ? String(c.agents) : "—", l: "ready-to-run agents" },
+    { n: c ? String(c.mcp) : "—", l: "MCP connectors" },
+    { n: "7", l: "LLM providers" },
+    { n: "100%", l: "offline-verifiable" },
+  ];
+  return (
+    <div className="hero-statstrip" aria-label="what ships with Krelvan">
+      {stats.map((s) => (
+        <div key={s.l} className="hero-statstrip__cell">
+          <span className="hero-statstrip__n mono">{s.n}</span>
+          <span className="hero-statstrip__l">{s.l}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -519,7 +549,7 @@ export default function Landing() {
                 </button>
                 <a href="https://github.com/sreenathmmenon/krelvan" className="btn btn-dark-ghost btn-lg" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)" }}>
                   <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M8 1.6a6.4 6.4 0 0 0-2 12.5c.3.06.43-.14.43-.3v-1.1c-1.8.4-2.2-.85-2.2-.85-.3-.75-.72-.95-.72-.95-.6-.4.04-.4.04-.4.65.05 1 .67 1 .67.58 1 1.5.7 1.9.55.06-.43.23-.7.42-.87-1.45-.16-2.97-.72-2.97-3.2 0-.7.25-1.3.66-1.74-.07-.16-.29-.82.06-1.7 0 0 .54-.18 1.78.66a6.1 6.1 0 0 1 3.24 0c1.24-.84 1.78-.66 1.78-.66.35.88.13 1.54.06 1.7.41.44.66 1.04.66 1.74 0 2.49-1.52 3.04-2.97 3.2.23.2.44.6.44 1.2v1.78c0 .17.12.37.44.3A6.4 6.4 0 0 0 8 1.6z"/></svg>
-                  Read the source
+                  Star on GitHub
                 </a>
               </div>
               <div className="hero-trustline">
@@ -531,6 +561,7 @@ export default function Landing() {
                 <span className="hero-trustline__sep" aria-hidden="true" />
                 <span className="hero-trustline__item">runs on your own box</span>
               </div>
+              <HeroStatStrip />
             </div>
 
             {/* right — the LIVE verifier, above the fold. The hook is the proof, not a

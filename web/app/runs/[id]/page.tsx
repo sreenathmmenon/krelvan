@@ -444,83 +444,43 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         </div>
       )}
 
-      {/* auto-explanation banner — shown above tabs, no click required */}
-      {(explaining || explanation || explainError) && isTerminalStatus && (
-        <div style={{
-          marginTop: "var(--s5)",
-          padding: "var(--s4) var(--s5)",
-          background: explainError && !explanation ? "var(--surface)" : explanation ? "var(--surface)" : "var(--brand-tint)",
-          border: `1px solid ${explanation ? "var(--line)" : explainError ? "var(--line)" : "var(--brand-ring)"}`,
-          borderRadius: "var(--r)",
-          boxShadow: explanation ? "var(--shadow-sm)" : "none",
-          borderLeft: explanation || explainError ? undefined : "3px solid var(--brand)",
-        }}>
-          {explaining && !explanation && (
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", color: "var(--brand)", fontSize: 13, fontWeight: 500 }}>
-              <span className="spinner" aria-hidden="true" />
-              Reading every step and explaining this run in plain English…
-            </div>
-          )}
-          {explanation && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--s3)" }}>
-                <span className="micro" style={{ color: "var(--brand)", display: "inline-flex", alignItems: "center", gap: "var(--s2)" }}>
-                  <Glyph kind="spark" size={13} color="var(--brand)" /> Agent reasoning
-                </span>
-                <div style={{ display: "flex", alignItems: "center", gap: "var(--s4)" }}>
-                  <span className="mono micro" style={{ color: "var(--ink-muted)" }}>{timeAgo(explanation.generatedAt)}</span>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    disabled={explaining}
-                    onClick={() => {
-                      setExplaining(true);
-                      setExplainError(null);
-                      void explainRun(id).then(res => setExplanation(res)).catch(err => setExplainError((err as Error).message)).finally(() => setExplaining(false));
-                    }}
-                  >
-                    {explaining ? "Generating…" : "Regenerate"}
-                  </button>
-                </div>
-              </div>
-              <div style={{ fontSize: 14, lineHeight: 1.75, color: "var(--ink)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                {cleanExplanation(explanation.explanation)}
-              </div>
-            </div>
-          )}
-          {explainError && !explanation && (
-            <div className="state-error" style={{ alignItems: "center", gap: "var(--s3)" }}>
-              <Glyph kind="warn" size={16} />
-              <span style={{ flex: 1 }}>{explainError}</span>
-              <button className="btn btn-secondary btn-sm" onClick={() => {
-                setExplaining(true); setExplainError(null);
-                void explainRun(id).then(res => setExplanation(res)).catch(err => setExplainError((err as Error).message)).finally(() => setExplaining(false));
-              }}>Retry</button>
-            </div>
-          )}
-        </div>
-      )}
+      {/* The plain-English explanation auto-generates and lives in the Explain tab —
+          it no longer renders as a second banner here, so the proof seal above is the
+          page's single, undisputed top anchor (council: collapse the redundant strip). */}
 
-      {/* ── tamper-proof seal — the #1 wedge, auto-verified on load, always visible ── */}
+      {/* ── tamper-proof seal — the #1 wedge: the LOUDEST element on the page.
+             Auto-verified on load, facts broken into stat-chips, verify animation. ── */}
       {verification?.ok && (
-        <div className="run-seal" style={{ cursor: "default" }}>
-          <Glyph kind="seal" size={15} color="var(--ok)" />
-          {/* HONESTY: HMAC (default) is tamper-EVIDENT but repudiable; only Ed25519 is non-repudiable. */}
-          <span className="run-seal__title">{verification.nonRepudiable ? "Tamper-proof · non-repudiable" : "Tamper-evident"}</span>
-          <span className="run-seal__detail">
-            <span className="mono">{verification.signedEvents}/{verification.runEvents}</span> agent events signed · <span className="mono">{verification.ledgerEvents}</span>-link hash chain verified end-to-end · {verification.nonRepudiable ? "Ed25519 — anyone can verify from the public key" : "HMAC-SHA256 — verifiable on this instance"}
-          </span>
-          <a
-            href={`/proxy/api/runs/${id}/export`}
-            download
-            className="run-seal__cta"
-            style={{ textDecoration: "none" }}
-            title={verification.nonRepudiable
-              ? "Download a signed record anyone can verify offline with `npx krelvan verify`"
-              : "Download the signed record (HMAC is verifiable on this instance)"}
-          >
-            Download signed record ↓
-          </a>
-          <a href="#tab-timeline" onClick={() => setTab("timeline")} className="run-seal__cta" style={{ textDecoration: "none" }}>View chain →</a>
+        <div className="run-seal run-seal--anchor">
+          <div className="run-seal__head">
+            <span className="run-seal__shield" aria-hidden="true">
+              <Glyph kind="seal" size={18} color="#fff" />
+            </span>
+            <div className="run-seal__headtext">
+              {/* HONESTY: HMAC (default) is tamper-EVIDENT but repudiable; only Ed25519 is non-repudiable. */}
+              <span className="run-seal__title">{verification.nonRepudiable ? "Tamper-proof · non-repudiable" : "Tamper-evident"}</span>
+              <span className="run-seal__sub">{verification.nonRepudiable ? "Ed25519 — anyone can verify this run offline from the public key" : "HMAC-SHA256 — verifiable on this instance"}</span>
+            </div>
+            <span className="run-seal__verified" aria-live="polite">✓ Verified</span>
+          </div>
+          <div className="run-seal__chips">
+            <span className="run-seal__chip"><span className="mono">{verification.signedEvents}/{verification.runEvents}</span> events signed</span>
+            <span className="run-seal__chip"><span className="mono">{verification.ledgerEvents}</span>-link hash chain intact</span>
+            <span className="run-seal__chip mono">{verification.algorithm}</span>
+          </div>
+          <div className="run-seal__actions">
+            <a
+              href={`/proxy/api/runs/${id}/export`}
+              download
+              className="run-seal__cta run-seal__cta--primary"
+              title={verification.nonRepudiable
+                ? "Download a signed record anyone can verify offline with `npx krelvan verify`"
+                : "Download the signed record (HMAC is verifiable on this instance)"}
+            >
+              Download signed record ↓
+            </a>
+            <a href="#tab-timeline" onClick={() => setTab("timeline")} className="run-seal__cta">View the chain →</a>
+          </div>
         </div>
       )}
       {verification && !verification.ok && (

@@ -942,6 +942,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   gap: var(--s7);
   align-items: start;
 }
+.footer-cols ul { margin: 0; padding: 0; }
 .footer-cols a:hover { color: var(--brand); }
 @media (max-width: 640px) {
   .footer-cols { grid-template-columns: 1fr 1fr; gap: var(--s6); }
@@ -1892,6 +1893,48 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .run-seal__detail { color: var(--ink-soft); font-size: 13px; flex: 1; min-width: 200px; }
 .run-seal__cta { color: var(--ok); font-weight: 600; font-size: 13px; flex-shrink: 0; }
 
+/* ── Anchor seal: the proof is the LOUDEST element on the proof page ── */
+.run-seal--anchor {
+  display: block; margin-top: var(--s5); padding: var(--s5);
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ok) 13%, var(--surface)), color-mix(in srgb, var(--ok) 7%, var(--surface)));
+  border: 1.5px solid color-mix(in srgb, var(--ok) 45%, transparent);
+  box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 14px 40px -22px color-mix(in srgb, var(--ok) 70%, transparent);
+}
+.run-seal--anchor:hover { background: linear-gradient(180deg, color-mix(in srgb, var(--ok) 13%, var(--surface)), color-mix(in srgb, var(--ok) 7%, var(--surface))); }
+.run-seal__head { display: flex; align-items: center; gap: var(--s3); }
+.run-seal__shield {
+  display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0;
+  border-radius: 12px; background: var(--ok);
+  box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--ok) 80%, transparent);
+  animation: seal-pop 480ms var(--ease) both;
+}
+@keyframes seal-pop { 0% { transform: scale(.6); opacity: 0; } 60% { transform: scale(1.08); } 100% { transform: scale(1); opacity: 1; } }
+.run-seal__headtext { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.run-seal--anchor .run-seal__title { font-size: 17px; font-weight: 750; letter-spacing: -0.01em; }
+.run-seal__sub { font-size: 12.5px; color: var(--ink-soft); }
+.run-seal__verified {
+  flex-shrink: 0; font-size: 12px; font-weight: 700; letter-spacing: .03em;
+  color: #fff; background: var(--ok); padding: 4px 12px; border-radius: var(--r-pill);
+  animation: verified-in 520ms var(--ease) 220ms both;
+}
+@keyframes verified-in { from { opacity: 0; transform: translateX(6px); } to { opacity: 1; transform: none; } }
+.run-seal__chips { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s4); }
+.run-seal__chip {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500;
+  color: var(--ok); background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--ok) 28%, transparent);
+  padding: 5px 11px; border-radius: var(--r-pill);
+}
+.run-seal__chip .mono { font-weight: 700; }
+.run-seal__actions { display: flex; flex-wrap: wrap; gap: var(--s4); margin-top: var(--s4); align-items: center; }
+.run-seal__cta--primary {
+  background: var(--ok); color: #fff; padding: 8px 16px; border-radius: var(--r);
+  box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--ok) 80%, transparent);
+}
+.run-seal__cta--primary:hover { filter: brightness(1.06); }
+@media (prefers-reduced-motion: reduce) { .run-seal__shield, .run-seal__verified { animation: none; } }
+
 /* ───────────────────── Replay CTA (run page → live canvas scrubber) ───────────────────── */
 .replay-cta {
   display: flex; align-items: center; gap: var(--s4);
@@ -2100,6 +2143,16 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 }
 
 /* ───────────────────── Hero trust line + framework contrast ───────────────────── */
+/* hero stat strip — surfaces depth loudly under the CTAs (numbers > micro-copy) */
+.hero-statstrip {
+  display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--s5) var(--s6);
+  margin-top: var(--s6); padding-top: var(--s6);
+  border-top: 1px solid var(--dark-line, rgba(255,255,255,.1));
+}
+.hero-statstrip__cell { display: flex; flex-direction: column; align-items: flex-start; }
+.hero-statstrip__n { font-size: 24px; font-weight: 700; color: var(--dark-ink, #F4F2EC); line-height: 1.05; }
+.hero-statstrip__l { font-size: 11.5px; color: var(--dark-ink-soft, #C8C4BC); letter-spacing: .01em; margin-top: 3px; }
+@media (max-width: 560px) { .hero-statstrip__n { font-size: 20px; } }
 .hero-trustline { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; margin-top: var(--s6); }
 .hero-trustline__item {
   display: inline-flex; align-items: center; gap: 6px; color: var(--dark-ink-soft, #C8C4BC);

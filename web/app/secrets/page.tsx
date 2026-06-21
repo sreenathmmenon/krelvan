@@ -119,7 +119,7 @@ export default function SecretsPage() {
                         {m.others.length > 0 && <span> +{m.others.length} more</span>}
                       </div>
                     </div>
-                    <button className="btn btn-sm btn-primary" onClick={() => setPrefillName(m.name)}>
+                    <button className="btn btn-sm btn-secondary" onClick={() => setPrefillName(m.name)}>
                       Set this secret
                     </button>
                   </div>
