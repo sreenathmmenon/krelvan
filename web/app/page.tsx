@@ -42,39 +42,14 @@ const EXAMPLE_EDGES = [
 // human-approval gate — installable in one click. This is the single highest-leverage
 // "show the product" surface; it was previously hidden on /capabilities.
 // Animate a number from 0 → n on first scroll-into-view (reduced-motion snaps to n).
+// CORRECTNESS OVER FLOURISH: on a product whose wedge is verifiable numbers, the
+// counter must NEVER display a value other than the true count — not even for a frame.
+// A 0→N ramp animation passes through wrong intermediate numbers (e.g. 41 on the way
+// to 56), and a screenshot taken mid-ramp makes the hero (instant) and this band
+// (ramping) look like they contradict each other. So we render the real number
+// immediately, with only a CSS fade-in for life — no number ramp.
 function CountUp({ n, className }: { n: number; className?: string }) {
-  const [val, setVal] = useState(0);
-  const ref = useRef<HTMLSpanElement>(null);
-  const done = useRef(false);
-  useEffect(() => {
-    if (n <= 0) { setVal(0); return; }
-    // Correctness first: the displayed number must always equal the real count. The
-    // count-up is a progressive enhancement layered on top — it must never be able to
-    // leave the value stuck at 0 (e.g. when the band is above the fold and the
-    // IntersectionObserver's first callback lands before the registry data arrives).
-    setVal(n);
-    const el = ref.current;
-    if (!el || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    if (done.current) return;
-    const animate = () => {
-      if (done.current) return;
-      done.current = true;
-      const start = performance.now(), dur = 850;
-      const tick = (t: number) => {
-        const p = Math.min(1, (t - start) / dur);
-        const eased = 1 - Math.pow(1 - p, 3);
-        setVal(Math.round(eased * n));
-        if (p < 1) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    };
-    const io = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting) animate();
-    }, { threshold: 0.4 });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [n]);
-  return <span ref={ref} className={className}>{val}</span>;
+  return <span className={`${className ?? ""} countup-in`}>{n > 0 ? n : ""}</span>;
 }
 
 // Real integrations only — the recognizable connectors that actually ship in the registry.
