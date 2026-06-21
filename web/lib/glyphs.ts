@@ -36,6 +36,11 @@ const P = {
   shield: "M8 1.6l5 1.8v3.4c0 3.2-2.1 5.4-5 6.2-2.9-.8-5-3-5-6.2V3.4L8 1.6z",
   box: "M8 1.8l5.5 3v6.4L8 14.2l-5.5-3V4.8L8 1.8zM2.6 4.9L8 7.9l5.4-3M8 7.9v6.3",
   pen: "M11 2.5l2.5 2.5-8 8L2.5 14l1-3 7.5-7.5z",
+  // distinct shapes so recognizable services don't all collapse to the generic globe
+  crawl: "M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM8 2v2M8 12v2M2 8h2M12 8h2M3.8 3.8l1.4 1.4M10.8 10.8l1.4 1.4M12.2 3.8l-1.4 1.4M5.2 10.8l-1.4 1.4", // firecrawl / scrape — radial crawler
+  cloud: "M5 11.5h6.2a2.7 2.7 0 0 0 .3-5.4 3.8 3.8 0 0 0-7.2-1A2.9 2.9 0 0 0 5 11.5z",   // cloudflare / cloud egress
+  sun: "M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3", // weather
+  grid: "M2.5 2.5h4v4h-4zM9.5 2.5h4v4h-4zM2.5 9.5h4v4h-4zM9.5 9.5h4v4h-4z",            // google workspace / suite
 };
 
 // Capability/connector name → glyph. Names are matched by substring (case-insensitive) so
@@ -49,7 +54,7 @@ const NAME_GLYPHS: { match: string; glyph: keyof typeof P }[] = [
   { match: "netlify", glyph: "rocket" },
   { match: "railway", glyph: "rocket" },
   { match: "render", glyph: "rocket" },
-  { match: "cloudflare", glyph: "globe" },
+  { match: "cloudflare", glyph: "cloud" },
   { match: "wiki", glyph: "doc" },
   { match: "rag", glyph: "brain" },
   { match: "recall", glyph: "brain" },
@@ -68,8 +73,8 @@ const NAME_GLYPHS: { match: string; glyph: keyof typeof P }[] = [
   { match: "http", glyph: "globe" },
   { match: "web", glyph: "globe" },
   { match: "fetch", glyph: "globe" },
-  { match: "scrape", glyph: "globe" },
-  { match: "firecrawl", glyph: "globe" },
+  { match: "scrape", glyph: "crawl" },
+  { match: "firecrawl", glyph: "crawl" },
   { match: "search", glyph: "search" },
   { match: "serp", glyph: "search" },
   { match: "exa", glyph: "search" },
@@ -77,7 +82,7 @@ const NAME_GLYPHS: { match: string; glyph: keyof typeof P }[] = [
   { match: "tavily", glyph: "search" },
   { match: "perplexity", glyph: "search" },
   { match: "wikipedia", glyph: "doc" },
-  { match: "weather", glyph: "globe" },
+  { match: "weather", glyph: "sun" },
   { match: "hn", glyph: "doc" },
   { match: "notion", glyph: "doc" },
   { match: "airtable", glyph: "db" },
@@ -95,7 +100,8 @@ const NAME_GLYPHS: { match: string; glyph: keyof typeof P }[] = [
   { match: "elevenlabs", glyph: "phone" },
   { match: "voice", glyph: "phone" },
   { match: "filesystem", glyph: "folder" },
-  { match: "google", glyph: "globe" },
+  { match: "google", glyph: "grid" },
+  { match: "workspace", glyph: "grid" },
   { match: "linear", glyph: "flag" },
   { match: "price", glyph: "dollar" },
   { match: "monitor", glyph: "flag" },
