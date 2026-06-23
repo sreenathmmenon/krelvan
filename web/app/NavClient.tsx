@@ -138,7 +138,7 @@ export default function NavClient() {
         {/* left — wordmark + desktop links */}
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s7)", minWidth: 0 }}>
           <Link href="/" aria-label="Krelvan — home" style={{
-            textDecoration: "none", flexShrink: 0,
+            textDecoration: "none", flexShrink: 0, marginRight: "var(--s3)",
             transition: "color var(--t-standard) var(--ease)",
           }}>
             <KrelvanLogo size={20} markColor={wordmarkColor} inkColor={iconColor} />

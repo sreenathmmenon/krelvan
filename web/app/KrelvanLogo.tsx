@@ -39,7 +39,7 @@ export function KrelvanLogo({
   showWordmark?: boolean;
 }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 9, lineHeight: 1 }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, lineHeight: 1 }}>
       <span style={{ color: markColor, display: "inline-flex" }}>
         <KrelvanMark size={size} />
       </span>
