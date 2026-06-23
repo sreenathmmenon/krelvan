@@ -2,6 +2,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { KrelvanLogo } from "./KrelvanLogo";
 
 export default function SiteFooter() {
   const pathname = usePathname();
@@ -12,8 +13,8 @@ export default function SiteFooter() {
         <div className="footer-cols">
           {/* brand + ownership statement */}
           <div style={{ maxWidth: "32ch" }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: "var(--s3)", marginBottom: "var(--s3)" }}>
-              <span style={{ fontWeight: 700, fontSize: 16, letterSpacing: "-0.02em", color: "var(--ink)" }}>Krelvan</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", marginBottom: "var(--s3)" }}>
+              <KrelvanLogo size={18} />
               <span className="small muted">Own your agents.</span>
             </div>
             <p className="small soft" style={{ lineHeight: 1.6 }}>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="140" height="140" viewBox="0 0 140 140" role="img" aria-label="Krelvan">
+  <g id="mark" transform="translate(44 6) scale(0.8125)" fill="none" stroke="#1AA39A" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 11V53"></path><path d="M16 32 43 12"></path><path d="M16 32 27 43 50 16"></path></g>
+  
+  <text id="wordmark" x="70" y="96" text-anchor="middle" font-family="&#39;Space Grotesk&#39;, sans-serif" font-size="30" font-weight="600" letter-spacing="-1" fill="#F3F5F4">Krelvan</text>
+</svg>

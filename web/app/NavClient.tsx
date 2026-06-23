@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { listRuns, logout } from "../lib/api";
 import CommandPalette from "./CommandPalette";
+import { KrelvanLogo } from "./KrelvanLogo";
 
 // Flat nav: 4 primary links, a divider, then 3 utility links — all visible, one
 // click each (no dropdown). A sliding indicator tracks the active item, and ⌘K
@@ -136,13 +137,11 @@ export default function NavClient() {
       <div className="container-wide nav-bar">
         {/* left — wordmark + desktop links */}
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s7)", minWidth: 0 }}>
-          <Link href="/" style={{
-            fontFamily: "var(--font-display)",
-            fontWeight: 700, fontSize: 19, color: wordmarkColor,
-            letterSpacing: "-.03em", textDecoration: "none", flexShrink: 0,
+          <Link href="/" aria-label="Krelvan — home" style={{
+            textDecoration: "none", flexShrink: 0,
             transition: "color var(--t-standard) var(--ease)",
           }}>
-            Krelvan
+            <KrelvanLogo size={20} markColor={wordmarkColor} inkColor={iconColor} />
           </Link>
           <nav className="nav-links" aria-label="Main navigation" ref={navLinksRef}>
             {NAV_LINKS.map(link => {
