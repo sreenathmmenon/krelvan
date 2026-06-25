@@ -4,6 +4,7 @@ import { useState, useEffect, use, useCallback } from "react";
 import Link from "next/link";
 import {
   getAgent, getAgentRuns, startRun, deleteAgent, listSchedules, createSchedule, toggleSchedule, deleteSchedule,
+  getTrigger, mintTrigger, revokeTrigger,
   timeAgo,
   type AgentRecord, type RunRecord, type ScheduleRecord, type ManifestNode, type ManifestEdge,
 } from "../../../lib/api";
@@ -595,7 +596,7 @@ function SchedulePanel({ agentId, schedules, onRefresh }: { agentId: string; sch
   );
 }
 
-const TABS = ["graph", "runs", "schedules", "memory"] as const;
+const TABS = ["graph", "runs", "schedules", "trigger", "memory"] as const;
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -610,7 +611,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
   const [schedules, setSchedules] = useState<ScheduleRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [tab, setTab] = useState<"graph" | "runs" | "schedules" | "memory">("graph");
+  const [tab, setTab] = useState<"graph" | "runs" | "schedules" | "trigger" | "memory">("graph");
   const [running, setRunning] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -802,7 +803,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
           <div role="tablist" aria-label="Agent sections" style={{ display: "flex", gap: "var(--s5)" }}>
             {TABS.map((t, i) => {
               const active = tab === t;
-              const label = t === "graph" ? "Graph" : t === "runs" ? `Runs (${runs.length})` : t === "schedules" ? `Schedules${scheduleCount > 0 ? ` (${scheduleCount})` : ""}` : "Memory";
+              const label = t === "graph" ? "Graph" : t === "runs" ? `Runs (${runs.length})` : t === "schedules" ? `Schedules${scheduleCount > 0 ? ` (${scheduleCount})` : ""}` : t === "trigger" ? "Trigger" : "Memory";
               return (
                 <button
                   key={t}
@@ -961,6 +962,11 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
           <SchedulePanel agentId={id} schedules={schedules} onRefresh={load} />
         )}
 
+        {/* Trigger tab — inbound webhook */}
+        {tab === "trigger" && (
+          <TriggerPanel agentId={id} />
+        )}
+
         {/* Memory tab */}
         {tab === "memory" && (
           <MemoryTab
@@ -970,6 +976,101 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
         )}
 
       </div>
+    </div>
+  );
+}
+
+// ── Trigger panel: mint/show/revoke the inbound webhook + a copy-paste curl example ──
+function TriggerPanel({ agentId }: { agentId: string }) {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [url, setUrl] = useState<string>("");
+  const [token, setToken] = useState<string | null>(null); // shown once after mint
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    void getTrigger(agentId).then(s => { setEnabled(s.enabled); setUrl(s.url); }).catch(() => setEnabled(false));
+  }, [agentId]);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const fullUrl = url ? `${origin}/proxy${url}` : "";
+  const copy = (text: string, key: string) => {
+    void navigator.clipboard.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(null), 1500); });
+  };
+
+  async function mint() {
+    setBusy(true);
+    try { const r = await mintTrigger(agentId); setToken(r.token); setEnabled(true); setUrl(r.url); }
+    finally { setBusy(false); }
+  }
+  async function revoke() {
+    setBusy(true);
+    try { await revokeTrigger(agentId); setToken(null); setEnabled(false); }
+    finally { setBusy(false); }
+  }
+
+  const curl = token
+    ? `curl -X POST ${origin}${url} \\\n  -H "Authorization: Bearer ${token}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"input":"your value"}'`
+    : "";
+
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <h2 className="h3" style={{ marginBottom: "var(--s2)" }}>Webhook trigger</h2>
+      <p className="small soft" style={{ marginBottom: "var(--s5)", lineHeight: 1.6, maxWidth: "60ch" }}>
+        Let an external system — a form, a Slack or GitHub webhook, an automation, or a cron on
+        another machine — start this agent by POSTing to a URL. The JSON body becomes the run&apos;s
+        input. Authenticated by a per-agent token, scoped to this one agent.
+      </p>
+
+      {enabled === null ? (
+        <div className="skeleton skeleton-line" style={{ height: 40, width: 280 }} />
+      ) : !enabled ? (
+        <div className="card" style={{ padding: "var(--s6)", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--s3)" }}>
+          <p className="small soft" style={{ maxWidth: "44ch", lineHeight: 1.6 }}>
+            No webhook yet. Enable one to get a URL + token you can call from anywhere.
+          </p>
+          <button className="btn btn-primary" disabled={busy} onClick={() => void mint()}>
+            {busy ? "Enabling…" : "Enable webhook trigger"}
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
+          {token && (
+            <div className="card" style={{ padding: "var(--s5)", borderLeft: "3px solid var(--brand)" }}>
+              <p className="micro" style={{ color: "var(--brand)", marginBottom: "var(--s2)" }}>Your token — shown once</p>
+              <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center", flexWrap: "wrap" }}>
+                <code className="mono" style={{ fontSize: 13, wordBreak: "break-all", background: "var(--surface-sunken)", padding: "var(--s2) var(--s3)", borderRadius: "var(--r-sm)", flex: 1, minWidth: 0 }}>{token}</code>
+                <button className="btn btn-sm btn-secondary" onClick={() => copy(token, "token")}>{copied === "token" ? "Copied" : "Copy"}</button>
+              </div>
+              <p className="small muted" style={{ marginTop: "var(--s2)" }}>Save it now — for security it can&apos;t be shown again. Lost it? Rotate below for a new one.</p>
+            </div>
+          )}
+
+          <div className="card" style={{ padding: "var(--s5)" }}>
+            <p className="micro" style={{ marginBottom: "var(--s2)" }}>Webhook URL</p>
+            <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center", flexWrap: "wrap" }}>
+              <code className="mono" style={{ fontSize: 13, wordBreak: "break-all", flex: 1, minWidth: 0 }}>{fullUrl}</code>
+              <button className="btn btn-sm btn-secondary" onClick={() => copy(fullUrl, "url")}>{copied === "url" ? "Copied" : "Copy"}</button>
+            </div>
+          </div>
+
+          {token && (
+            <div className="card" style={{ padding: "var(--s5)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--s2)" }}>
+                <p className="micro" style={{ margin: 0 }}>Try it</p>
+                <button className="btn btn-sm btn-secondary" onClick={() => copy(curl, "curl")}>{copied === "curl" ? "Copied" : "Copy"}</button>
+              </div>
+              <pre className="mono" style={{ fontSize: 12.5, lineHeight: 1.6, overflowX: "auto", margin: 0, color: "var(--ink-soft)" }}>{curl}</pre>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: "var(--s3)", marginTop: "var(--s2)" }}>
+            <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => void mint()}>{busy ? "…" : "Rotate token"}</button>
+            <button className="btn btn-sm agent-card__delete" disabled={busy} onClick={() => void revoke()}>{busy ? "…" : "Disable webhook"}</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

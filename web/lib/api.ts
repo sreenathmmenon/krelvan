@@ -529,6 +529,28 @@ export async function deleteSchedule(id: string): Promise<void> {
   await apiFetch(`/api/schedules/${id}`, { method: "DELETE" });
 }
 
+// ── Webhook triggers (inbound — fire an agent from an external system) ────────────
+
+export interface TriggerStatus {
+  enabled: boolean;
+  url: string;
+}
+
+/** Is a webhook trigger enabled for this agent, and at what URL. */
+export async function getTrigger(agentId: string): Promise<TriggerStatus> {
+  return apiFetch<TriggerStatus>(`/api/agents/${encodeURIComponent(agentId)}/trigger`);
+}
+
+/** Mint (or rotate) the trigger token. The plaintext token is returned ONCE. */
+export async function mintTrigger(agentId: string): Promise<{ token: string; url: string }> {
+  return apiFetch<{ token: string; url: string }>(`/api/agents/${encodeURIComponent(agentId)}/trigger`, { method: "POST" });
+}
+
+/** Disable the webhook (revoke the token). */
+export async function revokeTrigger(agentId: string): Promise<void> {
+  await apiFetch(`/api/agents/${encodeURIComponent(agentId)}/trigger`, { method: "DELETE" });
+}
+
 // ── Secrets (customer-managed) ──────────────────────────────────────────────────
 
 export interface SecretMeta {
