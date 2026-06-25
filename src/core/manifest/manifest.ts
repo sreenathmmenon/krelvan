@@ -67,7 +67,13 @@ export interface ManifestNode {
   autonomy: AutonomyLevel;
 }
 
-/** suggest = always ask; act-with-veto = do it but allow a countdown veto; full = autonomous. */
+/**
+ * Autonomy gradient (three genuinely distinct levels):
+ * - "suggest"       — pause for human approval before ANY side effect.
+ * - "act-with-veto" — act autonomously on REVERSIBLE writes; pause for approval on the
+ *                     high-stakes classes (irreversible / spend / identity-mutation).
+ * - "full"          — act autonomously on everything (no gate).
+ */
 export type AutonomyLevel = "suggest" | "act-with-veto" | "full";
 
 /** An edge. `when` is a restricted expression over run state; absent = unconditional. */

@@ -125,7 +125,11 @@ export function needsApproval(autonomy: AutonomyLevel, effect: SideEffectClass):
     case "suggest":
       return true; // always ask for any side effect
     case "act-with-veto":
-      // irreversible / spend / identity always gate; reversible writes proceed (with veto window elsewhere)
+      // A real middle tier between "suggest" and "full": the agent ACTS autonomously on
+      // reversible writes (which can be undone if wrong), but the HIGH-STAKES classes —
+      // irreversible writes, spend, and identity mutation — always pause for explicit human
+      // approval. (This is gating-by-side-effect-class, not a real-time countdown timer; the
+      // value is "auto for the cheap/reversible, gate for the dangerous".)
       return effect === "write-irreversible" || effect === "spend" || effect === "identity-mutation";
     case "full":
       return false;
