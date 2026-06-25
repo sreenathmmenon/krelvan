@@ -1766,7 +1766,17 @@ export class KrelvanRuntime {
       // human approves, the engine sees the ledger's AwaitResolved and proceeds — so the
       // human-in-the-loop gate is actually enforced for API-triggered runs (it was previously
       // bypassed because the default approve=()=>true auto-approved everything).
-      const result = await engine.run({ initialState: enrichedState, approve: () => false });
+      // Wall-clock deadline so an unattended run (stuck plugin, or parked on an approval
+      // nobody resolves) fails cleanly instead of sitting "running"/"halted" forever.
+      // Default 10 min; tune via KRELVAN_RUN_DEADLINE_MS (0 disables).
+      const deadlineEnv = Number(process.env["KRELVAN_RUN_DEADLINE_MS"]);
+      const deadlineWindowMs = Number.isFinite(deadlineEnv) && deadlineEnv >= 0 ? deadlineEnv : 600_000;
+      const runOpts: { initialState: typeof enrichedState; approve: () => boolean; deadlineMs?: number } = {
+        initialState: enrichedState,
+        approve: () => false,
+      };
+      if (deadlineWindowMs > 0) runOpts.deadlineMs = Date.now() + deadlineWindowMs;
+      const result = await engine.run(runOpts);
       this.runRegistry.update(runId, {
         status: result.status === "completed" ? "completed" : result.status === "halted" ? "halted" : "failed",
         finishedAt: Date.now(),

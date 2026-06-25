@@ -88,6 +88,13 @@ export interface RunResult {
 
 export interface RunOptions {
   maxSteps?: number;
+  /**
+   * Wall-clock deadline for the whole run, as an absolute epoch-ms timestamp (compared
+   * against deps.now()). When the deadline passes, the engine stops at the next step
+   * boundary and fails the run with a signed `RunFailed` event — so unattended or
+   * stuck/parked runs never wait forever. Omit for no deadline (back-compat default).
+   */
+  deadlineMs?: number;
   /** Called when a node effect needs human approval. Return false to park the run. */
   approve?: (call: EffectCall) => boolean;
   /**
@@ -162,9 +169,24 @@ export class Engine {
     // the log-derived value will naturally shadow the seed.
     const initialState: RunState = opts.initialState ?? {};
 
+    const deadlineMs = opts.deadlineMs;
+
     let result: RunResult | undefined;
     try {
       for (let step = 0; step < maxSteps; step++) {
+        // Deadline guard (checked at the step boundary so it never interrupts an
+        // in-flight effect mid-write). A run that blows its wall-clock budget fails
+        // cleanly with a signed event rather than waiting forever — this covers both
+        // stuck plugins and runs parked on a never-resolved approval.
+        if (deadlineMs !== undefined && this.deps.now() >= deadlineMs) {
+          const reason = "run deadline exceeded";
+          await this.append({ type: "RunFailed", scope: this.scope(), payload: { reason } }, this.deps.owner);
+          const dlP = await this.fold();
+          result = { status: "failed", reason, projection: dlP };
+          runSpan.end({ status: "failed", reason }, "error");
+          return result;
+        }
+
         let p = await this.fold();
 
         // Merge initial state under the log-derived state so the log always wins.

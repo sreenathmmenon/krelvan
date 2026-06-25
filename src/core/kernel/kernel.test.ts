@@ -186,6 +186,28 @@ test("engine: suggest autonomy parks for approval and does not execute", async (
   assert.equal(counters.a!.n, 0); // never executed while parked
 });
 
+test("engine: a run past its deadline fails cleanly with a signed RunFailed (never waits forever)", async () => {
+  // A run parked on a never-resolved approval would halt forever; with a deadline it
+  // fails at the next step boundary. The mock clock starts at 1, so deadlineMs:0 is
+  // already in the past on the very first step.
+  const m = twoNodeManifest({
+    nodes: [
+      { id: "a", role: "first", autonomy: "suggest", capabilities: [{ name: "toolA", sideEffect: "write-irreversible", budgetCents: 500 }] },
+      { id: "b", role: "second", autonomy: "full", capabilities: [{ name: "toolB", sideEffect: "message-human", budgetCents: 500 }] },
+    ],
+  });
+  const counters: Record<string, { n: number }> = {};
+  const { engine, store, ring } = engineFor(m, counters);
+  const res = await engine.run({ approve: () => false, deadlineMs: 0 });
+  assert.equal(res.status, "failed");
+  assert.equal(res.reason, "run deadline exceeded");
+  assert.equal(counters.a!.n, 0); // never executed
+  // The failure is a real signed ledger event, and the chain still verifies.
+  const events = await store.read("t1");
+  assert.ok(events.some(e => e.type === "RunFailed"), "RunFailed must be recorded");
+  assert.ok(verify(events, ring).ok, "ledger must still verify after deadline failure");
+});
+
 test("engine: crash mid-run, resume, no double-execution", async () => {
   const m = twoNodeManifest();
   const counters: Record<string, { n: number }> = {};
