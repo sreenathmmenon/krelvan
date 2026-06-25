@@ -32,6 +32,7 @@ import { McpRegistry, type McpServerConfig } from "../core/mcp/mcp-client.js";
 import { loadCapabilityDirectory, loadJsCapabilities } from "../core/capability/directory-loader.js";
 import { Scheduler, ScheduleRegistry, validateCron, type ScheduleRecord } from "./scheduler.js";
 import { SecretStore } from "./secret-store.js";
+import { TriggerStore } from "./trigger-store.js";
 import { AdminAuth } from "./admin-auth.js";
 import { thinkCapability } from "../core/plugins/think.js";
 import { recallCapability, rememberCapability, identifyCapability, loadSoul, saveSoul } from "../core/plugins/memory-plugins.js";
@@ -560,6 +561,8 @@ export class KrelvanRuntime {
   readonly mcpRegistry: McpRegistry;
   readonly scheduleRegistry: ScheduleRegistry;
   readonly secretStore: SecretStore;
+  /** Per-agent webhook trigger tokens (the inbound/interactive path). */
+  readonly triggerStore: TriggerStore;
   /** WordPress-style admin login (first-run setup + username/password + sessions). */
   readonly adminAuth: AdminAuth;
   readonly scheduler: Scheduler;
@@ -619,6 +622,7 @@ export class KrelvanRuntime {
     this.capabilityRegistry = new CapabilityRegistry(config.dataDir);
     this.scheduleRegistry = new ScheduleRegistry(config.dataDir);
     this.secretStore = new SecretStore(config.dataDir);
+    this.triggerStore = new TriggerStore(config.dataDir);
     this.adminAuth = new AdminAuth(config.dataDir);
     // MCP servers resolve their {{secret:NAME}} env refs from the encrypted secret store;
     // the child gets a scrubbed env (never Krelvan's own secrets).
@@ -1729,6 +1733,20 @@ export class KrelvanRuntime {
     this.scheduler.arm(schedule);
     log.info({ id: schedule.id, agentId: opts.agentId, kind: opts.kind, spec: opts.spec }, "schedule created");
     return { ok: true, schedule };
+  }
+
+  /**
+   * Start a run for an agent with the given initial state, async. Shared by the
+   * authenticated POST /api/runs handler, the scheduler, and the public webhook trigger.
+   * Returns the run record immediately (the run executes in the background).
+   */
+  triggerRun(agentId: string, initialState: Record<string, string | number | boolean | null>): { ok: true; run: RunRecord } | { ok: false; error: string } {
+    const agent = this.agentRegistry.get(agentId);
+    if (!agent) return { ok: false, error: "agent not found" };
+    const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const run = this.runRegistry.create({ agentId, runId, manifestName: agent.signed.manifest.name });
+    void this.executeRun(runId, agent.signed.manifest, initialState, agentId);
+    return { ok: true, run };
   }
 
   async executeRun(runId: string, manifest: Manifest, initialState: Record<string, string | number | boolean | null>, agentId?: string): Promise<void> {

@@ -161,6 +161,10 @@ export function authenticate(
   // login). They do their own credential checks + rate-limiting internally.
   if (url.pathname === "/api/auth/status" || url.pathname === "/api/auth/login" ||
       url.pathname === "/api/auth/logout" || url.pathname === "/api/auth/setup") return { ok: true };
+  // Webhook triggers are machine-to-machine inbound: they carry their OWN per-agent token
+  // (checked in the handler, constant-time) and can only START that one agent's run — no
+  // session/CSRF, so external systems (forms, relays, automations) can fire an agent.
+  if (url.pathname.startsWith("/api/triggers/")) return { ok: true };
 
   const ip = clientIp(req);
   const now = Date.now();

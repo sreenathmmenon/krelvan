@@ -209,6 +209,12 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "GET",    pattern: ["api", "runs", ":id", "explain"],  handler: (q, r, p) => handleRunExplain(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "diagnose"], handler: (q, r, p) => handleRunDiagnose(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "runs", ":id", "retry"],    handler: (q, r, p) => handleRunRetry(q, r, p, runtime) },
+    // Inbound/interactive: a public, token-authenticated webhook that starts an agent run.
+    { method: "POST",   pattern: ["api", "triggers", ":agentId"],     handler: (q, r, p) => handleWebhookTrigger(q, r, p, runtime) },
+    // Admin (session-gated): mint / view-status / revoke an agent's webhook trigger token.
+    { method: "GET",    pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleGetTrigger(q, r, p, runtime) },
+    { method: "POST",   pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleMintTrigger(q, r, p, runtime) },
+    { method: "DELETE", pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleRevokeTrigger(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "agents", ":id", "explain-build"], handler: (q, r, p) => handleExplainBuild(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "capabilities"],                              handler: (q, r) => handleListCapabilities(q, r, runtime) },
     { method: "POST",   pattern: ["api", "capabilities"],                              handler: (q, r) => handleInstallCapability(q, r, runtime) },
@@ -554,6 +560,84 @@ async function handleStartRun(req: IncomingMessage, res: ServerResponse, rt: Kre
   void rt.executeRun(runRecord.runId, agent.signed.manifest, body.initialState ?? {}, body.agentId);
 
   json(res, 201, { run: runRecord });
+}
+
+// ── Inbound webhook trigger (the interactive/inbound path) ──────────────────────
+
+/** Extract the trigger token from an Authorization: Bearer header (query-string tokens
+ *  leak into logs/Referer, so they are NOT accepted). */
+function triggerToken(req: IncomingMessage): string | undefined {
+  const h = req.headers["authorization"];
+  if (typeof h === "string" && h.startsWith("Bearer ")) return h.slice(7).trim();
+  return undefined;
+}
+
+// Per-IP throttle for the public trigger route (blunts token-guessing on the open path).
+const triggerFails = new Map<string, { count: number; first: number }>();
+function triggerThrottled(ip: string): boolean {
+  const now = Date.now();
+  const r = triggerFails.get(ip);
+  if (r && now - r.first < 60_000 && r.count >= 20) return true;
+  return false;
+}
+function recordTriggerFail(ip: string): void {
+  const now = Date.now();
+  const r = triggerFails.get(ip);
+  if (!r || now - r.first > 60_000) triggerFails.set(ip, { count: 1, first: now });
+  else r.count++;
+}
+
+async function handleWebhookTrigger(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const agentId = params["agentId"] ?? "";
+  const ip = clientIp(req);
+  if (triggerThrottled(ip)) { jsonError(res, 429, "too many trigger attempts — slow down"); return; }
+
+  const token = triggerToken(req);
+  if (!rt.triggerStore.verify(agentId, token)) {
+    recordTriggerFail(ip);
+    jsonError(res, 401, "invalid or missing trigger token");
+    return;
+  }
+
+  // The request body (if any) becomes the run's initial state. Only flat scalars are
+  // accepted (run state is flat scalars); anything else is ignored, never errors the call.
+  let initialState: Record<string, string | number | boolean | null> = {};
+  const raw = await readBody(req);
+  if (raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        for (const [k, v] of Object.entries(parsed)) {
+          if (v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean") initialState[k] = v;
+        }
+      }
+    } catch { jsonError(res, 400, "trigger body must be a flat JSON object"); return; }
+  }
+
+  const result = rt.triggerRun(agentId, initialState);
+  if (!result.ok) { jsonError(res, 404, result.error); return; }
+  json(res, 202, { run: result.run, triggered: true });
+}
+
+async function handleGetTrigger(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const agentId = params["id"] ?? "";
+  if (!rt.agentRegistry.get(agentId)) { jsonError(res, 404, "agent not found"); return; }
+  // Status only — the plaintext token is shown ONCE at mint time and never retrievable again.
+  json(res, 200, { enabled: rt.triggerStore.has(agentId), url: `/api/triggers/${agentId}` });
+}
+
+async function handleMintTrigger(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const agentId = params["id"] ?? "";
+  if (!rt.agentRegistry.get(agentId)) { jsonError(res, 404, "agent not found"); return; }
+  const token = rt.triggerStore.mint(agentId);
+  // Returned ONCE. Caller must save it; we only keep the hash.
+  json(res, 201, { token, url: `/api/triggers/${agentId}`, note: "Save this token now — it is shown only once. Send it as 'Authorization: Bearer <token>'." });
+}
+
+async function handleRevokeTrigger(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const agentId = params["id"] ?? "";
+  const removed = rt.triggerStore.revoke(agentId);
+  json(res, 200, { revoked: removed });
 }
 
 async function handleGetRun(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
