@@ -1771,9 +1771,14 @@ export class KrelvanRuntime {
       // Default 10 min; tune via KRELVAN_RUN_DEADLINE_MS (0 disables).
       const deadlineEnv = Number(process.env["KRELVAN_RUN_DEADLINE_MS"]);
       const deadlineWindowMs = Number.isFinite(deadlineEnv) && deadlineEnv >= 0 ? deadlineEnv : 600_000;
-      const runOpts: { initialState: typeof enrichedState; approve: () => boolean; deadlineMs?: number } = {
+      // Transient-failure retry for capability invokes (network blip / rate-limit /
+      // timeout). Default 2 extra attempts; tune via KRELVAN_EFFECT_RETRIES (0 disables).
+      const retriesEnv = Number(process.env["KRELVAN_EFFECT_RETRIES"]);
+      const effectRetries = Number.isFinite(retriesEnv) && retriesEnv >= 0 ? retriesEnv : 2;
+      const runOpts: { initialState: typeof enrichedState; approve: () => boolean; deadlineMs?: number; effectRetries: number } = {
         initialState: enrichedState,
         approve: () => false,
+        effectRetries,
       };
       if (deadlineWindowMs > 0) runOpts.deadlineMs = Date.now() + deadlineWindowMs;
       const result = await engine.run(runOpts);

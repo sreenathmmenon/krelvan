@@ -77,6 +77,11 @@ export interface EngineDeps {
    * Optional: if absent, sub-agent capabilities fail with "manifest not found".
    */
   resolveManifest?: (manifestId: string) => Promise<Manifest | null>;
+  /**
+   * Injectable sleep for retry backoff (tests pass a no-op to stay fast/deterministic).
+   * Defaults to real setTimeout when omitted.
+   */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface RunResult {
@@ -95,6 +100,12 @@ export interface RunOptions {
    * stuck/parked runs never wait forever. Omit for no deadline (back-compat default).
    */
   deadlineMs?: number;
+  /**
+   * Extra retry attempts for a capability invoke that THROWS a transient error
+   * (network blip, rate-limit, timeout) before the run fails. Default 2 (so up to 3
+   * total attempts), exponential backoff. 0 disables retry.
+   */
+  effectRetries?: number;
   /** Called when a node effect needs human approval. Return false to park the run. */
   approve?: (call: EffectCall) => boolean;
   /**
@@ -109,6 +120,8 @@ export class Engine {
   private readonly declared: ReadonlySet<string>;
   private folder: IncrementalFolder;
   private readonly tracer: Tracer;
+  /** transient-failure retry count for capability invokes; set per-run from RunOptions. */
+  private effectRetries = 2;
 
   constructor(
     private readonly m: Manifest,
@@ -170,6 +183,7 @@ export class Engine {
     const initialState: RunState = opts.initialState ?? {};
 
     const deadlineMs = opts.deadlineMs;
+    this.effectRetries = opts.effectRetries !== undefined && opts.effectRetries >= 0 ? opts.effectRetries : 2;
 
     let result: RunResult | undefined;
     try {
@@ -263,6 +277,33 @@ export class Engine {
       runSpan.endError(err as Error, { status: "failed" });
       throw err;
     }
+  }
+
+  /**
+   * Invoke a capability via the supervisor with bounded transient-failure retry.
+   * Retries ONLY on a thrown error (no EffectResult written yet). `effectRetries`
+   * extra attempts (default 2) with exponential backoff (base 200ms, capped 2s).
+   * Backoff sleeps are skipped when a test clock is injected (deps.sleep), so the
+   * pure/deterministic test path stays fast.
+   */
+  private async runEffectWithRetry(
+    call: EffectCall,
+    idem: string,
+  ): Promise<Awaited<ReturnType<typeof this.deps.supervisor.run>>> {
+    const maxAttempts = 1 + this.effectRetries;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await this.deps.supervisor.run(call, idem);
+      } catch (err) {
+        lastErr = err;
+        if (attempt < maxAttempts) {
+          const delay = Math.min(2000, 200 * 2 ** (attempt - 1));
+          await (this.deps.sleep ? this.deps.sleep(delay) : new Promise(r => setTimeout(r, delay)));
+        }
+      }
+    }
+    throw lastErr;
   }
 
   /**
@@ -441,11 +482,16 @@ export class Engine {
         this.deps.owner,
       );
 
-      // run via supervisor; the SUPERVISOR signs the result (plugins never self-sign)
+      // run via supervisor; the SUPERVISOR signs the result (plugins never self-sign).
+      // Transient-failure retry: if the invoke THROWS (network blip, rate-limit, timeout),
+      // retry with exponential backoff before giving up — so one flaky call doesn't sink
+      // an unattended run. This is safe because a throw means NO EffectResult was written
+      // yet (nothing to double-execute); a returned error-output is the plugin's own
+      // result and is NOT retried here (the agent graph decides how to handle it).
       const effectSpan = this.tracer.startEffect(call.nodeId, call.capability, estimate);
       let observed: Awaited<ReturnType<typeof this.deps.supervisor.run>>;
       try {
-        observed = await this.deps.supervisor.run(call, idem);
+        observed = await this.runEffectWithRetry(call, idem);
         effectSpan.end({ costCents: observed.costCents });
       } catch (err) {
         effectSpan.endError(err as Error);
