@@ -115,6 +115,10 @@ export function applyEvent(acc: FoldAccumulator, e: LedgerEvent): void {
       if (node) {
         const ns = (acc.nodes[node] ??= { entered: false, concluded: false, visits: 0 });
         ns.entered = true;
+        // Re-entering a node (a back-edge loop, e.g. an evaluator->generator retry) starts a
+        // FRESH visit: clear the prior conclusion so the kernel runs the node body again.
+        // maxNodeVisits still bounds the loop (anti-runaway), so this cannot run forever.
+        ns.concluded = false;
         ns.visits += 1;
         acc.currentNode = node;
       }

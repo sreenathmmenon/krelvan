@@ -116,7 +116,11 @@ function advanceOrComplete(
     }
     if (take) {
       const target = p.nodes[edge.to];
-      if (target && target.concluded) continue; // already done; try another edge
+      // Skip a concluded target ONLY if it has also exhausted its visit budget — otherwise a
+      // back-edge (an evaluator->generator retry loop) may re-enter it for a fresh visit. The
+      // re-entry resets `concluded` (see project.ts) and maxNodeVisits bounds the loop, so this
+      // is anti-runaway. A concluded target at its visit cap falls through to the next edge.
+      if (target && target.concluded && target.visits >= m.maxNodeVisits) continue;
       return { kind: "advance", fromNodeId, toNodeId: edge.to };
     }
   }

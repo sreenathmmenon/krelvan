@@ -54,6 +54,17 @@ export interface CapabilityRef {
    * `budgetCents` becomes the sub-run's budget ceiling (reserve-then-settle).
    */
   subAgent?: SubAgentBinding;
+  /**
+   * Opt-in PER-VISIT budgeting for retry loops. Default (unset/false) = PER-RUN: the cap's
+   * budgetCents is a once-per-run ceiling and re-entering the node trips NODE_CAP_BUDGET_EXCEEDED
+   * (byte-identical to legacy behavior; existing ledgers unchanged). When `loop: true`, budgetCents
+   * is the cap for ONE visit, so an evaluator->generator back-edge can re-run the node; each visit
+   * is bounded by budgetCents and the WHOLE loop is still bounded by runBudgetCents (the hard
+   * aggregate ceiling) and maxNodeVisits (the anti-runaway visit bound). Worst-case per-cap spend =
+   * budgetCents x maxNodeVisits, which manifest validation refuses to start unless it fits under
+   * runBudgetCents.
+   */
+  loop?: boolean;
 }
 
 /** A node = one agent in the workflow. */

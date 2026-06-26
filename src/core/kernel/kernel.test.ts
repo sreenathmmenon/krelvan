@@ -559,3 +559,90 @@ test("engine: multi-agent chaining — crash after SubRunRequested does not re-e
   assert.equal(echoCounter2.n, 1, "echo2 must NOT re-run on resume — still exactly 1");
   assert.equal(res2.projection.state["caller.result"], 99, "output still in state on resume");
 });
+
+// ── back-edge retry loops (evaluator-optimizer): per-visit budget, opt-in via cap.loop ──────
+// These guard the loop feature AND prove nothing weakened: maxNodeVisits still bounds it,
+// runBudgetCents still binds total spend, the per-cap budget still binds within a visit, and a
+// non-loop cap keeps exact legacy PER-RUN semantics + byte-identical keys.
+
+/** A gen->eval loop manifest: eval routes back to gen on "retry", forward to done on "pass". */
+function loopManifest(over: Partial<Manifest> = {}): Manifest {
+  return {
+    version: 1, name: "loop", intent: "gen/eval", entry: "gen",
+    runBudgetCents: 1000, maxNodeVisits: 5,
+    nodes: [
+      { id: "gen", role: "generate", autonomy: "full", capabilities: [{ name: "gen", sideEffect: "read", budgetCents: 50, loop: true }] },
+      { id: "evaln", role: "evaluate", autonomy: "full", capabilities: [{ name: "evaln", sideEffect: "read", budgetCents: 50, loop: true }] },
+      { id: "done", role: "finish", autonomy: "full", capabilities: [{ name: "done", sideEffect: "read", budgetCents: 50 }] },
+    ],
+    edges: [
+      { from: "gen", to: "evaln" },
+      { from: "evaln", to: "gen", when: { op: "eq", left: { op: "var", key: "evaln.verdict" }, right: { op: "const", value: "retry" } } },
+      { from: "evaln", to: "done", when: { op: "eq", left: { op: "var", key: "evaln.verdict" }, right: { op: "const", value: "pass" } } },
+    ],
+    ...over,
+  };
+}
+
+/** An evaluator plugin that returns "retry" the first `retries` times, then "pass". */
+function evalPlugin(retries: number): CapabilityPlugin {
+  let calls = 0;
+  return { name: "evaln", sideEffect: "read", estimateCents: () => 50, async invoke() { calls++; return { output: { verdict: calls <= retries ? "retry" : "pass" }, claimedCostCents: 50 }; } };
+}
+function genPlugin(counter: { n: number }): CapabilityPlugin {
+  return { name: "gen", sideEffect: "read", estimateCents: () => 50, async invoke() { counter.n++; return { output: { draft: `v${counter.n}` }, claimedCostCents: 50 }; } };
+}
+function donePlugin(): CapabilityPlugin {
+  return { name: "done", sideEffect: "read", estimateCents: () => 50, async invoke() { return { output: { ok: true }, claimedCostCents: 50 }; } };
+}
+
+test("loop: evaluator->generator retry RE-RUNS the generator (per-visit, opt-in)", async () => {
+  const r = rig();
+  const genN = { n: 0 };
+  const plugins = new Map<string, CapabilityPlugin>([["gen", genPlugin(genN)], ["evaln", evalPlugin(1)], ["done", donePlugin()]]);
+  const engine = new Engine(loopManifest(), "t1", "run1", { store: r.store, owner: r.owner, supervisor: new Supervisor(plugins), supervisorSigner: r.supervisorSigner, now: r.now });
+  const res = await engine.run({ approve: () => true });
+  assert.equal(res.status, "completed", "loop with one retry then pass must complete");
+  assert.equal(genN.n, 2, "generator must RE-RUN once (retry) then the loop passes — 2 executions, not 1");
+  assert.ok(verify(await r.store.read("t1"), r.ring).ok, "ledger must verify");
+});
+
+test("loop: terminates at maxNodeVisits when the evaluator never passes (anti-runaway)", async () => {
+  const r = rig();
+  const genN = { n: 0 };
+  // evaluator always says retry → the loop must hit the visit bound and FAIL cleanly, never hang.
+  const plugins = new Map<string, CapabilityPlugin>([["gen", genPlugin(genN)], ["evaln", evalPlugin(999)], ["done", donePlugin()]]);
+  const engine = new Engine(loopManifest({ maxNodeVisits: 3 }), "t1", "run1", { store: r.store, owner: r.owner, supervisor: new Supervisor(plugins), supervisorSigner: r.supervisorSigner, now: r.now });
+  const res = await engine.run({ approve: () => true });
+  assert.equal(res.status, "failed", "an always-retry loop must fail at the bound, not run forever");
+  assert.match(res.reason ?? "", /exceeded maxNodeVisits/, "failure must be the maxNodeVisits anti-runaway bound");
+  assert.ok(verify(await r.store.read("t1"), r.ring).ok, "ledger must still verify on a bounded failure");
+});
+
+test("loop: runBudgetCents BINDS across iterations (per-visit does not escape the aggregate ceiling)", async () => {
+  const r = rig();
+  const genN = { n: 0 };
+  // Each gen+eval pass costs 100¢. With runBudgetCents 250, the loop must be DENIED by the run
+  // ceiling before maxNodeVisits — proving per-visit budgeting never exceeds runBudgetCents.
+  const plugins = new Map<string, CapabilityPlugin>([["gen", genPlugin(genN)], ["evaln", evalPlugin(999)], ["done", donePlugin()]]);
+  const m = loopManifest({ runBudgetCents: 250, maxNodeVisits: 10 });
+  const engine = new Engine(m, "t1", "run1", { store: r.store, owner: r.owner, supervisor: new Supervisor(plugins), supervisorSigner: r.supervisorSigner, now: r.now });
+  const res = await engine.run({ approve: () => true });
+  assert.equal(res.status, "failed", "must fail once the run budget is exhausted");
+  assert.ok(res.projection.budget.runSpentCents <= 250, `total spend ${res.projection.budget.runSpentCents}¢ must never exceed runBudgetCents 250¢`);
+});
+
+test("loop: a NON-loop cap is NOT re-executed on re-entry (legacy idempotency intact)", async () => {
+  const r = rig();
+  const genN = { n: 0 };
+  // gen is NOT loop-flagged → on re-entry its prior result is REUSED (byte-identical legacy
+  // idempotency: same nodeId:capability key, no #attempt suffix). The loop-flagged evaluator
+  // still advances to pass, so the run completes — but gen executes exactly ONCE, never twice.
+  const m = loopManifest();
+  m.nodes[0]!.capabilities[0]!.loop = false; // gen: legacy per-run / idempotent
+  const plugins = new Map<string, CapabilityPlugin>([["gen", genPlugin(genN)], ["evaln", evalPlugin(1)], ["done", donePlugin()]]);
+  const engine = new Engine(m, "t1", "run1", { store: r.store, owner: r.owner, supervisor: new Supervisor(plugins), supervisorSigner: r.supervisorSigner, now: r.now });
+  const res = await engine.run({ approve: () => true });
+  assert.equal(res.status, "completed", "loop-flagged evaluator still advances; run completes");
+  assert.equal(genN.n, 1, "a NON-loop cap must NOT re-run on re-entry — its cached result is reused (legacy semantics)");
+});

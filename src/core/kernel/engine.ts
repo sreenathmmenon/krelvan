@@ -335,10 +335,21 @@ export class Engine {
     // Iterate over declared capabilities by index — do NOT pre-build EffectCall objects,
     // because p.state is re-folded after each effect and later calls must see the updated
     // state (fix: stale input for multi-capability nodes).
+    const nodeVisits = p.nodes[nodeId]?.visits ?? 1;
     for (const cap of node.capabilities) {
       // Build the call fresh from the current (possibly updated) p.state.
       const call: EffectCall = { nodeId, capability: cap.name, input: p.state };
-      const idem = idempotencyKey(call);
+      // PER-VISIT keying is OPT-IN via cap.loop. Only a loop-flagged cap suffixes the idem key
+      // (and capKey) with the visit count, so a back-edge retry genuinely re-runs it. A non-loop
+      // cap keeps attempt=1 -> byte-identical legacy key (existing ledgers unchanged). Within a
+      // single visit the key is stable (crash-safe); attempt comes solely from the folded visit
+      // count, so replay stays deterministic.
+      const attempt = cap.loop ? nodeVisits : 1;
+      const idem = idempotencyKey(call, attempt);
+      // capKey for the budget accumulator MUST match admit()'s key exactly (per-visit only when
+      // the cap is loop-flagged and on a re-visit). Computed once and reused for every
+      // AdmissionDecision event below so the fold's per-cap budget stays consistent.
+      const capKey = cap.loop && attempt > 1 ? `${nodeId}:${cap.name}#${attempt}` : `${nodeId}:${cap.name}`;
 
       // RE-SERVE: already has a result → skip (no double-execution).
       if (p.resultsByIdem.has(idem)) continue;
@@ -352,7 +363,7 @@ export class Engine {
 
         // Admission: reserve budget for the sub-run
         const estimate = cap.budgetCents;
-        const verdict = admit(node, call, estimate, this.m.runBudgetCents, p.budget);
+        const verdict = admit(node, call, estimate, this.m.runBudgetCents, p.budget, attempt);
 
         if (!verdict.admitted) {
           await this.append(
@@ -363,7 +374,7 @@ export class Engine {
         }
 
         await this.append(
-          { type: "AdmissionDecision", scope: this.scope(nodeId), payload: { idem, admitted: true, reservedCents: verdict.reservedCents, capKey: `${nodeId}:${cap.name}` } },
+          { type: "AdmissionDecision", scope: this.scope(nodeId), payload: { idem, admitted: true, reservedCents: verdict.reservedCents, capKey } },
           this.deps.owner,
         );
 
@@ -433,7 +444,7 @@ export class Engine {
 
       // ── Normal plugin path ─────────────────────────────────────────────────
       const estimate = this.deps.supervisor.estimate(call);
-      const verdict = admit(node, call, estimate, this.m.runBudgetCents, p.budget);
+      const verdict = admit(node, call, estimate, this.m.runBudgetCents, p.budget, attempt);
 
       if (!verdict.admitted) {
         await this.append(
@@ -472,7 +483,7 @@ export class Engine {
 
       // record admission (with reservation)
       await this.append(
-        { type: "AdmissionDecision", scope: this.scope(nodeId), payload: { idem, admitted: true, reservedCents: verdict.reservedCents, capKey: `${nodeId}:${call.capability}` } },
+        { type: "AdmissionDecision", scope: this.scope(nodeId), payload: { idem, admitted: true, reservedCents: verdict.reservedCents, capKey } },
         this.deps.owner,
       );
 

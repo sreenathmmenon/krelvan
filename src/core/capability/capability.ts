@@ -63,6 +63,13 @@ export function admit(
   estimateCents: number | null,
   runBudgetCents: number,
   budget: BudgetState,
+  /**
+   * The node's current visit count. Only used when the matched capability is loop-flagged:
+   * then the per-cap budget key is suffixed per-visit so a back-edge retry gets fresh per-cap
+   * headroom (bounded by runBudgetCents + maxNodeVisits). Defaults to 1 → byte-identical legacy
+   * capKey for every non-loop / single-visit call.
+   */
+  attempt = 1,
 ): Admission {
   // A null estimate means the capability is not in the live plugin snapshot.
   // This is CAPABILITY_NOT_GRANTED regardless of what the manifest declares.
@@ -85,7 +92,11 @@ export function admit(
     return { admitted: false, reason: "RUN_BUDGET_EXCEEDED", detail: `run budget ${runBudgetCents}¢ would be exceeded (projected ${projectedRun}¢)` };
   }
 
-  const capKey = `${node.id}:${call.capability}`;
+  // PER-VISIT budget keying is OPT-IN via cap.loop: a loop-flagged cap suffixes its budget key
+  // with the visit count, giving each retry iteration fresh per-cap headroom. A non-loop cap (or
+  // attempt 1) keeps the byte-identical legacy key `${node.id}:${capability}` and its PER-RUN
+  // accumulation. runBudgetCents (checked above) remains the hard aggregate ceiling either way.
+  const capKey = cap.loop && attempt > 1 ? `${node.id}:${call.capability}#${attempt}` : `${node.id}:${call.capability}`;
   // Include both spent AND reserved for this cap so concurrent calls cannot each
   // pass the ceiling individually and together exceed it.
   const projectedCap = (budget.perCapSpentCents[capKey] ?? 0) + (budget.perCapReservedCents[capKey] ?? 0) + estimateCents;
@@ -108,14 +119,18 @@ export function admit(
  * "same" capability call look like a new call and causing double-execution.
  *
  * The invariant that justifies this: a node visits its declared capabilities at most
- * once per visit (maxNodeVisits bounds re-entry). A capability is therefore uniquely
- * identified by (nodeId, capability) within a run. If a node genuinely needs to run
- * the same capability twice with different inputs, it must be modelled as two distinct
- * capability declarations with distinct names.
+ * once PER VISIT. Within one visit the key is stable, so a crash mid-effect still dedups
+ * (no double-execution). Across visits — a back-edge loop, e.g. an evaluator->generator
+ * retry — `attempt` (the node's visit count) makes each iteration a DISTINCT effect, so a
+ * re-entered node genuinely re-runs instead of reusing the prior visit's cached result.
+ * maxNodeVisits bounds the loop. `attempt` defaults to 1, so non-loop callers are unchanged
+ * and existing single-visit ledgers keep their exact keys.
  */
-export function idempotencyKey(call: EffectCall): string {
+export function idempotencyKey(call: EffectCall, attempt = 1): string {
   const ca = contentAddress(canonicalize({ nodeId: call.nodeId, capability: call.capability }));
-  return `${call.nodeId}:${call.capability}:${ca}`;
+  return attempt > 1
+    ? `${call.nodeId}:${call.capability}:${ca}#${attempt}`
+    : `${call.nodeId}:${call.capability}:${ca}`;
 }
 
 /** Whether an autonomy level requires human approval for a given effect class. */

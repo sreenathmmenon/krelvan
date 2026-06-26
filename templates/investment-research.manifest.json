@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "name": "Investment Research Assistant",
+  "intent": "Answer a research question about a fund or holding with verifiable rigor: a supervisor decomposes the question, specialist workers pull the data record and the qualitative context, an analyst synthesizes an answer, an LLM judge validates it against the evidence and forces a retry if it is weak or ungrounded, and a human approves before the answer is delivered. Every step is a signed, replayable record.",
+  "entry": "intake",
+  "runBudgetCents": 900,
+  "maxNodeVisits": 4,
+  "seed": {
+    "question": "Why was the Meridian Small-Cap Value fund placed on the watchlist this quarter?",
+    "fund_record": "Fund: Meridian Small-Cap Value (MSCVX). Status: WATCHLIST (placed this quarter). Trailing 1yr return: -8.2% vs benchmark Russell 2000 Value -2.1% (underperformed by 6.1pts). 3yr return: +4.1% vs benchmark +6.8%. Net expense ratio: 1.12%. AUM: $1.8B (down from $2.6B a year ago; net outflows $0.7B). Portfolio manager: lead PM departed 7 months ago; co-PM now lead. Style drift flag: RAISED (growth-leaning names entered a value mandate). Liquidity: 9% in names taking >5 days to exit.",
+    "research_notes": "Analyst notes: The watchlist trigger was the combination of (a) sustained benchmark underperformance past the 4-quarter threshold, (b) the lead PM departure breaching the 'key person' clause in the IPS, and (c) the style-drift flag. Outflows are a symptom, not the trigger. The committee wants a hold-vs-redeem recommendation next quarter. Compliance noted the style drift must be resolved or the fund exits the value sleeve."
+  },
+  "nodes": [
+    {
+      "id": "intake",
+      "role": "You are the SUPERVISOR of an investment-research desk. Read the analyst's 'question' state value and the available evidence (fund_record = the structured data record; research_notes = qualitative analyst context). Decompose the question into what must be answered, and state the plan. Output object keys: plan (2-3 sentences: what sub-questions must be answered and which evidence covers them), needs_data (true if the structured fund_record is needed), needs_context (true if the qualitative research_notes are needed).",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "think", "sideEffect": "read", "budgetCents": 60 }
+      ]
+    },
+    {
+      "id": "data_worker",
+      "role": "You are the DATA WORKER (the 'SQL agent' role). From the CURRENT DATA TO ANALYZE section, read the structured fund_record and extract ONLY the hard facts relevant to the question — returns vs benchmark, status, expense ratio, AUM/flows, PM changes, any raised flags. Do not interpret or recommend; just surface the numbers and stated facts cleanly. Output object keys: facts (a tight bulleted list of the relevant hard facts from the record), data_quality (one phrase: 'complete', 'partial', or 'missing key fields').",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "think", "sideEffect": "read", "budgetCents": 60 }
+      ]
+    },
+    {
+      "id": "context_worker",
+      "role": "You are the CONTEXT WORKER (the 'RAG agent' role). From the CURRENT DATA TO ANALYZE section, read research_notes (the qualitative analyst context) and extract the governance/qualitative drivers relevant to the question — policy thresholds, key-person clauses, style drift, committee asks. Ground everything in the notes; do not invent. Output object keys: context (the relevant qualitative drivers as a short list), cited (true if your context came from research_notes, false if the notes lacked it).",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "think", "sideEffect": "read", "budgetCents": 60 }
+      ]
+    },
+    {
+      "id": "analyst",
+      "role": "You are the ANALYST. Synthesize a direct, evidence-grounded answer to the analyst's 'question', using the data_worker's 'facts' and the context_worker's 'context' from the CURRENT DATA TO ANALYZE section. Lead with the bottom line, then the supporting reasons in priority order, then explicitly separate the TRIGGER from mere symptoms. Cite the specific numbers/clauses. Do NOT introduce facts not present in the evidence. If the judge has sent this back for revision (a 'judge.critique' is present), fix exactly what it flagged. Output object keys: answer (the full grounded answer, 4-7 sentences), bottom_line (one sentence), used_evidence (true if the answer is built only from the provided facts/context).",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "think", "sideEffect": "read", "budgetCents": 90, "loop": true }
+      ]
+    },
+    {
+      "id": "judge",
+      "role": "You are the JUDGE / reflection node — the evaluator step that catches a weak or ungrounded answer before it reaches a human and forces a retry. Critically evaluate the analyst's 'answer' (in the CURRENT DATA TO ANALYZE section) against the evidence: Is it grounded ONLY in the facts and context provided (no hallucinated numbers)? Does it correctly separate the TRIGGER from symptoms? Does it directly answer the 'question'? Be strict. Output object keys: verdict (exactly 'pass' if the answer is grounded, correct, and complete, or 'revise' if it hallucinates, confuses trigger/symptom, or is incomplete), critique (one sentence on why), score (INTEGER 0-100 confidence the answer is correct).",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "think", "sideEffect": "read", "budgetCents": 70, "loop": true }
+      ]
+    },
+    {
+      "id": "deliver",
+      "role": "Produce the final, human-ready research answer for the committee. Use the analyst's validated 'answer' and 'bottom_line'. Format it as a short briefing: the bottom line first, then the reasons, then a one-line 'evidence basis' note. This is approval-gated — because it is delivered to a human decision-maker, the run pauses for a person to approve, edit, or reject before the answer is released. Output object keys: briefing (the final formatted answer), result (same as briefing).",
+      "autonomy": "suggest",
+      "capabilities": [
+        { "name": "compose", "sideEffect": "message-human", "budgetCents": 40 }
+      ]
+    }
+  ],
+  "edges": [
+    { "from": "intake", "to": "data_worker" },
+    { "from": "data_worker", "to": "context_worker" },
+    { "from": "context_worker", "to": "analyst" },
+    { "from": "analyst", "to": "judge" },
+    {
+      "from": "judge",
+      "to": "analyst",
+      "when": {
+        "op": "eq",
+        "left": { "op": "var", "key": "judge.verdict" },
+        "right": { "op": "const", "value": "revise" }
+      }
+    },
+    {
+      "from": "judge",
+      "to": "deliver",
+      "when": {
+        "op": "eq",
+        "left": { "op": "var", "key": "judge.verdict" },
+        "right": { "op": "const", "value": "pass" }
+      }
+    }
+  ]
+}
