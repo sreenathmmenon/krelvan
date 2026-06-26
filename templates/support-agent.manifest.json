@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "name": "Support Resolution Agent",
+  "intent": "Resolve a customer support ticket the trustworthy way: load this customer's own history, screen for distress/out-of-scope topics that need a human, ground every answer in the knowledge base (escalate when grounding is weak rather than guess), draft a reply, have a judge verify it is grounded and answers every ask before it goes out, gate any consequential action (refund/account change) behind human approval, and escalate cleanly when it should not act alone. Every step is a signed, replayable ledger record — so every resolution is provable.",
+  "entry": "screen",
+  "runBudgetCents": 600,
+  "maxNodeVisits": 4,
+  "seed": {
+    "from_address": "customer@example.com",
+    "subject": "Question about my order",
+    "body": "Hi, I have a question about my recent order. Can you help?",
+    "kb": "support-kb",
+    "candidates": "resolve,escalate",
+    "fallback": "escalate",
+    "remember_map": "last_topic=triage.category"
+  },
+  "nodes": [
+    {
+      "id": "screen",
+      "role": "You are the FRONT-DOOR SCREEN of a customer-support desk. Read the incoming message in the CURRENT DATA TO ANALYZE section (from_address, subject, body). Decide two safety questions BEFORE any answering is attempted. 1) distress: true if the customer shows signs of severe distress, vulnerability, self-harm, or is highly abusive/at-risk — these must go to a human, never a script. 2) out_of_scope: true if the message asks for legal, medical, financial, or compliance ADVICE, or threatens a chargeback/dispute/legal action, or asks something clearly outside product support — these must go to a human. Be cautious: when unsure, prefer flagging. Output object keys: distress (true/false), out_of_scope (true/false), category (one lowercase word for the topic: orders, billing, account, technical, shipping, returns, other), reason (one real sentence about THIS message explaining your call — do not echo this instruction).",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "think", "sideEffect": "read", "budgetCents": 60 }
+      ]
+    },
+    {
+      "id": "triage",
+      "role": "You are triaging a support ticket that passed the safety screen. Read the message (CURRENT DATA TO ANALYZE) and the screen's 'category'. Enumerate every distinct ASK in the message (a customer often asks more than one thing) and judge urgency. Output object keys: category (carry forward or refine the topic word), urgency (INTEGER 0-100; 90+ = the customer is blocked or time-sensitive), asks (a short newline-separated list of each distinct question the customer asked), needs_action (true if resolving this would require a real-world action like a refund, cancellation, or account change — as opposed to just an informational answer).",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "think", "sideEffect": "read", "budgetCents": 60 }
+      ]
+    },
+    {
+      "id": "recall_customer",
+      "role": "Load what we already know about THIS specific customer from memory (recall) — their prior tickets, order context, and any standing notes. This memory is isolated per customer. On a first contact it will be empty; that is fine.",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "recall", "sideEffect": "read", "budgetCents": 5 }
+      ]
+    },
+    {
+      "id": "retrieve",
+      "role": "Retrieve the most relevant knowledge-base passages for the customer's question from the named knowledge base ('kb'). Each returned passage is tagged with its source for citation. The retrieval also reports how many passages were found (hits) and the match strength (top_score) — downstream logic uses these to decide whether the grounding is strong enough to answer or whether to escalate to a human.",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "rag.search", "sideEffect": "read", "budgetCents": 15 }
+      ]
+    },
+    {
+      "id": "answer",
+      "role": "You are a senior support agent drafting an answer. The retrieved knowledge-base context is in the CURRENT DATA TO ANALYZE section — each passage is tagged with its source like [1] (source: handbook). The MEMORY section holds what we know about this customer from previous interactions (treat it as background, not as the current question). Answer EVERY ask in 'triage.asks' using ONLY the retrieved context. CITE-OR-ABSTAIN: every factual claim must trace to a retrieved passage; if the context does not cover an ask, say plainly that you need to check with a human rather than guessing — NEVER invent a policy, price, date, refund, or promise. Match the tone to the customer's urgency: warm and concise. If the judge has returned a critique (judge.critique present), fix exactly what it flagged. Output object keys: reply (the full customer-ready reply), grounded (true if every claim came from the retrieved context), cited_source (the source tag(s) you used, or 'none'), makes_promise (true if your reply commits to a refund, a specific delivery date, a guarantee, or any consequential action).",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "compose", "sideEffect": "read", "budgetCents": 60, "loop": true }
+      ]
+    },
+    {
+      "id": "judge",
+      "role": "You are the QUALITY JUDGE — the evaluator that checks the drafted 'reply' (in the CURRENT DATA TO ANALYZE section) BEFORE it can reach the customer. Check, strictly: (a) grounded — is every factual claim supported by the retrieved knowledge-base context, with no invented policy/price/date? (b) complete — does it answer every ask in 'triage.asks'? (c) safe — does it avoid making a consequential promise (refund/guarantee/specific date) that has not been approved? (d) tone — is it appropriate for the customer's urgency, not dismissive? Output object keys: verdict (exactly 'pass' if the reply is grounded, complete, safe, and appropriately toned, or 'revise' if it hallucinates, misses an ask, over-promises, or is tone-deaf), critique (one specific sentence on what to fix, or 'none'), score (INTEGER 0-100 confidence the reply is correct and safe).",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "think", "sideEffect": "read", "budgetCents": 60, "loop": true }
+      ]
+    },
+    {
+      "id": "route",
+      "role": "Decide whether this ticket can be RESOLVED by sending the drafted reply, or must be ESCALATED to a human. Choose 'escalate' if: the answer is not grounded, the customer needs a consequential action (triage.needs_action), the reply makes a promise (answer.makes_promise), or anything is uncertain. Choose 'resolve' only when the reply is grounded, complete, and purely informational. Candidates: resolve, escalate. When uncertain, escalate — a human is the safe default.",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "llm_route", "sideEffect": "read", "budgetCents": 20 }
+      ]
+    },
+    {
+      "id": "send_reply",
+      "role": "Send the approved, grounded reply (answer.reply) to the customer at from_address. This node MESSAGES A HUMAN customer, so on a consequential or first-contact ticket the run pauses for a support operator to approve, edit, or reject the exact reply before anything is sent. Nothing reaches the customer without that go-ahead.",
+      "autonomy": "suggest",
+      "capabilities": [
+        { "name": "email_send", "sideEffect": "message-human", "budgetCents": 5 }
+      ]
+    },
+    {
+      "id": "escalate",
+      "role": "Escalate this ticket to a human support operator. Write a concise HANDOFF BRIEF so the human is faster, not slower: the customer's question(s) (triage.asks), what the agent found (or why it could not answer / why grounding was weak), the customer's history if relevant, and the recommended next step. This brief is what the operator reads first.",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "compose", "sideEffect": "read", "budgetCents": 40 }
+      ]
+    },
+    {
+      "id": "notify_human",
+      "role": "Notify the human support queue that a ticket needs attention, attaching the handoff brief (escalate.result). This MESSAGES A HUMAN operator; it pauses for confirmation so an escalation is never silently dropped.",
+      "autonomy": "suggest",
+      "capabilities": [
+        { "name": "slack_send", "sideEffect": "message-human", "budgetCents": 5 }
+      ]
+    },
+    {
+      "id": "record",
+      "role": "Record this interaction to THIS customer's isolated memory for the audit trail and for continuity on their next ticket: the topic (triage.category), the outcome (resolved or escalated), and a one-line summary. This closes the loop with a signed record.",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "remember", "sideEffect": "write-reversible", "budgetCents": 5 }
+      ]
+    }
+  ],
+  "edges": [
+    { "from": "screen", "to": "escalate", "when": { "op": "or", "clauses": [ { "op": "eq", "left": { "op": "var", "key": "screen.distress" }, "right": { "op": "const", "value": true } }, { "op": "eq", "left": { "op": "var", "key": "screen.out_of_scope" }, "right": { "op": "const", "value": true } } ] } },
+    { "from": "screen", "to": "triage", "when": { "op": "and", "clauses": [ { "op": "ne", "left": { "op": "var", "key": "screen.distress" }, "right": { "op": "const", "value": true } }, { "op": "ne", "left": { "op": "var", "key": "screen.out_of_scope" }, "right": { "op": "const", "value": true } } ] } },
+    { "from": "triage", "to": "recall_customer" },
+    { "from": "recall_customer", "to": "retrieve" },
+    { "from": "retrieve", "to": "escalate", "when": { "op": "eq", "left": { "op": "var", "key": "retrieve.hits" }, "right": { "op": "const", "value": 0 } } },
+    { "from": "retrieve", "to": "answer", "when": { "op": "gt", "left": { "op": "var", "key": "retrieve.hits" }, "right": { "op": "const", "value": 0 } } },
+    { "from": "answer", "to": "judge" },
+    { "from": "judge", "to": "answer", "when": { "op": "eq", "left": { "op": "var", "key": "judge.verdict" }, "right": { "op": "const", "value": "revise" } } },
+    { "from": "judge", "to": "route", "when": { "op": "eq", "left": { "op": "var", "key": "judge.verdict" }, "right": { "op": "const", "value": "pass" } } },
+    { "from": "route", "to": "send_reply", "when": { "op": "eq", "left": { "op": "var", "key": "route.chosen_node" }, "right": { "op": "const", "value": "resolve" } } },
+    { "from": "route", "to": "escalate", "when": { "op": "eq", "left": { "op": "var", "key": "route.chosen_node" }, "right": { "op": "const", "value": "escalate" } } },
+    { "from": "send_reply", "to": "record" },
+    { "from": "escalate", "to": "notify_human" },
+    { "from": "notify_human", "to": "record" }
+  ]
+}
