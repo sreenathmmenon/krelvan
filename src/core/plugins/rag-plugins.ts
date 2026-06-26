@@ -165,6 +165,11 @@ export const ragSearchCapability: CapabilityPlugin = {
         hits: ranked.length,
         // String, not number: the ledger canonicalizer rejects non-integer numbers.
         top_score: topScore.toFixed(4),
+        // Integer 0-100 version of the top match score. Floats are coerced to strings by the
+        // fold (so they cannot be compared numerically in an edge condition); this integer
+        // survives as a number, letting a manifest gate confidence tiers, e.g.
+        // gte(retrieve.top_score_pct, 50) -> answer, lt(...) -> clarify.
+        top_score_pct: Math.round(Math.max(0, Math.min(1, topScore)) * 100),
         sources,
         // Expose the retrieved context as a *.body so a downstream think node picks it up
         // as DATA TO ANALYZE (think already surfaces *.body), plus a plain key.

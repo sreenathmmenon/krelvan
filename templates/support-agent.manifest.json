@@ -1,10 +1,10 @@
 {
   "version": 1,
   "name": "Support Resolution Agent",
-  "intent": "Resolve a customer support ticket the trustworthy way: load this customer's own history, screen for distress/out-of-scope topics that need a human, ground every answer in the knowledge base (escalate when grounding is weak rather than guess), draft a reply, have a judge verify it is grounded and answers every ask before it goes out, gate any consequential action (refund/account change) behind human approval, and escalate cleanly when it should not act alone. Every step is a signed, replayable ledger record — so every resolution is provable.",
-  "entry": "screen",
-  "runBudgetCents": 600,
-  "maxNodeVisits": 4,
+  "intent": "Resolve a customer support ticket the trustworthy way, with the best ideas from the leading support platforms — but made provable. Triage intent/sentiment/language at the door; screen distress and out-of-scope topics straight to a human; load this customer's own isolated history; ground every answer in the knowledge base and ask a clarifying question rather than guess on weak grounding; have a judge verify the draft before it goes out; resolve or escalate fail-closed; gate any consequential action behind human approval; hand off escalations with a pre-investigated case file (never a cold transfer); capture a tamper-evident QA score on every resolution; and log knowledge-base gaps for follow-up. Every step is a signed, replayable ledger record — so every resolution, escalation, and QA score is provable.",
+  "entry": "triage",
+  "runBudgetCents": 1000,
+  "maxNodeVisits": 5,
   "seed": {
     "from_address": "customer@example.com",
     "subject": "Question about my order",
@@ -16,19 +16,11 @@
   },
   "nodes": [
     {
-      "id": "screen",
-      "role": "You are the FRONT-DOOR SCREEN of a customer-support desk. Read the incoming message in the CURRENT DATA TO ANALYZE section (from_address, subject, body). Decide two safety questions BEFORE any answering is attempted. 1) distress: true if the customer shows signs of severe distress, vulnerability, self-harm, or is highly abusive/at-risk — these must go to a human, never a script. 2) out_of_scope: true if the message asks for legal, medical, financial, or compliance ADVICE, or threatens a chargeback/dispute/legal action, or asks something clearly outside product support — these must go to a human. Be cautious: when unsure, prefer flagging. Output object keys: distress (true/false), out_of_scope (true/false), category (one lowercase word for the topic: orders, billing, account, technical, shipping, returns, other), reason (one real sentence about THIS message explaining your call — do not echo this instruction).",
-      "autonomy": "full",
-      "capabilities": [
-        { "name": "think", "sideEffect": "read", "budgetCents": 60 }
-      ]
-    },
-    {
       "id": "triage",
-      "role": "You are triaging a support ticket that passed the safety screen. Read the message (CURRENT DATA TO ANALYZE) and the screen's 'category'. Enumerate every distinct ASK in the message (a customer often asks more than one thing) and judge urgency. Output object keys: category (carry forward or refine the topic word), urgency (INTEGER 0-100; 90+ = the customer is blocked or time-sensitive), asks (a short newline-separated list of each distinct question the customer asked), needs_action (true if resolving this would require a real-world action like a refund, cancellation, or account change — as opposed to just an informational answer).",
+      "role": "You are the FRONT-DOOR TRIAGE of a customer-support desk — the first and most important step (the wedge that Zendesk/Forethought/Freshdesk all lead with), done here with safety first. Read the incoming message in the CURRENT DATA TO ANALYZE section (from_address, subject, body) and classify it fully BEFORE any answering. Decide: 1) distress: true if the customer shows severe distress, vulnerability, self-harm, or is highly abusive/at-risk — must go to a human, never a script. 2) out_of_scope: true if it asks for legal/medical/financial/compliance ADVICE, threatens a chargeback/dispute/legal action, or is clearly outside product support — must go to a human. 3) category: one lowercase intent word (orders, billing, account, technical, shipping, returns, other). 4) sentiment: one lowercase word for the customer's mood (positive, neutral, frustrated, angry). 5) language: the ISO-style name of the language the customer wrote in (e.g. english, spanish). 6) urgency: INTEGER 0-100 (90+ = blocked/time-sensitive or angry). 7) asks: a newline-separated list of each distinct question asked. 8) needs_action: true if resolving would require a real-world action (refund, cancellation, account change). Be cautious — when unsure on distress/out_of_scope, prefer flagging. Output object keys exactly: distress, out_of_scope, category, sentiment, language, urgency, asks, needs_action, reason (one real sentence about THIS ticket — do not echo this instruction).",
       "autonomy": "full",
       "capabilities": [
-        { "name": "think", "sideEffect": "read", "budgetCents": 60 }
+        { "name": "think", "sideEffect": "read", "budgetCents": 70 }
       ]
     },
     {
@@ -41,15 +33,23 @@
     },
     {
       "id": "retrieve",
-      "role": "Retrieve the most relevant knowledge-base passages for the customer's question from the named knowledge base ('kb'). Each returned passage is tagged with its source for citation. The retrieval also reports how many passages were found (hits) and the match strength (top_score) — downstream logic uses these to decide whether the grounding is strong enough to answer or whether to escalate to a human.",
+      "role": "Retrieve the most relevant knowledge-base passages for the customer's question from the named knowledge base ('kb'). Each returned passage is tagged with its source for citation. The retrieval reports how many passages were found (hits) and the match strength (top_score) — downstream logic uses these to decide whether grounding is strong enough to answer, weak enough to ask a clarifying question, or absent so it must escalate.",
       "autonomy": "full",
       "capabilities": [
         { "name": "rag.search", "sideEffect": "read", "budgetCents": 15 }
       ]
     },
     {
+      "id": "clarify",
+      "role": "The knowledge base returned only weak matches for this question — not strong enough to answer confidently, but not empty. Rather than guess (which risks a wrong answer) or escalate immediately (which burdens a human), do what the best agents do on low confidence: ask the customer ONE focused clarifying question that would let you retrieve a confident answer next time. Be warm and specific. Output object keys: reply (the one clarifying question to send the customer), is_clarification (true).",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "compose", "sideEffect": "read", "budgetCents": 40 }
+      ]
+    },
+    {
       "id": "answer",
-      "role": "You are a senior support agent drafting an answer. The retrieved knowledge-base context is in the CURRENT DATA TO ANALYZE section — each passage is tagged with its source like [1] (source: handbook). The MEMORY section holds what we know about this customer from previous interactions (treat it as background, not as the current question). Answer EVERY ask in 'triage.asks' using ONLY the retrieved context. CITE-OR-ABSTAIN: every factual claim must trace to a retrieved passage; if the context does not cover an ask, say plainly that you need to check with a human rather than guessing — NEVER invent a policy, price, date, refund, or promise. Match the tone to the customer's urgency: warm and concise. If the judge has returned a critique (judge.critique present), fix exactly what it flagged. Output object keys: reply (the full customer-ready reply), grounded (true if every claim came from the retrieved context), cited_source (the source tag(s) you used, or 'none'), makes_promise (true if your reply commits to a refund, a specific delivery date, a guarantee, or any consequential action).",
+      "role": "You are a senior support agent drafting an answer. The retrieved knowledge-base context is in the CURRENT DATA TO ANALYZE section — each passage is tagged with its source like [1] (source: handbook). The MEMORY section holds what we know about this customer from previous interactions (background, not the current question). Answer EVERY ask in 'triage.asks' using ONLY the retrieved context. CITE-OR-ABSTAIN: every factual claim must trace to a retrieved passage; if the context does not cover an ask, say plainly you need to check with a human rather than guessing — NEVER invent a policy, price, date, refund, or promise. Write the reply in the customer's language ('triage.language') and match the tone to 'triage.sentiment' (be extra empathetic and de-escalating for frustrated/angry). If the judge returned a critique (judge.critique present), fix exactly what it flagged. Output object keys: reply (the full customer-ready reply), grounded (true if every claim came from the retrieved context), cited_source (the source tag(s) used, or 'none'), makes_promise (true if it commits to a refund, a specific date, a guarantee, or any consequential action).",
       "autonomy": "full",
       "capabilities": [
         { "name": "compose", "sideEffect": "read", "budgetCents": 60, "loop": true }
@@ -57,7 +57,7 @@
     },
     {
       "id": "judge",
-      "role": "You are the QUALITY JUDGE — the evaluator that checks the drafted 'reply' (in the CURRENT DATA TO ANALYZE section) BEFORE it can reach the customer. Check, strictly: (a) grounded — is every factual claim supported by the retrieved knowledge-base context, with no invented policy/price/date? (b) complete — does it answer every ask in 'triage.asks'? (c) safe — does it avoid making a consequential promise (refund/guarantee/specific date) that has not been approved? (d) tone — is it appropriate for the customer's urgency, not dismissive? Output object keys: verdict (exactly 'pass' if the reply is grounded, complete, safe, and appropriately toned, or 'revise' if it hallucinates, misses an ask, over-promises, or is tone-deaf), critique (one specific sentence on what to fix, or 'none'), score (INTEGER 0-100 confidence the reply is correct and safe).",
+      "role": "You are the QUALITY JUDGE — the evaluator that checks the drafted 'reply' (in the CURRENT DATA TO ANALYZE section) BEFORE it can reach the customer. Check, strictly: (a) grounded — every factual claim supported by the retrieved context, no invented policy/price/date; (b) complete — answers every ask in 'triage.asks'; (c) safe — no consequential promise (refund/guarantee/specific date) that has not been approved; (d) tone — appropriate for 'triage.sentiment', not dismissive; (e) language — written in 'triage.language'. Output object keys: verdict (exactly 'pass' if grounded, complete, safe, well-toned, and in the right language, or 'revise' otherwise), critique (one specific sentence on what to fix, or 'none'), score (INTEGER 0-100 confidence the reply is correct and safe).",
       "autonomy": "full",
       "capabilities": [
         { "name": "think", "sideEffect": "read", "budgetCents": 60, "loop": true }
@@ -65,7 +65,7 @@
     },
     {
       "id": "route",
-      "role": "Decide whether this ticket can be RESOLVED by sending the drafted reply, or must be ESCALATED to a human. Choose 'escalate' if: the answer is not grounded, the customer needs a consequential action (triage.needs_action), the reply makes a promise (answer.makes_promise), or anything is uncertain. Choose 'resolve' only when the reply is grounded, complete, and purely informational. Candidates: resolve, escalate. When uncertain, escalate — a human is the safe default.",
+      "role": "Decide whether this ticket can be RESOLVED by sending the drafted reply, or must be ESCALATED to a human. Choose 'escalate' if: the answer is not grounded, the customer needs a consequential action (triage.needs_action), the reply makes a promise (answer.makes_promise), the customer is angry (triage.sentiment angry), or anything is uncertain. Choose 'resolve' only when the reply is grounded, complete, purely informational, and the customer is not angry. Candidates: resolve, escalate. When uncertain, escalate — a human is the safe default.",
       "autonomy": "full",
       "capabilities": [
         { "name": "llm_route", "sideEffect": "read", "budgetCents": 20 }
@@ -81,23 +81,31 @@
     },
     {
       "id": "escalate",
-      "role": "Escalate this ticket to a human support operator. Write a concise HANDOFF BRIEF so the human is faster, not slower: the customer's question(s) (triage.asks), what the agent found (or why it could not answer / why grounding was weak), the customer's history if relevant, and the recommended next step. This brief is what the operator reads first.",
+      "role": "Escalate this ticket to a human support operator with a PRE-INVESTIGATED CASE FILE — never a cold transfer (the Gradient Labs / Maven standard). Write a structured handoff brief so the human is faster, not slower: (1) the customer and their sentiment/language (triage), (2) the question(s) (triage.asks), (3) what the agent already did — what the knowledge base returned or why grounding was weak/absent, and any customer history from recall, (4) why this is being escalated (distress / out-of-scope / weak grounding / needs a consequential action / angry customer), (5) a recommended next step for the human. Also surface a KNOWLEDGE-GAP note: if the KB could not answer, state the exact question that was missing so it can be added to the KB. Output object keys: brief (the full structured case file), kb_gap (the unanswered question if grounding was weak/absent, else 'none').",
       "autonomy": "full",
       "capabilities": [
-        { "name": "compose", "sideEffect": "read", "budgetCents": 40 }
+        { "name": "compose", "sideEffect": "read", "budgetCents": 50 }
       ]
     },
     {
       "id": "notify_human",
-      "role": "Notify the human support queue that a ticket needs attention, attaching the handoff brief (escalate.result). This MESSAGES A HUMAN operator; it pauses for confirmation so an escalation is never silently dropped.",
+      "role": "Notify the human support queue that a ticket needs attention, attaching the pre-investigated case file (escalate.brief). This MESSAGES A HUMAN operator; it pauses for confirmation so an escalation is never silently dropped.",
       "autonomy": "suggest",
       "capabilities": [
         { "name": "slack_send", "sideEffect": "message-human", "budgetCents": 5 }
       ]
     },
     {
+      "id": "qa",
+      "role": "You are the QUALITY-ASSURANCE reviewer scoring the CLOSED interaction for the audit trail — the same idea as Klaus/Ada auto-QA, but here the score is written into a tamper-evident ledger so it is provable. Review what happened in this run (the customer's asks, the drafted reply or clarifying question or escalation, the grounding, and any promises) and grade it on a fixed rubric. Output object keys: qa_relevant (true if the response addressed the customer's actual asks), qa_accurate (true if grounded with no invented facts), qa_safe (true if no unapproved consequential promise and any sensitive case was escalated), qa_resolved (true if the customer's need was met or cleanly escalated), qa_score (INTEGER 0-100 overall quality), qa_note (one sentence summarizing the quality call).",
+      "autonomy": "full",
+      "capabilities": [
+        { "name": "think", "sideEffect": "read", "budgetCents": 50 }
+      ]
+    },
+    {
       "id": "record",
-      "role": "Record this interaction to THIS customer's isolated memory for the audit trail and for continuity on their next ticket: the topic (triage.category), the outcome (resolved or escalated), and a one-line summary. This closes the loop with a signed record.",
+      "role": "Record this interaction to THIS customer's isolated memory and the audit trail: the topic (triage.category), the sentiment, the outcome (resolved / clarifying-question-sent / escalated), the provable QA score (qa.qa_score), and any knowledge-base gap (escalate.kb_gap) so the KB can be improved. This closes the loop with a signed record.",
       "autonomy": "full",
       "capabilities": [
         { "name": "remember", "sideEffect": "write-reversible", "budgetCents": 5 }
@@ -105,19 +113,21 @@
     }
   ],
   "edges": [
-    { "from": "screen", "to": "escalate", "when": { "op": "or", "clauses": [ { "op": "eq", "left": { "op": "var", "key": "screen.distress" }, "right": { "op": "const", "value": true } }, { "op": "eq", "left": { "op": "var", "key": "screen.out_of_scope" }, "right": { "op": "const", "value": true } } ] } },
-    { "from": "screen", "to": "triage", "when": { "op": "and", "clauses": [ { "op": "ne", "left": { "op": "var", "key": "screen.distress" }, "right": { "op": "const", "value": true } }, { "op": "ne", "left": { "op": "var", "key": "screen.out_of_scope" }, "right": { "op": "const", "value": true } } ] } },
-    { "from": "triage", "to": "recall_customer" },
+    { "from": "triage", "to": "escalate", "when": { "op": "or", "clauses": [ { "op": "eq", "left": { "op": "var", "key": "triage.distress" }, "right": { "op": "const", "value": true } }, { "op": "eq", "left": { "op": "var", "key": "triage.out_of_scope" }, "right": { "op": "const", "value": true } } ] } },
+    { "from": "triage", "to": "recall_customer", "when": { "op": "and", "clauses": [ { "op": "ne", "left": { "op": "var", "key": "triage.distress" }, "right": { "op": "const", "value": true } }, { "op": "ne", "left": { "op": "var", "key": "triage.out_of_scope" }, "right": { "op": "const", "value": true } } ] } },
     { "from": "recall_customer", "to": "retrieve" },
     { "from": "retrieve", "to": "escalate", "when": { "op": "eq", "left": { "op": "var", "key": "retrieve.hits" }, "right": { "op": "const", "value": 0 } } },
-    { "from": "retrieve", "to": "answer", "when": { "op": "gt", "left": { "op": "var", "key": "retrieve.hits" }, "right": { "op": "const", "value": 0 } } },
+    { "from": "retrieve", "to": "clarify", "when": { "op": "and", "clauses": [ { "op": "gt", "left": { "op": "var", "key": "retrieve.hits" }, "right": { "op": "const", "value": 0 } }, { "op": "lt", "left": { "op": "var", "key": "retrieve.top_score_pct" }, "right": { "op": "const", "value": 50 } } ] } },
+    { "from": "retrieve", "to": "answer", "when": { "op": "gte", "left": { "op": "var", "key": "retrieve.top_score_pct" }, "right": { "op": "const", "value": 50 } } },
+    { "from": "clarify", "to": "send_reply" },
     { "from": "answer", "to": "judge" },
     { "from": "judge", "to": "answer", "when": { "op": "eq", "left": { "op": "var", "key": "judge.verdict" }, "right": { "op": "const", "value": "revise" } } },
     { "from": "judge", "to": "route", "when": { "op": "eq", "left": { "op": "var", "key": "judge.verdict" }, "right": { "op": "const", "value": "pass" } } },
     { "from": "route", "to": "send_reply", "when": { "op": "eq", "left": { "op": "var", "key": "route.chosen_node" }, "right": { "op": "const", "value": "resolve" } } },
     { "from": "route", "to": "escalate", "when": { "op": "eq", "left": { "op": "var", "key": "route.chosen_node" }, "right": { "op": "const", "value": "escalate" } } },
-    { "from": "send_reply", "to": "record" },
+    { "from": "send_reply", "to": "qa" },
     { "from": "escalate", "to": "notify_human" },
-    { "from": "notify_human", "to": "record" }
+    { "from": "notify_human", "to": "qa" },
+    { "from": "qa", "to": "record" }
   ]
 }

@@ -1,10 +1,10 @@
 /**
- * Guards the flagship Support Resolution Agent. This is the premortem-hardened support template:
- * front-door safety screen -> triage -> per-customer recall -> grounded retrieval ->
- * answer -> evaluator-optimizer judge (revise loop) -> resolve/escalate route (fail-closed) ->
- * human-gated send OR clean escalation -> record. Validates structurally, uses only real
- * built-ins, and drives the Engine end-to-end with fake plugins down the key safety paths,
- * with the ledger verifying on every run.
+ * Guards the flagship Support Resolution Agent (v2 — competitor best-features, made provable).
+ * Pipeline: front-door triage (intent/sentiment/language/distress/out-of-scope) -> per-customer
+ * recall -> grounded retrieval with three confidence tiers (answer / clarify / escalate) ->
+ * evaluator-optimizer judge -> fail-closed resolve/escalate -> human-gated send OR pre-investigated
+ * case-file escalation -> provable QA score -> record. Validates structurally, uses only real
+ * built-ins, and drives the Engine end-to-end down the key safety paths, ledger verifying.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -17,7 +17,6 @@ import { HmacKeyring } from "../src/core/ledger/crypto.js";
 import { InMemoryLedgerStore, verify } from "../src/core/ledger/store.js";
 import { Supervisor, type CapabilityPlugin, type EffectCall } from "../src/core/capability/capability.js";
 import { Engine } from "../src/core/kernel/engine.js";
-import { project } from "../src/core/kernel/project.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(readFileSync(join(here, "support-agent.manifest.json"), "utf8")) as Manifest;
@@ -39,25 +38,23 @@ function rig() {
   return { ring, owner, supervisorSigner, store, now };
 }
 
-/** Per-node fake plugins: the think/compose/route plugins return outputs keyed by nodeId so the
- *  safety edges are exercised exactly. `over` overrides specific node outputs per scenario. */
+/** Per-node fakes keyed by nodeId; `over` overrides specific node outputs per scenario. */
 function plugins(over: Record<string, Record<string, unknown>> = {}): Map<string, CapabilityPlugin> {
   const thinkOut = (nodeId: string): Record<string, unknown> => {
-    if (nodeId === "screen") return { distress: false, out_of_scope: false, category: "orders", reason: "asks about order status", ...over["screen"] };
-    if (nodeId === "triage") return { category: "orders", urgency: 50, asks: "where is my order", needs_action: false, ...over["triage"] };
-    if (nodeId === "judge") return { verdict: "pass", critique: "none", score: 90, ...over["judge"] };
+    if (nodeId === "triage") return { distress: false, out_of_scope: false, category: "shipping", sentiment: "neutral", language: "english", urgency: 50, asks: "when will my order arrive", needs_action: false, reason: "asks order status", ...over["triage"] };
+    if (nodeId === "judge") return { verdict: "pass", critique: "none", score: 92, ...over["judge"] };
+    if (nodeId === "qa") return { qa_relevant: true, qa_accurate: true, qa_safe: true, qa_resolved: true, qa_score: 90, qa_note: "good resolution", ...over["qa"] };
     return { result: "ok" };
   };
   const composeOut = (nodeId: string): Record<string, unknown> => {
-    if (nodeId === "answer") return { reply: "Your order ships tomorrow.", grounded: true, cited_source: "handbook", makes_promise: false, ...over["answer"] };
-    if (nodeId === "escalate") return { result: "Handoff: customer asks order status; KB had no match.", ...over["escalate"] };
+    if (nodeId === "answer") return { reply: "Your order ships in 1 day and arrives in 3-5 days.", grounded: true, cited_source: "handbook", makes_promise: false, ...over["answer"] };
+    if (nodeId === "clarify") return { reply: "Could you share your order number so I can check?", is_clarification: true, ...over["clarify"] };
+    if (nodeId === "escalate") return { brief: "Case file: customer asks order status; KB weak; recommend human reply.", kb_gap: "none", ...over["escalate"] };
     return { result: "composed" };
   };
-  // Estimates stay within each node's declared per-cap budget (think nodes 60, compose nodes
-  // 40-60, escalate compose 40) so admission never denies in the fake-plugin harness.
   const think: CapabilityPlugin = { name: "think", sideEffect: "read", estimateCents: () => 50, async invoke(c: EffectCall) { return { output: thinkOut(c.nodeId), claimedCostCents: 50 }; } };
   const compose: CapabilityPlugin = { name: "compose", sideEffect: "read", estimateCents: () => 35, async invoke(c: EffectCall) { return { output: composeOut(c.nodeId), claimedCostCents: 35 }; } };
-  const ragOut = over["retrieve"] ?? { ok: true, hits: 3, top_score: "0.81", sources: "handbook", body: "[1] (source: handbook) Orders ship in 1 day." };
+  const ragOut = over["retrieve"] ?? { ok: true, hits: 3, top_score: "0.81", top_score_pct: 81, sources: "handbook", body: "[1] (source: handbook) Orders ship in 1 day." };
   const ragSearch: CapabilityPlugin = { name: "rag.search", sideEffect: "read", estimateCents: () => 15, async invoke() { return { output: ragOut, claimedCostCents: 15 }; } };
   const route: CapabilityPlugin = { name: "llm_route", sideEffect: "read", estimateCents: () => 20, async invoke() { return { output: over["route"] ?? { chosen_node: "resolve", reason: "grounded informational answer" }, claimedCostCents: 20 }; } };
   const recall: CapabilityPlugin = { name: "recall", sideEffect: "read", estimateCents: () => 5, async invoke() { return { output: { "recall.last_topic": "" }, claimedCostCents: 5 }; } };
@@ -67,20 +64,23 @@ function plugins(over: Record<string, Record<string, unknown>> = {}): Map<string
   return new Map<string, CapabilityPlugin>([["think", think], ["compose", compose], ["rag.search", ragSearch], ["llm_route", route], ["recall", recall], ["remember", remember], ["email_send", email], ["slack_send", slack]]);
 }
 
-function run(over: Record<string, Record<string, unknown>> = {}, approve: (c: EffectCall) => boolean = () => true) {
+async function run(over: Record<string, Record<string, unknown>> = {}, approve: (c: EffectCall) => boolean = () => true) {
   const { ring, owner, supervisorSigner, store, now } = rig();
   const { supervisor } = Supervisor.create(plugins(over));
   const initialState = { ...(manifest.seed ?? {}) } as Record<string, string | number | boolean | null>;
   const engine = new Engine(manifest, "t1", "r1", { store, owner, supervisor, supervisorSigner, now });
-  return { engine, ring, store, run: engine.run({ maxSteps: 60, approve, initialState }) };
+  const res = await engine.run({ maxSteps: 60, approve, initialState });
+  const events = await store.read("t1");
+  const seq = events.filter((e) => e.type === "NodeEntered").map((e) => (e.scope as { nodeId?: string }).nodeId);
+  return { res, ring, store, events, seq };
 }
 
-test("support-agent manifest is structurally valid", () => {
+test("support-agent v2 manifest is structurally valid", () => {
   const issues = validateManifest(manifest);
   assert.deepEqual(issues, [], `validation issues: ${issues.map((i) => i.message).join("; ")}`);
 });
 
-test("support-agent uses only real built-in capabilities", () => {
+test("support-agent v2 uses only real built-in capabilities", () => {
   for (const node of manifest.nodes) {
     for (const cap of node.capabilities) {
       assert.ok(BUILTINS.has(cap.name), `node '${node.id}' uses unknown capability '${cap.name}'`);
@@ -88,64 +88,77 @@ test("support-agent uses only real built-in capabilities", () => {
   }
 });
 
-test("support-agent: the safety screen runs FIRST (entry) and can hard-route to escalate", () => {
-  assert.equal(manifest.entry, "screen", "the safety screen must be the entry node");
-  const distressEdge = manifest.edges.find((e) => e.from === "screen" && e.to === "escalate");
-  assert.ok(distressEdge?.when, "screen must have a conditional edge straight to escalate (distress/out-of-scope)");
-  const j = JSON.stringify(distressEdge!.when);
-  assert.match(j, /screen\.distress/, "the escalate gate must read the distress flag");
-  assert.match(j, /screen\.out_of_scope/, "the escalate gate must read the out-of-scope flag");
+test("support-agent v2: triage is the entry and classifies intent + sentiment + language", () => {
+  assert.equal(manifest.entry, "triage", "front-door triage must be the entry node");
+  const role = manifest.nodes.find((n) => n.id === "triage")!.role;
+  for (const k of ["sentiment", "language", "category", "distress", "out_of_scope"]) {
+    assert.match(role, new RegExp(k), `triage must classify ${k}`);
+  }
 });
 
-test("support-agent: weak grounding (zero hits) routes to a human, never a guessed answer", () => {
-  const groundEdge = manifest.edges.find((e) => e.from === "retrieve" && e.to === "escalate");
-  assert.ok(groundEdge?.when, "retrieve must escalate when grounding is insufficient");
-  assert.match(JSON.stringify(groundEdge!.when), /retrieve\.hits/, "the grounding gate must read the retrieval hit count");
+test("support-agent v2: distress / out-of-scope hard-route to a human from the door", () => {
+  const e = manifest.edges.find((x) => x.from === "triage" && x.to === "escalate");
+  assert.ok(e?.when, "triage must escalate distress/out-of-scope");
+  const j = JSON.stringify(e!.when);
+  assert.match(j, /triage\.distress/);
+  assert.match(j, /triage\.out_of_scope/);
 });
 
-test("support-agent: the send + escalation-notify nodes are human-gated ('suggest')", () => {
-  assert.equal(manifest.nodes.find((n) => n.id === "send_reply")?.autonomy, "suggest", "sending to the customer must be approval-gated");
-  assert.equal(manifest.nodes.find((n) => n.id === "notify_human")?.autonomy, "suggest", "escalation to a human must be approval-gated (never silently dropped)");
+test("support-agent v2: three grounding tiers — answer (strong), clarify (weak), escalate (none)", () => {
+  const toAnswer = manifest.edges.find((x) => x.from === "retrieve" && x.to === "answer");
+  const toClarify = manifest.edges.find((x) => x.from === "retrieve" && x.to === "clarify");
+  const toEscalate = manifest.edges.find((x) => x.from === "retrieve" && x.to === "escalate");
+  assert.ok(toAnswer?.when && toClarify?.when && toEscalate?.when, "retrieve must branch into answer/clarify/escalate by confidence");
+  assert.match(JSON.stringify(toClarify!.when), /top_score/, "the clarify branch must gate on the match score (weak grounding)");
+  assert.match(JSON.stringify(toEscalate!.when), /retrieve\.hits/, "the escalate branch must gate on zero hits");
 });
 
-test("support-agent: route is fail-closed (seed declares fallback=escalate)", () => {
-  assert.equal(String(manifest.seed?.["fallback"]), "escalate", "a routing failure must err toward a human, not auto-resolve");
+test("support-agent v2: every terminal path flows through QA scoring then record", () => {
+  // send_reply -> qa, notify_human -> qa, qa -> record
+  assert.ok(manifest.edges.some((e) => e.from === "send_reply" && e.to === "qa"), "a resolved reply must be QA-scored");
+  assert.ok(manifest.edges.some((e) => e.from === "notify_human" && e.to === "qa"), "an escalation must be QA-scored too");
+  assert.ok(manifest.edges.some((e) => e.from === "qa" && e.to === "record"), "the QA score must be recorded to the ledger");
 });
 
-test("support-agent: RESOLVE path runs E2E (grounded answer, judge pass, human-approved send); ledger verifies", async () => {
-  const { ring, store, run: r } = run();
-  const res = await r;
+test("support-agent v2: escalation carries a pre-investigated case file + knowledge-gap note", () => {
+  const role = manifest.nodes.find((n) => n.id === "escalate")!.role;
+  assert.match(role, /case file|CASE FILE/i, "escalation must be a case file, not a cold transfer");
+  assert.match(role, /kb_gap|knowledge-gap|KNOWLEDGE-GAP/i, "escalation must capture the knowledge-base gap");
+});
+
+test("support-agent v2: send + notify are human-gated; route is fail-closed", () => {
+  assert.equal(manifest.nodes.find((n) => n.id === "send_reply")?.autonomy, "suggest");
+  assert.equal(manifest.nodes.find((n) => n.id === "notify_human")?.autonomy, "suggest");
+  assert.equal(String(manifest.seed?.["fallback"]), "escalate");
+});
+
+test("support-agent v2: RESOLVE path runs E2E (triage->answer->judge->route->send->qa->record); ledger verifies", async () => {
+  const { res, ring, store, seq } = await run();
   assert.equal(res.status, "completed", `resolve path should complete, got ${res.status}`);
   assert.ok(verify(await store.read("t1"), ring).ok, "ledger must verify");
-  const proj = project(await store.read("t1"));
-  const seq = (await store.read("t1")).filter((e) => e.type === "NodeEntered").map((e) => (e.scope as { nodeId?: string }).nodeId);
-  assert.ok(seq.includes("send_reply"), "the resolve path must reach send_reply");
-  void proj;
+  for (const n of ["triage", "retrieve", "answer", "judge", "route", "send_reply", "qa", "record"]) {
+    assert.ok(seq.includes(n), `resolve path must reach ${n}`);
+  }
 });
 
-test("support-agent: DISTRESS hard-routes to escalation + human notify (no answering)", async () => {
-  const { store, run: r } = run({ screen: { distress: true, out_of_scope: false, category: "other", reason: "distress" } });
-  const res = await r;
-  assert.equal(res.status, "completed", `distress path should complete (via notify), got ${res.status}`);
-  const seq = (await store.read("t1")).filter((e) => e.type === "NodeEntered").map((e) => (e.scope as { nodeId?: string }).nodeId);
-  assert.ok(seq.includes("escalate") && seq.includes("notify_human"), "distress must reach escalate -> notify_human");
+test("support-agent v2: WEAK grounding asks a clarifying question instead of guessing or escalating", async () => {
+  const { res, seq } = await run({ retrieve: { ok: true, hits: 2, top_score: "0.35", top_score_pct: 35, sources: "handbook", body: "weakish" } });
+  assert.equal(res.status, "completed", `clarify path should complete, got ${res.status}`);
+  assert.ok(seq.includes("clarify"), "weak grounding must route to clarify");
+  assert.ok(!seq.includes("answer"), "weak grounding must NOT draft a full answer");
+  assert.ok(seq.includes("qa"), "even a clarification gets QA-scored");
+});
+
+test("support-agent v2: DISTRESS hard-escalates with a case file, no answering", async () => {
+  const { res, seq } = await run({ triage: { distress: true, out_of_scope: false, category: "other", sentiment: "frustrated", language: "english", urgency: 95, asks: "help", needs_action: false, reason: "distress" } });
+  assert.equal(res.status, "completed");
+  assert.ok(seq.includes("escalate") && seq.includes("notify_human") && seq.includes("qa"), "distress -> escalate -> notify -> qa");
   assert.ok(!seq.includes("answer"), "a distressed customer must NOT be answered by the bot");
 });
 
-test("support-agent: zero-grounding escalates instead of guessing", async () => {
-  const { store, run: r } = run({ retrieve: { ok: true, hits: 0, top_score: "0", sources: "", body: "" } });
-  const res = await r;
-  assert.equal(res.status, "completed", `zero-grounding path should complete via escalation, got ${res.status}`);
-  const seq = (await store.read("t1")).filter((e) => e.type === "NodeEntered").map((e) => (e.scope as { nodeId?: string }).nodeId);
-  assert.ok(seq.includes("escalate"), "no grounding must route to escalate");
-  assert.ok(!seq.includes("answer"), "with zero grounding the bot must not draft an answer");
-});
-
-test("support-agent: the judge loop FIRES — a 'revise' then 'pass' re-runs the answer node", async () => {
-  // judge says revise once, then pass; answer must run twice (evaluator-optimizer).
-  const { ring, store, run: r } = run({ judge: {} }, () => true);
-  // override judge to flip: use a stateful plugin via 'over' isn't enough, so assert structurally + on the pass run.
-  const res = await r;
+test("support-agent v2: zero grounding escalates instead of guessing", async () => {
+  const { res, seq } = await run({ retrieve: { ok: true, hits: 0, top_score: "0", top_score_pct: 0, sources: "", body: "" } });
   assert.equal(res.status, "completed");
-  assert.ok(verify(await store.read("t1"), ring).ok, "ledger verifies");
+  assert.ok(seq.includes("escalate"), "no grounding must escalate");
+  assert.ok(!seq.includes("answer") && !seq.includes("clarify"), "with zero grounding the bot must not answer or clarify");
 });
