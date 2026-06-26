@@ -128,7 +128,12 @@ export const ragSearchCapability: CapabilityPlugin = {
   async invoke(call: EffectCall): Promise<{ output: unknown; claimedCostCents: number }> {
     const input = call.input as Record<string, unknown>;
     const agentId = String(input["kb"] ?? input["_agentId"] ?? input["agentId"] ?? "default");
-    const query = String(input["query"] ?? input[`${call.nodeId}.query`] ?? input["question"] ?? "").trim();
+    // Resolve the search query: an explicit `query`/`question`, else the inbound message text
+    // (`body`/`subject`) so a ticket-shaped agent (support) retrieves on the customer's words
+    // without needing a separate query-extraction node.
+    const query = String(
+      input["query"] ?? input[`${call.nodeId}.query`] ?? input["question"] ?? input["body"] ?? input["subject"] ?? "",
+    ).trim();
     const topK = Math.min(10, Math.max(1, Number(input["top_k"]) || 4));
     if (!query) return { output: { ok: false, error: "query is required" }, claimedCostCents: 0 };
 
