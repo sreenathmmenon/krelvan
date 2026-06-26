@@ -23,7 +23,7 @@ export interface TemplateManifest {
   name: string;
   intent: string;
   entry: string;
-  nodes: { id: string; role: string; autonomy: string; capabilities: { name: string; sideEffect: string; budgetCents: number }[] }[];
+  nodes: { id: string; role: string; autonomy: string; capabilities: { name: string; sideEffect: string; budgetCents: number; subAgent?: { manifestId: string; outputMapping: Record<string, string>; onSubFailure?: "propagate" | "return-error" } }[] }[];
   edges: { from: string; to: string; when?: unknown }[];
   runBudgetCents: number;
   maxNodeVisits: number;
@@ -66,6 +66,1576 @@ export const REGISTRY_URL =
 // MCP entries are real published servers. Paid entries demonstrate the free/paid
 // boundary with real license-flow fields (no fake prices on free items).
 export const REGISTRY_SEED: CatalogEntry[] = [
+  {
+    "name": "research-analyst",
+    "title": "Research Analyst",
+    "oneLiner": "Researches a topic on the open web, reasons to a confidence-scored synthesis, deepens the search when confidence is low, writes a one-page brief, and remembers it — with a signed record of every step.",
+    "category": "Templates",
+    "sideEffect": "write-reversible",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "tavily-api-key"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+      "version": 1,
+      "name": "Research Analyst",
+      "intent": "Research a topic on the open web, reason over the findings to a confidence-scored synthesis, deepen the search if confidence is low, write a clean executive brief, and remember it — keeping a signed record of every step.",
+      "entry": "search",
+      "runBudgetCents": 300,
+      "maxNodeVisits": 2,
+      "seed": {
+        "topic": "the current state of small open-weight language models",
+        "audience": "a busy executive who wants a one-page brief",
+        "remember_map": "last_brief=compose.body"
+      },
+      "nodes": [
+        {
+          "id": "search",
+          "role": "You are a research scout. Search the open web for high-signal, recent, credible sources about the 'topic' state value. Gather facts, figures, dates, and named sources — breadth first. Output object keys: findings (the raw gathered material as text, including any source names/links you saw), query_used (the search query you ran).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "web_search",
+              "sideEffect": "read",
+              "budgetCents": 16
+            }
+          ]
+        },
+        {
+          "id": "synthesize",
+          "role": "You are a senior research analyst. Read the gathered material in the CURRENT DATA TO ANALYZE section (the 'findings' from the search) plus the original 'topic' and 'audience' state values. Reason over it and produce a synthesis. Be honest about gaps. Output object keys: summary (3-5 sentence neutral synthesis of what the sources actually say), key_points (a newline-separated list of the 3-6 most important takeaways, each grounded in the findings), confidence (an INTEGER 0-100 expressing how well the gathered sources actually support a solid brief — LOW if sources were thin, contradictory, off-topic, or missing; HIGH only if you have multiple corroborating, on-topic, credible sources). Set confidence honestly: it gates whether the agent does a second, deeper search pass before writing.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "think",
+              "sideEffect": "read",
+              "budgetCents": 60
+            }
+          ]
+        },
+        {
+          "id": "deepen",
+          "role": "The first synthesis was low-confidence. Run a second, MORE TARGETED web search to fill the specific gaps the analyst flagged in 'summary' — chase named sources, recent dates, and any contradictions. Output object keys: findings (the additional gathered material as text, appended to what is known), query_used (the refined search query you ran).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "web_search",
+              "sideEffect": "read",
+              "budgetCents": 16
+            }
+          ]
+        },
+        {
+          "id": "compose",
+          "role": "You are an executive editor. Using the analyst's 'summary' and 'key_points' from the CURRENT DATA TO ANALYZE section, write a clean, self-contained one-page brief for the 'audience' state value. Lead with a one-line bottom-line-up-front, then 3-6 tight bullet takeaways, then a short 'what we don't yet know' caveat line. No fluff, no invented facts beyond what the analyst provided. Output object keys: body (the finished brief as plain text), title (a short headline for the brief).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "compose",
+              "sideEffect": "read",
+              "budgetCents": 30
+            }
+          ]
+        },
+        {
+          "id": "remember",
+          "role": "Persist the finished brief to memory as 'last_brief' so it can be recalled, compared against future runs, and used as an audit trail.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "remember",
+              "sideEffect": "write-reversible",
+              "budgetCents": 5
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "search",
+          "to": "synthesize"
+        },
+        {
+          "from": "synthesize",
+          "to": "deepen",
+          "when": {
+            "op": "lt",
+            "left": {
+              "op": "var",
+              "key": "synthesize.confidence"
+            },
+            "right": {
+              "op": "const",
+              "value": 70
+            }
+          }
+        },
+        {
+          "from": "synthesize",
+          "to": "compose",
+          "when": {
+            "op": "gte",
+            "left": {
+              "op": "var",
+              "key": "synthesize.confidence"
+            },
+            "right": {
+              "op": "const",
+              "value": 70
+            }
+          }
+        },
+        {
+          "from": "deepen",
+          "to": "synthesize"
+        },
+        {
+          "from": "compose",
+          "to": "remember"
+        }
+      ]
+    }
+  },
+  {
+    "name": "competitive-intel",
+    "title": "Competitive Intel Monitor",
+    "oneLiner": "Watch a competitor's page daily, decide with an LLM router whether a change is material, pull external context when it is, and post a digest — with a signed record of every check.",
+    "category": "Templates",
+    "sideEffect": "write-reversible",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "firecrawl-api-key",
+      "intel-webhook-url"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+      "version": 1,
+      "name": "Competitive Intel Monitor",
+      "intent": "Watch a competitor's page on a daily schedule, detect meaningful changes, decide (with an LLM router) whether a change warrants deeper research, optionally pull external context with a web search, then compose a digest and post it to my webhook — keeping a signed record of every check.",
+      "entry": "fetch",
+      "runBudgetCents": 300,
+      "maxNodeVisits": 2,
+      "seed": {
+        "competitor_url": "https://example.com/pricing",
+        "competitor_label": "the watched competitor page",
+        "webhook_label": "the team intel channel"
+      },
+      "nodes": [
+        {
+          "id": "fetch",
+          "role": "Fetch the current contents of the competitor page (competitor_url) so its current state can be analyzed.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "http_get",
+              "sideEffect": "read",
+              "budgetCents": 10
+            }
+          ]
+        },
+        {
+          "id": "extract",
+          "role": "You are a competitive-intelligence analyst. The freshly-fetched competitor page text is in the CURRENT DATA TO ANALYZE section. Read it and extract the single most important observable signal about this competitor RIGHT NOW (a pricing change, a new feature, a new plan, a headline/positioning shift, a removed offering, etc.). FIRST: if the CURRENT DATA TO ANALYZE section is empty/missing, is an error page, or contains nothing meaningful, set changed to false, set signal to a short note like 'Could not read the page', and set needs_deep_dive to false — do NOT invent anything. OTHERWISE: 1) Write a one-sentence description of the most notable thing the page shows now into signal. 2) Set changed to true if this reads like a NEW or notably different state worth flagging, otherwise false. 3) Set needs_deep_dive to true ONLY when the signal is material enough that external context (news, competitor coverage, market reaction) would meaningfully help — e.g. a real pricing move, a major new product, or a strategic positioning shift; otherwise false. Output object keys: signal (one sentence), changed (true/false), needs_deep_dive (true/false).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "think",
+              "sideEffect": "read",
+              "budgetCents": 80
+            }
+          ]
+        },
+        {
+          "id": "deep_dive",
+          "role": "Run a web search for external context on the competitor signal (the extract.signal value) — recent news, third-party coverage, or market reaction — so the digest can include outside perspective, not just what the page says.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "web_search",
+              "sideEffect": "read",
+              "budgetCents": 16
+            }
+          ]
+        },
+        {
+          "id": "deep_think",
+          "role": "You are a competitive-intelligence analyst doing a deeper read. The CURRENT DATA TO ANALYZE section contains web-search results about the competitor signal. Synthesize the most decision-useful takeaway: what is actually happening, why it might matter, and any risk or opportunity it implies for us. Output object keys: deep_findings (two or three sentences grounded ONLY in the provided search results; if the results are empty or unhelpful, say so plainly and do not speculate).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "think",
+              "sideEffect": "read",
+              "budgetCents": 80
+            }
+          ]
+        },
+        {
+          "id": "digest",
+          "role": "Compose a concise competitive-intel digest for the team. Use the extracted signal (extract.signal) and, if a deep dive ran, the deep_think.deep_findings synthesis. Lead with the headline change, then the external context if present, then a one-line 'why it matters'. Keep it skimmable — a few sentences, no fluff.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "compose",
+              "sideEffect": "read",
+              "budgetCents": 15
+            }
+          ]
+        },
+        {
+          "id": "notify",
+          "role": "Post the composed competitive-intel digest to the configured webhook so the team sees it.",
+          "autonomy": "suggest",
+          "capabilities": [
+            {
+              "name": "notify_webhook",
+              "sideEffect": "write-reversible",
+              "budgetCents": 5
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "fetch",
+          "to": "extract"
+        },
+        {
+          "from": "extract",
+          "to": "deep_dive",
+          "when": {
+            "op": "eq",
+            "left": {
+              "op": "var",
+              "key": "extract.needs_deep_dive"
+            },
+            "right": {
+              "op": "const",
+              "value": true
+            }
+          }
+        },
+        {
+          "from": "extract",
+          "to": "digest",
+          "when": {
+            "op": "ne",
+            "left": {
+              "op": "var",
+              "key": "extract.needs_deep_dive"
+            },
+            "right": {
+              "op": "const",
+              "value": true
+            }
+          }
+        },
+        {
+          "from": "deep_dive",
+          "to": "deep_think"
+        },
+        {
+          "from": "deep_think",
+          "to": "digest"
+        },
+        {
+          "from": "digest",
+          "to": "notify"
+        }
+      ],
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 9 * * *"
+      }
+    }
+  },
+  {
+    "name": "inbox-triage",
+    "title": "Inbox Triage & Reply",
+    "oneLiner": "Recalls the sender, classifies intent + urgency, drafts a reply, and sends it only after you approve — archiving the rest, with a signed record of every call.",
+    "category": "Templates",
+    "sideEffect": "message-human",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "smtp-credentials"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+      "version": 1,
+      "name": "Inbox Triage & Reply",
+      "intent": "Triage an incoming email: recall what I know about this sender, classify its intent and urgency, decide whether it deserves a reply, draft one for me, and send it ONLY after I approve — archiving the rest. Every decision and send is a signed ledger record.",
+      "entry": "recall_sender",
+      "runBudgetCents": 200,
+      "maxNodeVisits": 2,
+      "seed": {
+        "from_address": "jordan@acme.com",
+        "subject": "Following up on the proposal",
+        "body": "Hi — just checking whether you had a chance to review the proposal we sent last week. We'd love to move forward this month if it still makes sense on your end. Let me know either way!",
+        "my_name": "Sam",
+        "remember_map": "last_contact=classify.category"
+      },
+      "nodes": [
+        {
+          "id": "recall_sender",
+          "role": "Load what we already know about this sender from memory (recall.last_contact — the category of our last interaction with from_address). On the very first contact this will be empty; that's fine.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "recall",
+              "sideEffect": "read",
+              "budgetCents": 5
+            }
+          ]
+        },
+        {
+          "id": "classify",
+          "role": "You are an executive inbox assistant triaging one incoming email. The email is in the CURRENT DATA TO ANALYZE section: from_address (the sender), subject, and body. The MEMORY section may contain 'last_contact' — the category of our previous interaction with this sender (absent on first contact). Read the email carefully and decide three things. 1) category: ONE lowercase word naming the intent — one of: sales, support, scheduling, billing, personal, newsletter, spam. 2) urgency: an INTEGER 0-100 (0 = no action ever needed e.g. newsletter/spam, 50 = normal, 90+ = time-sensitive and the sender is waiting on us). 3) should_reply: a BOOLEAN — true ONLY if a human-written reply is genuinely warranted (a real person is awaiting a response, or it is sales/support/scheduling/billing/personal that we should answer); false for newsletters, spam, pure FYI/no-reply notifications, or anything auto-generated. Rules: never set should_reply true for category spam or newsletter; base your decision on the email content, not on memory; if the body is empty or unreadable, set category to spam, urgency 0, should_reply false. Output object keys: category (the word), urgency (the integer), should_reply (true/false), reason (one short sentence explaining the call).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "think",
+              "sideEffect": "read",
+              "budgetCents": 60
+            }
+          ]
+        },
+        {
+          "id": "draft",
+          "role": "You are drafting a reply on behalf of my_name (in the seed). The original email is in the CURRENT DATA TO ANALYZE section (from_address, subject, body); the triage call is available as classify.category / classify.urgency / classify.reason. Write a concise, warm, professional reply that directly addresses what the sender asked, matches the category (e.g. a sales follow-up gets a next step; a scheduling email proposes/confirms a time), and is ready to send as-is. Do NOT invent commitments, prices, or dates that weren't in the original thread — if specifics are unknown, ask for them or offer to follow up. Sign off as my_name. Output object keys: subject (the reply subject, usually 'Re: ' + the original subject), reply (the full reply body, plain text, 2-5 sentences).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "compose",
+              "sideEffect": "read",
+              "budgetCents": 30
+            }
+          ]
+        },
+        {
+          "id": "send",
+          "role": "Send the drafted reply (draft.subject / draft.reply) to from_address by email. This node is approval-gated: because it MESSAGES A HUMAN, the run pauses here and shows me the exact draft to approve, edit, or reject before a single email leaves. Nothing is sent without my explicit go-ahead.",
+          "autonomy": "suggest",
+          "capabilities": [
+            {
+              "name": "email_send",
+              "sideEffect": "message-human",
+              "budgetCents": 5
+            }
+          ]
+        },
+        {
+          "id": "archive",
+          "role": "No reply is warranted (newsletter, spam, or pure FYI). Note the triage outcome — the email is left read/archived with no message sent. Summarize in one line why it was archived (use classify.category and classify.reason).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "compose",
+              "sideEffect": "read",
+              "budgetCents": 30
+            }
+          ]
+        },
+        {
+          "id": "remember",
+          "role": "Persist the category of this interaction as last_contact for this sender, so the next email from from_address is triaged with full history. This closes the loop for the audit trail.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "remember",
+              "sideEffect": "write-reversible",
+              "budgetCents": 5
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "recall_sender",
+          "to": "classify"
+        },
+        {
+          "from": "classify",
+          "to": "draft",
+          "when": {
+            "op": "and",
+            "clauses": [
+              {
+                "op": "eq",
+                "left": {
+                  "op": "var",
+                  "key": "classify.should_reply"
+                },
+                "right": {
+                  "op": "const",
+                  "value": true
+                }
+              },
+              {
+                "op": "ne",
+                "left": {
+                  "op": "var",
+                  "key": "classify.category"
+                },
+                "right": {
+                  "op": "const",
+                  "value": "spam"
+                }
+              },
+              {
+                "op": "ne",
+                "left": {
+                  "op": "var",
+                  "key": "classify.category"
+                },
+                "right": {
+                  "op": "const",
+                  "value": "newsletter"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "from": "classify",
+          "to": "archive",
+          "when": {
+            "op": "or",
+            "clauses": [
+              {
+                "op": "ne",
+                "left": {
+                  "op": "var",
+                  "key": "classify.should_reply"
+                },
+                "right": {
+                  "op": "const",
+                  "value": true
+                }
+              },
+              {
+                "op": "eq",
+                "left": {
+                  "op": "var",
+                  "key": "classify.category"
+                },
+                "right": {
+                  "op": "const",
+                  "value": "spam"
+                }
+              },
+              {
+                "op": "eq",
+                "left": {
+                  "op": "var",
+                  "key": "classify.category"
+                },
+                "right": {
+                  "op": "const",
+                  "value": "newsletter"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "from": "draft",
+          "to": "send"
+        },
+        {
+          "from": "send",
+          "to": "remember"
+        },
+        {
+          "from": "archive",
+          "to": "remember"
+        }
+      ]
+    }
+  },
+  {
+    "name": "rag-knowledge",
+    "title": "Self-Improving RAG Agent",
+    "oneLiner": "Answers strictly from your knowledge base — and when it can't, it researches the gap on the web, ingests the answer back into the KB, and re-answers. It fills its own knowledge gaps, with a signed record of what it learned.",
+    "category": "Templates",
+    "sideEffect": "write-reversible",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "qdrant-url",
+      "qdrant-api-key"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+      "version": 1,
+      "name": "Self-Improving RAG Agent",
+      "intent": "Answer my question strictly from my own knowledge base. If the knowledge base does NOT cover it, go find the missing information on the web, ingest it back into the knowledge base so the agent is permanently smarter, then re-answer — keeping a signed record of what it learned and why.",
+      "entry": "recall_ctx",
+      "runBudgetCents": 300,
+      "maxNodeVisits": 2,
+      "seed": {
+        "query": "What is our refund window for enterprise customers?",
+        "kb": "company-kb",
+        "remember_map": "last_answer=compose_answer.result"
+      },
+      "nodes": [
+        {
+          "id": "recall_ctx",
+          "role": "Load any context this agent has learned about prior, similar questions from memory (recall.last_answer, recall.last_gap_topic). On the very first run this will be empty — that is fine.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "recall",
+              "sideEffect": "read",
+              "budgetCents": 5
+            }
+          ]
+        },
+        {
+          "id": "search_kb",
+          "role": "Search the internal knowledge base for chunks relevant to the user's 'query' state value. Return the most relevant passages.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "rag.search",
+              "sideEffect": "read",
+              "budgetCents": 15
+            }
+          ]
+        },
+        {
+          "id": "reason",
+          "role": "You are a grounded research analyst. The user's question is in the 'query' state value. The retrieved knowledge-base passages are in the CURRENT DATA TO ANALYZE section (key ending in .body) — each chunk is tagged with its source like [1] (source: handbook). Decide whether the retrieved passages CONTAIN the answer. Rules: answer ONLY from the passages; never invent facts; if the passages do not actually answer the question, that is a KNOWLEDGE GAP. Output object keys: result (your best grounded answer in one or two sentences, or a short note that the KB does not cover this); grounded (true ONLY if the answer is fully supported by the retrieved passages, else false); gap (true if the knowledge base is MISSING the information needed to answer — i.e. the agent must go learn it from the web — else false); gap_topic (if gap is true, a short web-search query string that would find the missing information, e.g. 'enterprise refund window policy 2026'; otherwise an empty string).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "think",
+              "sideEffect": "read",
+              "budgetCents": 60
+            }
+          ]
+        },
+        {
+          "id": "gap_search",
+          "role": "The knowledge base was missing the answer. Search the web for the missing information using the 'reason.gap_topic' the analyst produced (it is provided in the CURRENT DATA TO ANALYZE section). Return the most relevant, citable results so they can be learned into the knowledge base.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "web_search",
+              "sideEffect": "read",
+              "budgetCents": 16
+            }
+          ]
+        },
+        {
+          "id": "learn",
+          "role": "Ingest the web results just gathered into the internal knowledge base so the agent permanently knows this for next time (self-improvement). This is a reversible write to the agent's own knowledge store.",
+          "autonomy": "act-with-veto",
+          "capabilities": [
+            {
+              "name": "rag.ingest",
+              "sideEffect": "write-reversible",
+              "budgetCents": 25
+            }
+          ]
+        },
+        {
+          "id": "reanswer",
+          "role": "You are the same grounded analyst, now with freshly-learned material. The user's question is in the 'query' state value; the newly ingested web findings are in the CURRENT DATA TO ANALYZE section. Re-answer the question using ONLY those findings plus anything from the knowledge base. Output object keys: result (the now-grounded answer in one or two sentences); grounded (true if the freshly-learned material supports the answer, else false); cited_source (a short source label for what you used, e.g. a domain, or 'none').",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "think",
+              "sideEffect": "read",
+              "budgetCents": 60
+            }
+          ]
+        },
+        {
+          "id": "compose_answer",
+          "role": "Compose the final, user-facing answer. Use the analyst's grounded result (from 'reason.result', or the re-answer's 'reanswer.result' if the agent had to fill a gap). Write a clear, direct answer to the user's 'query'. Output object key: result (the final answer text).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "compose",
+              "sideEffect": "read",
+              "budgetCents": 15
+            }
+          ]
+        },
+        {
+          "id": "save",
+          "role": "Save the final answer to memory as the audit trail and as context for future, similar questions (remember last_answer).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "remember",
+              "sideEffect": "write-reversible",
+              "budgetCents": 5
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "recall_ctx",
+          "to": "search_kb"
+        },
+        {
+          "from": "search_kb",
+          "to": "reason"
+        },
+        {
+          "from": "reason",
+          "to": "gap_search",
+          "when": {
+            "op": "eq",
+            "left": {
+              "op": "var",
+              "key": "reason.gap"
+            },
+            "right": {
+              "op": "const",
+              "value": true
+            }
+          }
+        },
+        {
+          "from": "reason",
+          "to": "compose_answer"
+        },
+        {
+          "from": "gap_search",
+          "to": "learn"
+        },
+        {
+          "from": "learn",
+          "to": "reanswer"
+        },
+        {
+          "from": "reanswer",
+          "to": "compose_answer"
+        },
+        {
+          "from": "compose_answer",
+          "to": "save"
+        }
+      ]
+    }
+  },
+  {
+    "name": "daily-digest",
+    "title": "Daily Digest",
+    "oneLiner": "Reads a couple of sources every morning, ranks and dedupes against yesterday, and posts a tight digest to Slack — with a signed record of every run.",
+    "category": "Templates",
+    "sideEffect": "message-human",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "slack-bot-token"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+      "version": 1,
+      "name": "Daily Digest",
+      "intent": "Every morning, read a couple of sources, rank and summarize what's new versus what I already saw yesterday, format a tight digest, and post it to my Slack — keeping a signed record of every run. Set it and forget it.",
+      "entry": "recall_seen",
+      "runBudgetCents": 200,
+      "maxNodeVisits": 2,
+      "seed": {
+        "source_a_label": "primary news source",
+        "source_b_label": "secondary blog source",
+        "slack_channel": "#daily-digest",
+        "remember_map": "last_top=rank.top_item"
+      },
+      "nodes": [
+        {
+          "id": "recall_seen",
+          "role": "Load the headline of YESTERDAY'S top item from memory (recall.last_top) so today's ranking can skip anything I already saw. On the very first run this will be empty — that's fine.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "recall",
+              "sideEffect": "read",
+              "budgetCents": 5
+            }
+          ]
+        },
+        {
+          "id": "fetch_a",
+          "role": "Fetch the primary source ({{seed.source_a_label}}) so its latest items can be read.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "http_get",
+              "sideEffect": "read",
+              "budgetCents": 10
+            }
+          ]
+        },
+        {
+          "id": "fetch_b",
+          "role": "Fetch the secondary source ({{seed.source_b_label}}) so its latest items can be read.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "http_get",
+              "sideEffect": "read",
+              "budgetCents": 10
+            }
+          ]
+        },
+        {
+          "id": "rank",
+          "role": "You are a sharp news editor building a morning digest. INPUTS: the CURRENT DATA TO ANALYZE section contains the freshly-fetched text from BOTH sources (keys ending in .body). The MEMORY section may contain 'last_top (from a PREVIOUS run)' — the headline you led with YESTERDAY. STEPS: 1) Extract the distinct, newsworthy items across both sources. 2) DEDUPE against MEMORY: if an item is essentially the same story as last_top, DROP it (do not lead with yesterday's news again). 3) Rank the remaining items by importance/relevance and keep the best 3–5. 4) Write a crisp one-line summary for each ranked item. OUTPUT object keys: digest (a short ranked list as a single string, each item on its own line prefixed '• '), top_item (the single best NEW headline as a plain string — this becomes tomorrow's last_top), item_count (the number of items in the digest as an integer; 0 if nothing new is worth sending). Rules: never invent items not present in the fetched text; if both sources failed or there is nothing new versus MEMORY, set item_count to 0, digest to '' and top_item to ''.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "think",
+              "sideEffect": "read",
+              "budgetCents": 70
+            }
+          ]
+        },
+        {
+          "id": "format",
+          "role": "Format the ranked digest (in rank.digest) into a friendly, scannable Slack message: a short bold-style title line with today's lead, then the bulleted items, then a one-line sign-off. Keep it tight — no preamble, no markdown headers. OUTPUT object keys: message (the final Slack-ready text).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "compose",
+              "sideEffect": "read",
+              "budgetCents": 15
+            }
+          ]
+        },
+        {
+          "id": "post",
+          "role": "Post the formatted digest (format.message) to the configured Slack channel ({{seed.slack_channel}}). This reaches a human, so it pauses for approval before sending.",
+          "autonomy": "suggest",
+          "capabilities": [
+            {
+              "name": "slack_send",
+              "sideEffect": "message-human",
+              "budgetCents": 1
+            }
+          ]
+        },
+        {
+          "id": "remember",
+          "role": "Persist today's top headline (rank.top_item) as last_top so tomorrow's run can dedupe against it. Runs on every path — even an empty-digest day — so the baseline stays current.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "remember",
+              "sideEffect": "write-reversible",
+              "budgetCents": 5
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "recall_seen",
+          "to": "fetch_a"
+        },
+        {
+          "from": "fetch_a",
+          "to": "fetch_b"
+        },
+        {
+          "from": "fetch_b",
+          "to": "rank"
+        },
+        {
+          "from": "rank",
+          "to": "format",
+          "when": {
+            "op": "and",
+            "clauses": [
+              {
+                "op": "gte",
+                "left": {
+                  "op": "var",
+                  "key": "rank.item_count"
+                },
+                "right": {
+                  "op": "const",
+                  "value": 1
+                }
+              },
+              {
+                "op": "ne",
+                "left": {
+                  "op": "var",
+                  "key": "rank.top_item"
+                },
+                "right": {
+                  "op": "const",
+                  "value": ""
+                }
+              }
+            ]
+          }
+        },
+        {
+          "from": "rank",
+          "to": "remember"
+        },
+        {
+          "from": "format",
+          "to": "post"
+        },
+        {
+          "from": "post",
+          "to": "remember"
+        }
+      ],
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 8 * * *"
+      }
+    }
+  },
+  {
+    "name": "lead-qualifier",
+    "title": "Lead Qualifier & Outreach",
+    "oneLiner": "Enrich an inbound lead, score it against your ICP, and — only for strong fits — draft a personalized outreach email you approve before it sends. Every verdict is a signed record.",
+    "category": "Templates",
+    "sideEffect": "message-human",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "resend-api-key",
+      "firecrawl-api-key"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+      "version": 1,
+      "name": "Lead Qualifier & Outreach",
+      "intent": "Take an inbound lead URL, enrich it, score how well the lead fits my ideal customer profile, and — only for strong fits — draft a personalized outreach email and send it after I approve. Weak fits are remembered so I never chase them again. Every decision is a signed record.",
+      "entry": "recall_prior",
+      "runBudgetCents": 250,
+      "maxNodeVisits": 2,
+      "seed": {
+        "lead_url": "https://example.com/company/acme",
+        "icp": "B2B SaaS companies, 50-500 employees, with an engineering org and a public careers page",
+        "from_name": "Alex from Krelvan",
+        "remember_map": "verdict=score.reason"
+      },
+      "nodes": [
+        {
+          "id": "recall_prior",
+          "role": "Load any prior verdict we already recorded for this lead from memory (recall.verdict). On the first time we see a lead this will be empty. This lets us skip re-qualifying a lead we already dispositioned.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "recall",
+              "sideEffect": "read",
+              "budgetCents": 5
+            }
+          ]
+        },
+        {
+          "id": "enrich",
+          "role": "Fetch the lead's web page at the 'lead_url' state value so we have real, current context (the company, what they do, size signals, hiring signals) to score against. Read-only.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "http_get",
+              "sideEffect": "read",
+              "budgetCents": 8
+            }
+          ]
+        },
+        {
+          "id": "score",
+          "role": "You are a senior SDR qualifying an inbound lead against an Ideal Customer Profile. The ICP is in the 'icp' state value. The freshly-fetched company page text is in the CURRENT DATA TO ANALYZE section (key ending in .body). FIRST: if that section is empty/missing or is clearly an error page, set score to 0 and reason to 'Could not read the lead page'. OTHERWISE read ONLY that page text and judge fit against the ICP. Extract who they are. Output object keys: company (the company/brand name as a quoted string, or \"\" if unclear); contact_email (a contact or sales email visible on the page as a quoted string, or \"\" if none is shown — do NOT invent one); score (an INTEGER 0-100 for how well this lead matches the ICP, where 70+ means a strong fit worth outreach); reason (one sentence justifying the score, citing a concrete signal from the page).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "think",
+              "sideEffect": "read",
+              "budgetCents": 80
+            }
+          ]
+        },
+        {
+          "id": "compose",
+          "role": "You are writing a SHORT, personalized cold outreach email to a qualified lead. Use the company name in 'score.company', the analyst's reason for fit in 'score.reason', and the sender identity in 'from_name'. Reference one concrete, specific detail about THEIR business so it never reads as a mass blast. Keep it under 120 words, warm and direct, with a single clear call to action (a 15-minute call). Output object keys: subject (the email subject line, quoted string); body (the email body, quoted string).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "compose",
+              "sideEffect": "read",
+              "budgetCents": 15
+            }
+          ]
+        },
+        {
+          "id": "outreach",
+          "role": "Send the composed outreach email (subject from compose.subject, body from compose.body) to the lead's contact at score.contact_email. This is a real outbound message to a human, so it requires my approval before it goes out.",
+          "autonomy": "suggest",
+          "capabilities": [
+            {
+              "name": "email_send",
+              "sideEffect": "message-human",
+              "budgetCents": 5
+            }
+          ]
+        },
+        {
+          "id": "record",
+          "role": "Persist this lead's final disposition to memory — the analyst's score-based reason (score.reason), with the score itself (score.score) telling us pursue (>= 70) vs archive — so we keep an audit trail and never re-chase a lead we already archived. Reversible write.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "remember",
+              "sideEffect": "write-reversible",
+              "budgetCents": 5
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "recall_prior",
+          "to": "enrich"
+        },
+        {
+          "from": "enrich",
+          "to": "score"
+        },
+        {
+          "from": "score",
+          "to": "compose",
+          "when": {
+            "op": "gte",
+            "left": {
+              "op": "var",
+              "key": "score.score"
+            },
+            "right": {
+              "op": "const",
+              "value": 70
+            }
+          }
+        },
+        {
+          "from": "score",
+          "to": "record",
+          "when": {
+            "op": "lt",
+            "left": {
+              "op": "var",
+              "key": "score.score"
+            },
+            "right": {
+              "op": "const",
+              "value": 70
+            }
+          }
+        },
+        {
+          "from": "compose",
+          "to": "outreach"
+        },
+        {
+          "from": "outreach",
+          "to": "record"
+        }
+      ]
+    }
+  },
+  {
+    "name": "incident-responder",
+    "title": "Incident Responder",
+    "oneLiner": "Triage a webhook alert's severity with an LLM, page the on-call engineer or log it quietly, post to your status channel, and keep a signed record of every decision.",
+    "category": "Templates",
+    "sideEffect": "message-human",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "telegram-bot-token",
+      "incident-webhook-url"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+      "version": 1,
+      "name": "Incident Responder",
+      "intent": "When an alerting webhook fires, triage the incident's severity with an LLM, decide whether to page the on-call engineer or just log it, post an update to the status channel, and keep a signed record of every decision.",
+      "entry": "triage",
+      "runBudgetCents": 200,
+      "maxNodeVisits": 2,
+      "seed": {
+        "alert_source": "monitoring-webhook",
+        "status_channel": "https://hooks.example.com/incidents",
+        "remember_map": "last_incident=triage.summary",
+        "candidates": "page,log_only"
+      },
+      "nodes": [
+        {
+          "id": "triage",
+          "role": "You are an on-call incident triage analyst. The incoming alert payload (service name, error text, metrics, host, etc.) is in the CURRENT DATA TO ANALYZE section. Assess how serious this incident is RIGHT NOW. Output object keys: severity (a single bare lowercase word, EXACTLY one of: \"critical\", \"high\", \"medium\", \"low\" — choose \"critical\" or \"high\" only for user-facing outages, data loss, security breaches, or paging-worthy degradation; choose \"medium\" or \"low\" for transient blips, single-replica restarts, noisy non-customer-impacting warnings); summary (one tight sentence a human on-call can read at 3am — what is broken, where, and the blast radius). Do NOT invent details that are not in the payload. If the payload is empty or unreadable, set severity to \"low\" and summary to 'Unparseable or empty alert payload — logging only.'.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "think",
+              "sideEffect": "read",
+              "budgetCents": 80
+            }
+          ]
+        },
+        {
+          "id": "route",
+          "role": "Routing step. Decide the next action for this incident. You MUST choose exactly one of the candidate nodes: 'page' (wake the on-call engineer via Telegram — use this when the triaged severity is critical or high, i.e. a real, user-impacting, page-worthy incident) or 'log_only' (record the incident quietly without paging — use this for medium/low severity, transient or non-customer-impacting noise). Base the decision on triage.severity and triage.summary in the run state. When in doubt for a genuinely ambiguous high-impact case, prefer 'page'; for clear low-impact noise, prefer 'log_only'.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "llm_route",
+              "sideEffect": "read",
+              "budgetCents": 20
+            }
+          ]
+        },
+        {
+          "id": "page",
+          "role": "Page the on-call engineer over Telegram. Send a concise, actionable alert containing the triaged severity and the one-line summary so they can respond immediately. This wakes a human — only reached for high/critical incidents.",
+          "autonomy": "suggest",
+          "capabilities": [
+            {
+              "name": "telegram_send",
+              "sideEffect": "message-human",
+              "budgetCents": 5
+            }
+          ]
+        },
+        {
+          "id": "log_only",
+          "role": "Quietly note that this incident was triaged below the paging threshold and is being recorded for the audit trail without waking anyone. No human is messaged on this path.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "compose",
+              "sideEffect": "read",
+              "budgetCents": 15
+            }
+          ]
+        },
+        {
+          "id": "update_status",
+          "role": "Post the incident status to the team's status channel webhook (status_channel) so the whole team has a single source of truth — include the severity, the summary, and whether the on-call was paged.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "notify_webhook",
+              "sideEffect": "write-reversible",
+              "budgetCents": 10
+            }
+          ]
+        },
+        {
+          "id": "record",
+          "role": "Persist this incident (severity + summary) to memory so the next run has the prior incident as context and there is a durable, signed audit trail of every triage decision.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "remember",
+              "sideEffect": "write-reversible",
+              "budgetCents": 5
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "triage",
+          "to": "route"
+        },
+        {
+          "from": "route",
+          "to": "page",
+          "when": {
+            "op": "eq",
+            "left": {
+              "op": "var",
+              "key": "route.chosen_node"
+            },
+            "right": {
+              "op": "const",
+              "value": "page"
+            }
+          }
+        },
+        {
+          "from": "route",
+          "to": "log_only",
+          "when": {
+            "op": "eq",
+            "left": {
+              "op": "var",
+              "key": "route.chosen_node"
+            },
+            "right": {
+              "op": "const",
+              "value": "log_only"
+            }
+          }
+        },
+        {
+          "from": "page",
+          "to": "update_status"
+        },
+        {
+          "from": "log_only",
+          "to": "update_status"
+        },
+        {
+          "from": "update_status",
+          "to": "record"
+        }
+      ],
+      "schedule": {
+        "kind": "interval",
+        "ms": 3600000
+      }
+    }
+  },
+  {
+    "name": "content-repurposer",
+    "title": "Content Repurposer",
+    "oneLiner": "Turn one piece of content into a short-form post AND a thread — recalls your brand voice, extracts the core message, drafts both formats, and queues them for your OK.",
+    "category": "Templates",
+    "sideEffect": "write-reversible",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "publishing-queue-webhook-url"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+      "version": 1,
+      "name": "Content Repurposer",
+      "intent": "Take one piece of source content, recall my brand voice, extract its core message, then spin it into two ready-to-publish formats — a short-form post and a thread — and push them to my publishing queue for a final human OK.",
+      "entry": "recall_voice",
+      "runBudgetCents": 200,
+      "maxNodeVisits": 2,
+      "seed": {
+        "source": "Long-form blog post or transcript goes here.",
+        "brand_label": "my brand voice profile",
+        "channel": "default",
+        "remember_map": "last_core=extract.core"
+      },
+      "nodes": [
+        {
+          "id": "recall_voice",
+          "role": "Load my brand voice / style profile and any prior repurposing context from memory (recall.brand_voice). On the very first run this may be empty — that is fine, the writer will fall back to a clean, neutral-but-punchy voice.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "recall",
+              "sideEffect": "read",
+              "budgetCents": 5
+            }
+          ]
+        },
+        {
+          "id": "extract",
+          "role": "You are a content strategist. The source content to repurpose is in the CURRENT DATA TO ANALYZE / 'source' state value; the MEMORY section (if present) holds my brand voice profile. FIRST: if the source is empty, missing, or has no substantive message to work with, set ready to 0, core to \"\" and angles to \"\". Do NOT invent content. OTHERWISE: read the source and distill it. Steps: 1) Write the single CORE MESSAGE — the one idea a reader must walk away with — as one tight sentence; put it in core. 2) List 2-3 distinct ANGLES (hooks/framings) you could lead with, separated by ' | '; put them in angles. 3) Set ready to 1 only when you have a real core message extracted from the source; otherwise 0. Output object keys: core (one-sentence core message, or \"\"), angles (2-3 hooks separated by ' | ', or \"\"), ready (1 if a usable core message was extracted, else 0).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "think",
+              "sideEffect": "read",
+              "budgetCents": 50
+            }
+          ]
+        },
+        {
+          "id": "compose_short",
+          "role": "Write the SHORT-FORM version. Using the extracted core message (extract.core) and the strongest angle (from extract.angles), and matching the recalled brand voice, write ONE punchy short-form post (think LinkedIn/X single post, under ~80 words): a scroll-stopping hook line, the core idea, and a light call-to-action. Plain text only, ready to publish as-is. Output object key: result (the finished short-form post).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "compose",
+              "sideEffect": "read",
+              "budgetCents": 15
+            }
+          ]
+        },
+        {
+          "id": "compose_thread",
+          "role": "Write a DIFFERENT format: a THREAD. Take the SAME core message (extract.core) but expand it across a numbered thread of 4-6 short posts that each stand alone, opening with a strong hook post and closing with a takeaway/CTA. Use a different angle from compose_short so the two outputs do not read identically. Match the recalled brand voice. Number each post (1/ 2/ 3/ ...). Output object key: result (the finished thread, one post per line).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "compose",
+              "sideEffect": "read",
+              "budgetCents": 15
+            }
+          ]
+        },
+        {
+          "id": "queue",
+          "role": "Push BOTH finished formats (the short-form post from compose_short.result and the thread from compose_thread.result) to my publishing queue webhook as a single draft batch, tagged with the channel. This is a draft for me to approve before it goes live.",
+          "autonomy": "suggest",
+          "capabilities": [
+            {
+              "name": "notify_webhook",
+              "sideEffect": "write-reversible",
+              "budgetCents": 5
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "recall_voice",
+          "to": "extract"
+        },
+        {
+          "from": "extract",
+          "to": "compose_short",
+          "when": {
+            "op": "and",
+            "clauses": [
+              {
+                "op": "gte",
+                "left": {
+                  "op": "var",
+                  "key": "extract.ready"
+                },
+                "right": {
+                  "op": "const",
+                  "value": 1
+                }
+              },
+              {
+                "op": "ne",
+                "left": {
+                  "op": "var",
+                  "key": "extract.core"
+                },
+                "right": {
+                  "op": "const",
+                  "value": ""
+                }
+              }
+            ]
+          }
+        },
+        {
+          "from": "compose_short",
+          "to": "compose_thread"
+        },
+        {
+          "from": "compose_thread",
+          "to": "queue"
+        }
+      ]
+    }
+  },
+  {
+    "name": "supervisor-delegation",
+    "title": "Supervisor (Multi-Agent Delegation)",
+    "oneLiner": "A supervisor agent that plans, then delegates research and writing to two sub-agents under one authority ceiling, assembles the brief, and signs a record. Needs the 'sub-research' and 'sub-writer' sub-agents installed.",
+    "category": "Templates",
+    "sideEffect": "write-reversible",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+      "version": 1,
+      "name": "Supervisor (Multi-Agent Delegation)",
+      "intent": "Run a topic end-to-end under ONE authority ceiling: plan the work, delegate the research to a research sub-agent, hand its findings to a writer sub-agent, assemble the final brief, and keep a signed record. Requires two sub-agents installed: 'sub-research' and 'sub-writer'.",
+      "entry": "plan",
+      "runBudgetCents": 500,
+      "maxNodeVisits": 2,
+      "seed": {
+        "topic": "the economics of on-device LLM inference",
+        "audience": "a busy technical founder",
+        "remember_map": "last_brief=assemble.result"
+      },
+      "nodes": [
+        {
+          "id": "plan",
+          "role": "You are the SUPERVISOR of a small agent team. Read the 'topic' and 'audience' state values. Produce a concrete plan that decomposes the job into (a) what the RESEARCH sub-agent must find out and (b) what angle the WRITER sub-agent should take for this audience. Output object keys: plan (a short, concrete paragraph describing the research questions and the writing angle), research_brief (one sentence telling the research sub-agent exactly what to investigate).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "think",
+              "sideEffect": "read",
+              "budgetCents": 80
+            }
+          ]
+        },
+        {
+          "id": "research",
+          "role": "Delegate the investigation to the RESEARCH sub-agent (manifestId 'sub-research'). It runs as its own bounded sub-run under this supervisor's budget ceiling and returns its findings, which are mapped into this node's 'research_out'. This is a delegation that spends a sub-run budget, so it pauses for human approval (suggest). REQUIRES the 'sub-research' sub-agent to be installed.",
+          "autonomy": "suggest",
+          "capabilities": [
+            {
+              "name": "delegate",
+              "sideEffect": "read",
+              "budgetCents": 200,
+              "subAgent": {
+                "manifestId": "sub-research",
+                "outputMapping": {
+                  "research_out": "synthesize.findings"
+                },
+                "onSubFailure": "return-error"
+              }
+            }
+          ]
+        },
+        {
+          "id": "write",
+          "role": "Delegate the drafting to the WRITER sub-agent (manifestId 'sub-writer'), passing along the research findings. It runs as its own bounded sub-run and returns a draft, mapped into this node's 'writer_out'. Delegation spends a sub-run budget, so it pauses for human approval (suggest). REQUIRES the 'sub-writer' sub-agent to be installed.",
+          "autonomy": "suggest",
+          "capabilities": [
+            {
+              "name": "delegate",
+              "sideEffect": "read",
+              "budgetCents": 150,
+              "subAgent": {
+                "manifestId": "sub-writer",
+                "outputMapping": {
+                  "writer_out": "draft.text"
+                },
+                "onSubFailure": "return-error"
+              }
+            }
+          ]
+        },
+        {
+          "id": "assemble",
+          "role": "You are the supervisor doing final assembly. The research sub-agent's findings are in 'research.research_out' and the writer sub-agent's draft is in 'write.writer_out'. Combine them into a single polished brief for the audience: lead with the draft, then append a short 'Sources & evidence' note distilled from the research findings. Output object keys: result (the final assembled brief as text).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "compose",
+              "sideEffect": "read",
+              "budgetCents": 60
+            }
+          ]
+        },
+        {
+          "id": "record",
+          "role": "Persist the assembled brief to memory as 'last_brief' so the next run (and any audit) can see what this team produced.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "remember",
+              "sideEffect": "write-reversible",
+              "budgetCents": 5
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "plan",
+          "to": "research"
+        },
+        {
+          "from": "research",
+          "to": "write",
+          "when": {
+            "op": "and",
+            "clauses": [
+              {
+                "op": "ne",
+                "left": {
+                  "op": "var",
+                  "key": "research.research_out"
+                },
+                "right": {
+                  "op": "const",
+                  "value": null
+                }
+              },
+              {
+                "op": "ne",
+                "left": {
+                  "op": "var",
+                  "key": "research.research_out"
+                },
+                "right": {
+                  "op": "const",
+                  "value": ""
+                }
+              }
+            ]
+          }
+        },
+        {
+          "from": "write",
+          "to": "assemble"
+        },
+        {
+          "from": "assemble",
+          "to": "record"
+        }
+      ]
+    }
+  },
+  {
+    "name": "kb-wiki-builder",
+    "title": "Knowledge-Base Builder (Wiki)",
+    "oneLiner": "Reads your wiki, reasons about what's missing or stale, and — only when warranted — applies LLM-proposed, cross-linked page edits and pings you, with a signed record of every change.",
+    "category": "Templates",
+    "sideEffect": "message-human",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "telegram-bot-token"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+      "version": 1,
+      "name": "Knowledge-Base Builder (Wiki)",
+      "intent": "Grow an interlinked, citeable knowledge base over time: read what the wiki already knows about a topic, reason about what is missing or stale, and — only when an update is genuinely warranted — apply LLM-proposed page edits and notify me, keeping a signed record of every change.",
+      "entry": "read_existing",
+      "runBudgetCents": 250,
+      "maxNodeVisits": 2,
+      "seed": {
+        "wiki": "team-kb",
+        "topic": "the topic to research and document",
+        "source": "kb-builder",
+        "remember_map": "last_update=plan.page"
+      },
+      "nodes": [
+        {
+          "id": "read_existing",
+          "role": "Read what the knowledge base already contains for this topic. The 'topic' state value is what we are documenting and the 'wiki' state value names the wiki. Query the wiki so the downstream reasoning step can SEE the current pages (their titles, summaries, and cross-links) and avoid duplicating or contradicting existing knowledge.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "wiki.query",
+              "sideEffect": "read",
+              "budgetCents": 10
+            }
+          ]
+        },
+        {
+          "id": "plan",
+          "role": "You are a meticulous knowledge-base editor. INPUT: the 'topic' state value is what we are documenting; the CURRENT DATA TO ANALYZE section (a key ending in .body) contains the wiki pages that ALREADY exist for this topic, each cited like [page: <title>]. TASK: Decide whether the knowledge base needs an update for this topic. It needs an update if (a) there is NO existing page covering the topic, or (b) an existing page is missing an important fact, is out of date, or lacks a cross-link to a related concept it mentions. If the existing pages ALREADY cover the topic accurately and completely, NO update is needed — do not churn the wiki for its own sake. WHEN an update IS needed, propose the FULL replacement/new content for ONE page as clean Markdown: a clear title, 2-5 short sentences of factual content, and inline wiki-links of the form [[Related Concept]] for any related concept you reference (this is what makes the base interlinked). Ground every statement in the topic and the existing pages — do NOT invent facts you cannot support. OUTPUT object keys: update_needed (true ONLY if an edit is warranted, else false), page (the page title to create/update as a short string, e.g. 'Retrieval-Augmented Generation'; use '' if no update), content (the full Markdown body for that page including [[wiki-links]], or '' if no update), summary (one sentence describing what you changed and why, for the human notification).",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "think",
+              "sideEffect": "read",
+              "budgetCents": 90
+            }
+          ]
+        },
+        {
+          "id": "apply_update",
+          "role": "Apply the LLM-proposed page to the wiki. Write the page titled by 'plan.page' with the Markdown body in 'plan.content' to the wiki named by 'wiki', tagging the edit with 'source'. This creates the page if new or updates it in place, and re-indexes any [[wiki-links]] so the base stays interlinked. This is a reversible write — the previous version is retained in the wiki log.",
+          "autonomy": "act-with-veto",
+          "capabilities": [
+            {
+              "name": "wiki.ingest",
+              "sideEffect": "write-reversible",
+              "budgetCents": 20
+            }
+          ]
+        },
+        {
+          "id": "notify",
+          "role": "Notify the operator that the knowledge base was updated. Send a short Telegram message containing 'plan.summary' (what changed and why) and 'plan.page' (which page). Because this messages a human, it pauses for approval before sending.",
+          "autonomy": "suggest",
+          "capabilities": [
+            {
+              "name": "telegram_send",
+              "sideEffect": "message-human",
+              "budgetCents": 5
+            }
+          ]
+        },
+        {
+          "id": "record",
+          "role": "Record which page was last updated to memory (remember last_update = the page title from 'plan.page'), so future runs have an audit trail of how the knowledge base grew over time.",
+          "autonomy": "full",
+          "capabilities": [
+            {
+              "name": "remember",
+              "sideEffect": "write-reversible",
+              "budgetCents": 5
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "read_existing",
+          "to": "plan"
+        },
+        {
+          "from": "plan",
+          "to": "apply_update",
+          "when": {
+            "op": "and",
+            "clauses": [
+              {
+                "op": "eq",
+                "left": {
+                  "op": "var",
+                  "key": "plan.update_needed"
+                },
+                "right": {
+                  "op": "const",
+                  "value": true
+                }
+              },
+              {
+                "op": "ne",
+                "left": {
+                  "op": "var",
+                  "key": "plan.page"
+                },
+                "right": {
+                  "op": "const",
+                  "value": ""
+                }
+              }
+            ]
+          }
+        },
+        {
+          "from": "apply_update",
+          "to": "notify"
+        },
+        {
+          "from": "notify",
+          "to": "record"
+        }
+      ]
+    }
+  },
   {
     "name": "price-monitor",
     "title": "Price Monitor",

@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "name": "Research Analyst",
+  "intent": "Research a topic on the open web, reason over the findings to a confidence-scored synthesis, deepen the search if confidence is low, write a clean executive brief, and remember it — keeping a signed record of every step.",
+  "entry": "search",
+  "runBudgetCents": 300,
+  "maxNodeVisits": 2,
+  "seed": {
+    "topic": "the current state of small open-weight language models",
+    "audience": "a busy executive who wants a one-page brief",
+    "remember_map": "last_brief=compose.body"
+  },
+  "nodes": [
+    {
+      "id": "search",
+      "role": "You are a research scout. Search the open web for high-signal, recent, credible sources about the 'topic' state value. Gather facts, figures, dates, and named sources — breadth first. Output object keys: findings (the raw gathered material as text, including any source names/links you saw), query_used (the search query you ran).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "web_search",
+          "sideEffect": "read",
+          "budgetCents": 16
+        }
+      ]
+    },
+    {
+      "id": "synthesize",
+      "role": "You are a senior research analyst. Read the gathered material in the CURRENT DATA TO ANALYZE section (the 'findings' from the search) plus the original 'topic' and 'audience' state values. Reason over it and produce a synthesis. Be honest about gaps. Output object keys: summary (3-5 sentence neutral synthesis of what the sources actually say), key_points (a newline-separated list of the 3-6 most important takeaways, each grounded in the findings), confidence (an INTEGER 0-100 expressing how well the gathered sources actually support a solid brief — LOW if sources were thin, contradictory, off-topic, or missing; HIGH only if you have multiple corroborating, on-topic, credible sources). Set confidence honestly: it gates whether the agent does a second, deeper search pass before writing.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 60
+        }
+      ]
+    },
+    {
+      "id": "deepen",
+      "role": "The first synthesis was low-confidence. Run a second, MORE TARGETED web search to fill the specific gaps the analyst flagged in 'summary' — chase named sources, recent dates, and any contradictions. Output object keys: findings (the additional gathered material as text, appended to what is known), query_used (the refined search query you ran).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "web_search",
+          "sideEffect": "read",
+          "budgetCents": 16
+        }
+      ]
+    },
+    {
+      "id": "compose",
+      "role": "You are an executive editor. Using the analyst's 'summary' and 'key_points' from the CURRENT DATA TO ANALYZE section, write a clean, self-contained one-page brief for the 'audience' state value. Lead with a one-line bottom-line-up-front, then 3-6 tight bullet takeaways, then a short 'what we don't yet know' caveat line. No fluff, no invented facts beyond what the analyst provided. Output object keys: body (the finished brief as plain text), title (a short headline for the brief).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "compose",
+          "sideEffect": "read",
+          "budgetCents": 30
+        }
+      ]
+    },
+    {
+      "id": "remember",
+      "role": "Persist the finished brief to memory as 'last_brief' so it can be recalled, compared against future runs, and used as an audit trail.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "remember",
+          "sideEffect": "write-reversible",
+          "budgetCents": 5
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "search",
+      "to": "synthesize"
+    },
+    {
+      "from": "synthesize",
+      "to": "deepen",
+      "when": {
+        "op": "lt",
+        "left": {
+          "op": "var",
+          "key": "synthesize.confidence"
+        },
+        "right": {
+          "op": "const",
+          "value": 70
+        }
+      }
+    },
+    {
+      "from": "synthesize",
+      "to": "compose",
+      "when": {
+        "op": "gte",
+        "left": {
+          "op": "var",
+          "key": "synthesize.confidence"
+        },
+        "right": {
+          "op": "const",
+          "value": 70
+        }
+      }
+    },
+    {
+      "from": "deepen",
+      "to": "synthesize"
+    },
+    {
+      "from": "compose",
+      "to": "remember"
+    }
+  ]
+}

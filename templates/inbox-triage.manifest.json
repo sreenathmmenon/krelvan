@@ -1,0 +1,191 @@
+{
+  "version": 1,
+  "name": "Inbox Triage & Reply",
+  "intent": "Triage an incoming email: recall what I know about this sender, classify its intent and urgency, decide whether it deserves a reply, draft one for me, and send it ONLY after I approve — archiving the rest. Every decision and send is a signed ledger record.",
+  "entry": "recall_sender",
+  "runBudgetCents": 200,
+  "maxNodeVisits": 2,
+  "seed": {
+    "from_address": "jordan@acme.com",
+    "subject": "Following up on the proposal",
+    "body": "Hi — just checking whether you had a chance to review the proposal we sent last week. We'd love to move forward this month if it still makes sense on your end. Let me know either way!",
+    "my_name": "Sam",
+    "remember_map": "last_contact=classify.category"
+  },
+  "nodes": [
+    {
+      "id": "recall_sender",
+      "role": "Load what we already know about this sender from memory (recall.last_contact — the category of our last interaction with from_address). On the very first contact this will be empty; that's fine.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "recall",
+          "sideEffect": "read",
+          "budgetCents": 5
+        }
+      ]
+    },
+    {
+      "id": "classify",
+      "role": "You are an executive inbox assistant triaging one incoming email. The email is in the CURRENT DATA TO ANALYZE section: from_address (the sender), subject, and body. The MEMORY section may contain 'last_contact' — the category of our previous interaction with this sender (absent on first contact). Read the email carefully and decide three things. 1) category: ONE lowercase word naming the intent — one of: sales, support, scheduling, billing, personal, newsletter, spam. 2) urgency: an INTEGER 0-100 (0 = no action ever needed e.g. newsletter/spam, 50 = normal, 90+ = time-sensitive and the sender is waiting on us). 3) should_reply: a BOOLEAN — true ONLY if a human-written reply is genuinely warranted (a real person is awaiting a response, or it is sales/support/scheduling/billing/personal that we should answer); false for newsletters, spam, pure FYI/no-reply notifications, or anything auto-generated. Rules: never set should_reply true for category spam or newsletter; base your decision on the email content, not on memory; if the body is empty or unreadable, set category to spam, urgency 0, should_reply false. Output object keys: category (the word), urgency (the integer), should_reply (true/false), reason (one short sentence explaining the call).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 60
+        }
+      ]
+    },
+    {
+      "id": "draft",
+      "role": "You are drafting a reply on behalf of my_name (in the seed). The original email is in the CURRENT DATA TO ANALYZE section (from_address, subject, body); the triage call is available as classify.category / classify.urgency / classify.reason. Write a concise, warm, professional reply that directly addresses what the sender asked, matches the category (e.g. a sales follow-up gets a next step; a scheduling email proposes/confirms a time), and is ready to send as-is. Do NOT invent commitments, prices, or dates that weren't in the original thread — if specifics are unknown, ask for them or offer to follow up. Sign off as my_name. Output object keys: subject (the reply subject, usually 'Re: ' + the original subject), reply (the full reply body, plain text, 2-5 sentences).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "compose",
+          "sideEffect": "read",
+          "budgetCents": 30
+        }
+      ]
+    },
+    {
+      "id": "send",
+      "role": "Send the drafted reply (draft.subject / draft.reply) to from_address by email. This node is approval-gated: because it MESSAGES A HUMAN, the run pauses here and shows me the exact draft to approve, edit, or reject before a single email leaves. Nothing is sent without my explicit go-ahead.",
+      "autonomy": "suggest",
+      "capabilities": [
+        {
+          "name": "email_send",
+          "sideEffect": "message-human",
+          "budgetCents": 5
+        }
+      ]
+    },
+    {
+      "id": "archive",
+      "role": "No reply is warranted (newsletter, spam, or pure FYI). Note the triage outcome — the email is left read/archived with no message sent. Summarize in one line why it was archived (use classify.category and classify.reason).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "compose",
+          "sideEffect": "read",
+          "budgetCents": 30
+        }
+      ]
+    },
+    {
+      "id": "remember",
+      "role": "Persist the category of this interaction as last_contact for this sender, so the next email from from_address is triaged with full history. This closes the loop for the audit trail.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "remember",
+          "sideEffect": "write-reversible",
+          "budgetCents": 5
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "recall_sender",
+      "to": "classify"
+    },
+    {
+      "from": "classify",
+      "to": "draft",
+      "when": {
+        "op": "and",
+        "clauses": [
+          {
+            "op": "eq",
+            "left": {
+              "op": "var",
+              "key": "classify.should_reply"
+            },
+            "right": {
+              "op": "const",
+              "value": true
+            }
+          },
+          {
+            "op": "ne",
+            "left": {
+              "op": "var",
+              "key": "classify.category"
+            },
+            "right": {
+              "op": "const",
+              "value": "spam"
+            }
+          },
+          {
+            "op": "ne",
+            "left": {
+              "op": "var",
+              "key": "classify.category"
+            },
+            "right": {
+              "op": "const",
+              "value": "newsletter"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "from": "classify",
+      "to": "archive",
+      "when": {
+        "op": "or",
+        "clauses": [
+          {
+            "op": "ne",
+            "left": {
+              "op": "var",
+              "key": "classify.should_reply"
+            },
+            "right": {
+              "op": "const",
+              "value": true
+            }
+          },
+          {
+            "op": "eq",
+            "left": {
+              "op": "var",
+              "key": "classify.category"
+            },
+            "right": {
+              "op": "const",
+              "value": "spam"
+            }
+          },
+          {
+            "op": "eq",
+            "left": {
+              "op": "var",
+              "key": "classify.category"
+            },
+            "right": {
+              "op": "const",
+              "value": "newsletter"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "from": "draft",
+      "to": "send"
+    },
+    {
+      "from": "send",
+      "to": "remember"
+    },
+    {
+      "from": "archive",
+      "to": "remember"
+    }
+  ]
+}

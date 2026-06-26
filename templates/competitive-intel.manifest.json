@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "name": "Competitive Intel Monitor",
+  "intent": "Watch a competitor's page on a daily schedule, detect meaningful changes, decide (with an LLM router) whether a change warrants deeper research, optionally pull external context with a web search, then compose a digest and post it to my webhook — keeping a signed record of every check.",
+  "entry": "fetch",
+  "runBudgetCents": 300,
+  "maxNodeVisits": 2,
+  "seed": {
+    "competitor_url": "https://example.com/pricing",
+    "competitor_label": "the watched competitor page",
+    "webhook_label": "the team intel channel"
+  },
+  "nodes": [
+    {
+      "id": "fetch",
+      "role": "Fetch the current contents of the competitor page (competitor_url) so its current state can be analyzed.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "http_get",
+          "sideEffect": "read",
+          "budgetCents": 10
+        }
+      ]
+    },
+    {
+      "id": "extract",
+      "role": "You are a competitive-intelligence analyst. The freshly-fetched competitor page text is in the CURRENT DATA TO ANALYZE section. Read it and extract the single most important observable signal about this competitor RIGHT NOW (a pricing change, a new feature, a new plan, a headline/positioning shift, a removed offering, etc.). FIRST: if the CURRENT DATA TO ANALYZE section is empty/missing, is an error page, or contains nothing meaningful, set changed to false, set signal to a short note like 'Could not read the page', and set needs_deep_dive to false — do NOT invent anything. OTHERWISE: 1) Write a one-sentence description of the most notable thing the page shows now into signal. 2) Set changed to true if this reads like a NEW or notably different state worth flagging, otherwise false. 3) Set needs_deep_dive to true ONLY when the signal is material enough that external context (news, competitor coverage, market reaction) would meaningfully help — e.g. a real pricing move, a major new product, or a strategic positioning shift; otherwise false. Output object keys: signal (one sentence), changed (true/false), needs_deep_dive (true/false).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 80
+        }
+      ]
+    },
+    {
+      "id": "deep_dive",
+      "role": "Run a web search for external context on the competitor signal (the extract.signal value) — recent news, third-party coverage, or market reaction — so the digest can include outside perspective, not just what the page says.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "web_search",
+          "sideEffect": "read",
+          "budgetCents": 16
+        }
+      ]
+    },
+    {
+      "id": "deep_think",
+      "role": "You are a competitive-intelligence analyst doing a deeper read. The CURRENT DATA TO ANALYZE section contains web-search results about the competitor signal. Synthesize the most decision-useful takeaway: what is actually happening, why it might matter, and any risk or opportunity it implies for us. Output object keys: deep_findings (two or three sentences grounded ONLY in the provided search results; if the results are empty or unhelpful, say so plainly and do not speculate).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 80
+        }
+      ]
+    },
+    {
+      "id": "digest",
+      "role": "Compose a concise competitive-intel digest for the team. Use the extracted signal (extract.signal) and, if a deep dive ran, the deep_think.deep_findings synthesis. Lead with the headline change, then the external context if present, then a one-line 'why it matters'. Keep it skimmable — a few sentences, no fluff.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "compose",
+          "sideEffect": "read",
+          "budgetCents": 15
+        }
+      ]
+    },
+    {
+      "id": "notify",
+      "role": "Post the composed competitive-intel digest to the configured webhook so the team sees it.",
+      "autonomy": "suggest",
+      "capabilities": [
+        {
+          "name": "notify_webhook",
+          "sideEffect": "write-reversible",
+          "budgetCents": 5
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "fetch",
+      "to": "extract"
+    },
+    {
+      "from": "extract",
+      "to": "deep_dive",
+      "when": {
+        "op": "eq",
+        "left": {
+          "op": "var",
+          "key": "extract.needs_deep_dive"
+        },
+        "right": {
+          "op": "const",
+          "value": true
+        }
+      }
+    },
+    {
+      "from": "extract",
+      "to": "digest",
+      "when": {
+        "op": "ne",
+        "left": {
+          "op": "var",
+          "key": "extract.needs_deep_dive"
+        },
+        "right": {
+          "op": "const",
+          "value": true
+        }
+      }
+    },
+    {
+      "from": "deep_dive",
+      "to": "deep_think"
+    },
+    {
+      "from": "deep_think",
+      "to": "digest"
+    },
+    {
+      "from": "digest",
+      "to": "notify"
+    }
+  ],
+  "schedule": {
+    "kind": "cron",
+    "expr": "0 9 * * *"
+  }
+}

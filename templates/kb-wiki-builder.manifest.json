@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "name": "Knowledge-Base Builder (Wiki)",
+  "intent": "Grow an interlinked, citeable knowledge base over time: read what the wiki already knows about a topic, reason about what is missing or stale, and — only when an update is genuinely warranted — apply LLM-proposed page edits and notify me, keeping a signed record of every change.",
+  "entry": "read_existing",
+  "runBudgetCents": 250,
+  "maxNodeVisits": 2,
+  "seed": {
+    "wiki": "team-kb",
+    "topic": "the topic to research and document",
+    "source": "kb-builder",
+    "remember_map": "last_update=plan.page"
+  },
+  "nodes": [
+    {
+      "id": "read_existing",
+      "role": "Read what the knowledge base already contains for this topic. The 'topic' state value is what we are documenting and the 'wiki' state value names the wiki. Query the wiki so the downstream reasoning step can SEE the current pages (their titles, summaries, and cross-links) and avoid duplicating or contradicting existing knowledge.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "wiki.query",
+          "sideEffect": "read",
+          "budgetCents": 10
+        }
+      ]
+    },
+    {
+      "id": "plan",
+      "role": "You are a meticulous knowledge-base editor. INPUT: the 'topic' state value is what we are documenting; the CURRENT DATA TO ANALYZE section (a key ending in .body) contains the wiki pages that ALREADY exist for this topic, each cited like [page: <title>]. TASK: Decide whether the knowledge base needs an update for this topic. It needs an update if (a) there is NO existing page covering the topic, or (b) an existing page is missing an important fact, is out of date, or lacks a cross-link to a related concept it mentions. If the existing pages ALREADY cover the topic accurately and completely, NO update is needed — do not churn the wiki for its own sake. WHEN an update IS needed, propose the FULL replacement/new content for ONE page as clean Markdown: a clear title, 2-5 short sentences of factual content, and inline wiki-links of the form [[Related Concept]] for any related concept you reference (this is what makes the base interlinked). Ground every statement in the topic and the existing pages — do NOT invent facts you cannot support. OUTPUT object keys: update_needed (true ONLY if an edit is warranted, else false), page (the page title to create/update as a short string, e.g. 'Retrieval-Augmented Generation'; use '' if no update), content (the full Markdown body for that page including [[wiki-links]], or '' if no update), summary (one sentence describing what you changed and why, for the human notification).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 90
+        }
+      ]
+    },
+    {
+      "id": "apply_update",
+      "role": "Apply the LLM-proposed page to the wiki. Write the page titled by 'plan.page' with the Markdown body in 'plan.content' to the wiki named by 'wiki', tagging the edit with 'source'. This creates the page if new or updates it in place, and re-indexes any [[wiki-links]] so the base stays interlinked. This is a reversible write — the previous version is retained in the wiki log.",
+      "autonomy": "act-with-veto",
+      "capabilities": [
+        {
+          "name": "wiki.ingest",
+          "sideEffect": "write-reversible",
+          "budgetCents": 20
+        }
+      ]
+    },
+    {
+      "id": "notify",
+      "role": "Notify the operator that the knowledge base was updated. Send a short Telegram message containing 'plan.summary' (what changed and why) and 'plan.page' (which page). Because this messages a human, it pauses for approval before sending.",
+      "autonomy": "suggest",
+      "capabilities": [
+        {
+          "name": "telegram_send",
+          "sideEffect": "message-human",
+          "budgetCents": 5
+        }
+      ]
+    },
+    {
+      "id": "record",
+      "role": "Record which page was last updated to memory (remember last_update = the page title from 'plan.page'), so future runs have an audit trail of how the knowledge base grew over time.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "remember",
+          "sideEffect": "write-reversible",
+          "budgetCents": 5
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "read_existing",
+      "to": "plan"
+    },
+    {
+      "from": "plan",
+      "to": "apply_update",
+      "when": {
+        "op": "and",
+        "clauses": [
+          {
+            "op": "eq",
+            "left": {
+              "op": "var",
+              "key": "plan.update_needed"
+            },
+            "right": {
+              "op": "const",
+              "value": true
+            }
+          },
+          {
+            "op": "ne",
+            "left": {
+              "op": "var",
+              "key": "plan.page"
+            },
+            "right": {
+              "op": "const",
+              "value": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "from": "apply_update",
+      "to": "notify"
+    },
+    {
+      "from": "notify",
+      "to": "record"
+    }
+  ]
+}

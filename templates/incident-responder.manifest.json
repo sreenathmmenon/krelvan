@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "name": "Incident Responder",
+  "intent": "When an alerting webhook fires, triage the incident's severity with an LLM, decide whether to page the on-call engineer or just log it, post an update to the status channel, and keep a signed record of every decision.",
+  "entry": "triage",
+  "runBudgetCents": 200,
+  "maxNodeVisits": 2,
+  "seed": {
+    "alert_source": "monitoring-webhook",
+    "status_channel": "https://hooks.example.com/incidents",
+    "remember_map": "last_incident=triage.summary",
+    "candidates": "page,log_only"
+  },
+  "nodes": [
+    {
+      "id": "triage",
+      "role": "You are an on-call incident triage analyst. The incoming alert payload (service name, error text, metrics, host, etc.) is in the CURRENT DATA TO ANALYZE section. Assess how serious this incident is RIGHT NOW. Output object keys: severity (a single bare lowercase word, EXACTLY one of: \"critical\", \"high\", \"medium\", \"low\" — choose \"critical\" or \"high\" only for user-facing outages, data loss, security breaches, or paging-worthy degradation; choose \"medium\" or \"low\" for transient blips, single-replica restarts, noisy non-customer-impacting warnings); summary (one tight sentence a human on-call can read at 3am — what is broken, where, and the blast radius). Do NOT invent details that are not in the payload. If the payload is empty or unreadable, set severity to \"low\" and summary to 'Unparseable or empty alert payload — logging only.'.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 80
+        }
+      ]
+    },
+    {
+      "id": "route",
+      "role": "Routing step. Decide the next action for this incident. You MUST choose exactly one of the candidate nodes: 'page' (wake the on-call engineer via Telegram — use this when the triaged severity is critical or high, i.e. a real, user-impacting, page-worthy incident) or 'log_only' (record the incident quietly without paging — use this for medium/low severity, transient or non-customer-impacting noise). Base the decision on triage.severity and triage.summary in the run state. When in doubt for a genuinely ambiguous high-impact case, prefer 'page'; for clear low-impact noise, prefer 'log_only'.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "llm_route",
+          "sideEffect": "read",
+          "budgetCents": 20
+        }
+      ]
+    },
+    {
+      "id": "page",
+      "role": "Page the on-call engineer over Telegram. Send a concise, actionable alert containing the triaged severity and the one-line summary so they can respond immediately. This wakes a human — only reached for high/critical incidents.",
+      "autonomy": "suggest",
+      "capabilities": [
+        {
+          "name": "telegram_send",
+          "sideEffect": "message-human",
+          "budgetCents": 5
+        }
+      ]
+    },
+    {
+      "id": "log_only",
+      "role": "Quietly note that this incident was triaged below the paging threshold and is being recorded for the audit trail without waking anyone. No human is messaged on this path.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "compose",
+          "sideEffect": "read",
+          "budgetCents": 15
+        }
+      ]
+    },
+    {
+      "id": "update_status",
+      "role": "Post the incident status to the team's status channel webhook (status_channel) so the whole team has a single source of truth — include the severity, the summary, and whether the on-call was paged.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "notify_webhook",
+          "sideEffect": "write-reversible",
+          "budgetCents": 10
+        }
+      ]
+    },
+    {
+      "id": "record",
+      "role": "Persist this incident (severity + summary) to memory so the next run has the prior incident as context and there is a durable, signed audit trail of every triage decision.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "remember",
+          "sideEffect": "write-reversible",
+          "budgetCents": 5
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "triage",
+      "to": "route"
+    },
+    {
+      "from": "route",
+      "to": "page",
+      "when": {
+        "op": "eq",
+        "left": {
+          "op": "var",
+          "key": "route.chosen_node"
+        },
+        "right": {
+          "op": "const",
+          "value": "page"
+        }
+      }
+    },
+    {
+      "from": "route",
+      "to": "log_only",
+      "when": {
+        "op": "eq",
+        "left": {
+          "op": "var",
+          "key": "route.chosen_node"
+        },
+        "right": {
+          "op": "const",
+          "value": "log_only"
+        }
+      }
+    },
+    {
+      "from": "page",
+      "to": "update_status"
+    },
+    {
+      "from": "log_only",
+      "to": "update_status"
+    },
+    {
+      "from": "update_status",
+      "to": "record"
+    }
+  ],
+  "schedule": {
+    "kind": "interval",
+    "ms": 3600000
+  }
+}

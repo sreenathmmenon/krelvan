@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "name": "Self-Improving RAG Agent",
+  "intent": "Answer my question strictly from my own knowledge base. If the knowledge base does NOT cover it, go find the missing information on the web, ingest it back into the knowledge base so the agent is permanently smarter, then re-answer — keeping a signed record of what it learned and why.",
+  "entry": "recall_ctx",
+  "runBudgetCents": 300,
+  "maxNodeVisits": 2,
+  "seed": {
+    "query": "What is our refund window for enterprise customers?",
+    "kb": "company-kb",
+    "remember_map": "last_answer=compose_answer.result"
+  },
+  "nodes": [
+    {
+      "id": "recall_ctx",
+      "role": "Load any context this agent has learned about prior, similar questions from memory (recall.last_answer, recall.last_gap_topic). On the very first run this will be empty — that is fine.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "recall",
+          "sideEffect": "read",
+          "budgetCents": 5
+        }
+      ]
+    },
+    {
+      "id": "search_kb",
+      "role": "Search the internal knowledge base for chunks relevant to the user's 'query' state value. Return the most relevant passages.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "rag.search",
+          "sideEffect": "read",
+          "budgetCents": 15
+        }
+      ]
+    },
+    {
+      "id": "reason",
+      "role": "You are a grounded research analyst. The user's question is in the 'query' state value. The retrieved knowledge-base passages are in the CURRENT DATA TO ANALYZE section (key ending in .body) — each chunk is tagged with its source like [1] (source: handbook). Decide whether the retrieved passages CONTAIN the answer. Rules: answer ONLY from the passages; never invent facts; if the passages do not actually answer the question, that is a KNOWLEDGE GAP. Output object keys: result (your best grounded answer in one or two sentences, or a short note that the KB does not cover this); grounded (true ONLY if the answer is fully supported by the retrieved passages, else false); gap (true if the knowledge base is MISSING the information needed to answer — i.e. the agent must go learn it from the web — else false); gap_topic (if gap is true, a short web-search query string that would find the missing information, e.g. 'enterprise refund window policy 2026'; otherwise an empty string).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 60
+        }
+      ]
+    },
+    {
+      "id": "gap_search",
+      "role": "The knowledge base was missing the answer. Search the web for the missing information using the 'reason.gap_topic' the analyst produced (it is provided in the CURRENT DATA TO ANALYZE section). Return the most relevant, citable results so they can be learned into the knowledge base.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "web_search",
+          "sideEffect": "read",
+          "budgetCents": 16
+        }
+      ]
+    },
+    {
+      "id": "learn",
+      "role": "Ingest the web results just gathered into the internal knowledge base so the agent permanently knows this for next time (self-improvement). This is a reversible write to the agent's own knowledge store.",
+      "autonomy": "act-with-veto",
+      "capabilities": [
+        {
+          "name": "rag.ingest",
+          "sideEffect": "write-reversible",
+          "budgetCents": 25
+        }
+      ]
+    },
+    {
+      "id": "reanswer",
+      "role": "You are the same grounded analyst, now with freshly-learned material. The user's question is in the 'query' state value; the newly ingested web findings are in the CURRENT DATA TO ANALYZE section. Re-answer the question using ONLY those findings plus anything from the knowledge base. Output object keys: result (the now-grounded answer in one or two sentences); grounded (true if the freshly-learned material supports the answer, else false); cited_source (a short source label for what you used, e.g. a domain, or 'none').",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 60
+        }
+      ]
+    },
+    {
+      "id": "compose_answer",
+      "role": "Compose the final, user-facing answer. Use the analyst's grounded result (from 'reason.result', or the re-answer's 'reanswer.result' if the agent had to fill a gap). Write a clear, direct answer to the user's 'query'. Output object key: result (the final answer text).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "compose",
+          "sideEffect": "read",
+          "budgetCents": 15
+        }
+      ]
+    },
+    {
+      "id": "save",
+      "role": "Save the final answer to memory as the audit trail and as context for future, similar questions (remember last_answer).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "remember",
+          "sideEffect": "write-reversible",
+          "budgetCents": 5
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "recall_ctx",
+      "to": "search_kb"
+    },
+    {
+      "from": "search_kb",
+      "to": "reason"
+    },
+    {
+      "from": "reason",
+      "to": "gap_search",
+      "when": {
+        "op": "eq",
+        "left": {
+          "op": "var",
+          "key": "reason.gap"
+        },
+        "right": {
+          "op": "const",
+          "value": true
+        }
+      }
+    },
+    {
+      "from": "reason",
+      "to": "compose_answer"
+    },
+    {
+      "from": "gap_search",
+      "to": "learn"
+    },
+    {
+      "from": "learn",
+      "to": "reanswer"
+    },
+    {
+      "from": "reanswer",
+      "to": "compose_answer"
+    },
+    {
+      "from": "compose_answer",
+      "to": "save"
+    }
+  ]
+}

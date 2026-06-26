@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "name": "Content Repurposer",
+  "intent": "Take one piece of source content, recall my brand voice, extract its core message, then spin it into two ready-to-publish formats — a short-form post and a thread — and push them to my publishing queue for a final human OK.",
+  "entry": "recall_voice",
+  "runBudgetCents": 200,
+  "maxNodeVisits": 2,
+  "seed": {
+    "source": "Long-form blog post or transcript goes here.",
+    "brand_label": "my brand voice profile",
+    "channel": "default",
+    "remember_map": "last_core=extract.core"
+  },
+  "nodes": [
+    {
+      "id": "recall_voice",
+      "role": "Load my brand voice / style profile and any prior repurposing context from memory (recall.brand_voice). On the very first run this may be empty — that is fine, the writer will fall back to a clean, neutral-but-punchy voice.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "recall",
+          "sideEffect": "read",
+          "budgetCents": 5
+        }
+      ]
+    },
+    {
+      "id": "extract",
+      "role": "You are a content strategist. The source content to repurpose is in the CURRENT DATA TO ANALYZE / 'source' state value; the MEMORY section (if present) holds my brand voice profile. FIRST: if the source is empty, missing, or has no substantive message to work with, set ready to 0, core to \"\" and angles to \"\". Do NOT invent content. OTHERWISE: read the source and distill it. Steps: 1) Write the single CORE MESSAGE — the one idea a reader must walk away with — as one tight sentence; put it in core. 2) List 2-3 distinct ANGLES (hooks/framings) you could lead with, separated by ' | '; put them in angles. 3) Set ready to 1 only when you have a real core message extracted from the source; otherwise 0. Output object keys: core (one-sentence core message, or \"\"), angles (2-3 hooks separated by ' | ', or \"\"), ready (1 if a usable core message was extracted, else 0).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 50
+        }
+      ]
+    },
+    {
+      "id": "compose_short",
+      "role": "Write the SHORT-FORM version. Using the extracted core message (extract.core) and the strongest angle (from extract.angles), and matching the recalled brand voice, write ONE punchy short-form post (think LinkedIn/X single post, under ~80 words): a scroll-stopping hook line, the core idea, and a light call-to-action. Plain text only, ready to publish as-is. Output object key: result (the finished short-form post).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "compose",
+          "sideEffect": "read",
+          "budgetCents": 15
+        }
+      ]
+    },
+    {
+      "id": "compose_thread",
+      "role": "Write a DIFFERENT format: a THREAD. Take the SAME core message (extract.core) but expand it across a numbered thread of 4-6 short posts that each stand alone, opening with a strong hook post and closing with a takeaway/CTA. Use a different angle from compose_short so the two outputs do not read identically. Match the recalled brand voice. Number each post (1/ 2/ 3/ ...). Output object key: result (the finished thread, one post per line).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "compose",
+          "sideEffect": "read",
+          "budgetCents": 15
+        }
+      ]
+    },
+    {
+      "id": "queue",
+      "role": "Push BOTH finished formats (the short-form post from compose_short.result and the thread from compose_thread.result) to my publishing queue webhook as a single draft batch, tagged with the channel. This is a draft for me to approve before it goes live.",
+      "autonomy": "suggest",
+      "capabilities": [
+        {
+          "name": "notify_webhook",
+          "sideEffect": "write-reversible",
+          "budgetCents": 5
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "recall_voice",
+      "to": "extract"
+    },
+    {
+      "from": "extract",
+      "to": "compose_short",
+      "when": {
+        "op": "and",
+        "clauses": [
+          {
+            "op": "gte",
+            "left": {
+              "op": "var",
+              "key": "extract.ready"
+            },
+            "right": {
+              "op": "const",
+              "value": 1
+            }
+          },
+          {
+            "op": "ne",
+            "left": {
+              "op": "var",
+              "key": "extract.core"
+            },
+            "right": {
+              "op": "const",
+              "value": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "from": "compose_short",
+      "to": "compose_thread"
+    },
+    {
+      "from": "compose_thread",
+      "to": "queue"
+    }
+  ]
+}

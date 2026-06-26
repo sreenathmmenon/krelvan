@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "name": "Daily Digest",
+  "intent": "Every morning, read a couple of sources, rank and summarize what's new versus what I already saw yesterday, format a tight digest, and post it to my Slack — keeping a signed record of every run. Set it and forget it.",
+  "entry": "recall_seen",
+  "runBudgetCents": 200,
+  "maxNodeVisits": 2,
+  "seed": {
+    "source_a_label": "primary news source",
+    "source_b_label": "secondary blog source",
+    "slack_channel": "#daily-digest",
+    "remember_map": "last_top=rank.top_item"
+  },
+  "nodes": [
+    {
+      "id": "recall_seen",
+      "role": "Load the headline of YESTERDAY'S top item from memory (recall.last_top) so today's ranking can skip anything I already saw. On the very first run this will be empty — that's fine.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "recall",
+          "sideEffect": "read",
+          "budgetCents": 5
+        }
+      ]
+    },
+    {
+      "id": "fetch_a",
+      "role": "Fetch the primary source ({{seed.source_a_label}}) so its latest items can be read.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "http_get",
+          "sideEffect": "read",
+          "budgetCents": 10
+        }
+      ]
+    },
+    {
+      "id": "fetch_b",
+      "role": "Fetch the secondary source ({{seed.source_b_label}}) so its latest items can be read.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "http_get",
+          "sideEffect": "read",
+          "budgetCents": 10
+        }
+      ]
+    },
+    {
+      "id": "rank",
+      "role": "You are a sharp news editor building a morning digest. INPUTS: the CURRENT DATA TO ANALYZE section contains the freshly-fetched text from BOTH sources (keys ending in .body). The MEMORY section may contain 'last_top (from a PREVIOUS run)' — the headline you led with YESTERDAY. STEPS: 1) Extract the distinct, newsworthy items across both sources. 2) DEDUPE against MEMORY: if an item is essentially the same story as last_top, DROP it (do not lead with yesterday's news again). 3) Rank the remaining items by importance/relevance and keep the best 3–5. 4) Write a crisp one-line summary for each ranked item. OUTPUT object keys: digest (a short ranked list as a single string, each item on its own line prefixed '• '), top_item (the single best NEW headline as a plain string — this becomes tomorrow's last_top), item_count (the number of items in the digest as an integer; 0 if nothing new is worth sending). Rules: never invent items not present in the fetched text; if both sources failed or there is nothing new versus MEMORY, set item_count to 0, digest to '' and top_item to ''.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 70
+        }
+      ]
+    },
+    {
+      "id": "format",
+      "role": "Format the ranked digest (in rank.digest) into a friendly, scannable Slack message: a short bold-style title line with today's lead, then the bulleted items, then a one-line sign-off. Keep it tight — no preamble, no markdown headers. OUTPUT object keys: message (the final Slack-ready text).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "compose",
+          "sideEffect": "read",
+          "budgetCents": 15
+        }
+      ]
+    },
+    {
+      "id": "post",
+      "role": "Post the formatted digest (format.message) to the configured Slack channel ({{seed.slack_channel}}). This reaches a human, so it pauses for approval before sending.",
+      "autonomy": "suggest",
+      "capabilities": [
+        {
+          "name": "slack_send",
+          "sideEffect": "message-human",
+          "budgetCents": 1
+        }
+      ]
+    },
+    {
+      "id": "remember",
+      "role": "Persist today's top headline (rank.top_item) as last_top so tomorrow's run can dedupe against it. Runs on every path — even an empty-digest day — so the baseline stays current.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "remember",
+          "sideEffect": "write-reversible",
+          "budgetCents": 5
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "recall_seen",
+      "to": "fetch_a"
+    },
+    {
+      "from": "fetch_a",
+      "to": "fetch_b"
+    },
+    {
+      "from": "fetch_b",
+      "to": "rank"
+    },
+    {
+      "from": "rank",
+      "to": "format",
+      "when": {
+        "op": "and",
+        "clauses": [
+          {
+            "op": "gte",
+            "left": {
+              "op": "var",
+              "key": "rank.item_count"
+            },
+            "right": {
+              "op": "const",
+              "value": 1
+            }
+          },
+          {
+            "op": "ne",
+            "left": {
+              "op": "var",
+              "key": "rank.top_item"
+            },
+            "right": {
+              "op": "const",
+              "value": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "from": "rank",
+      "to": "remember"
+    },
+    {
+      "from": "format",
+      "to": "post"
+    },
+    {
+      "from": "post",
+      "to": "remember"
+    }
+  ],
+  "schedule": {
+    "kind": "cron",
+    "expr": "0 8 * * *"
+  }
+}

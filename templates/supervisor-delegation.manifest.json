@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "name": "Supervisor (Multi-Agent Delegation)",
+  "intent": "Run a topic end-to-end under ONE authority ceiling: plan the work, delegate the research to a research sub-agent, hand its findings to a writer sub-agent, assemble the final brief, and keep a signed record. Requires two sub-agents installed: 'sub-research' and 'sub-writer'.",
+  "entry": "plan",
+  "runBudgetCents": 500,
+  "maxNodeVisits": 2,
+  "seed": {
+    "topic": "the economics of on-device LLM inference",
+    "audience": "a busy technical founder",
+    "remember_map": "last_brief=assemble.result"
+  },
+  "nodes": [
+    {
+      "id": "plan",
+      "role": "You are the SUPERVISOR of a small agent team. Read the 'topic' and 'audience' state values. Produce a concrete plan that decomposes the job into (a) what the RESEARCH sub-agent must find out and (b) what angle the WRITER sub-agent should take for this audience. Output object keys: plan (a short, concrete paragraph describing the research questions and the writing angle), research_brief (one sentence telling the research sub-agent exactly what to investigate).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 80
+        }
+      ]
+    },
+    {
+      "id": "research",
+      "role": "Delegate the investigation to the RESEARCH sub-agent (manifestId 'sub-research'). It runs as its own bounded sub-run under this supervisor's budget ceiling and returns its findings, which are mapped into this node's 'research_out'. This is a delegation that spends a sub-run budget, so it pauses for human approval (suggest). REQUIRES the 'sub-research' sub-agent to be installed.",
+      "autonomy": "suggest",
+      "capabilities": [
+        {
+          "name": "delegate",
+          "sideEffect": "read",
+          "budgetCents": 200,
+          "subAgent": {
+            "manifestId": "sub-research",
+            "outputMapping": {
+              "research_out": "synthesize.findings"
+            },
+            "onSubFailure": "return-error"
+          }
+        }
+      ]
+    },
+    {
+      "id": "write",
+      "role": "Delegate the drafting to the WRITER sub-agent (manifestId 'sub-writer'), passing along the research findings. It runs as its own bounded sub-run and returns a draft, mapped into this node's 'writer_out'. Delegation spends a sub-run budget, so it pauses for human approval (suggest). REQUIRES the 'sub-writer' sub-agent to be installed.",
+      "autonomy": "suggest",
+      "capabilities": [
+        {
+          "name": "delegate",
+          "sideEffect": "read",
+          "budgetCents": 150,
+          "subAgent": {
+            "manifestId": "sub-writer",
+            "outputMapping": {
+              "writer_out": "draft.text"
+            },
+            "onSubFailure": "return-error"
+          }
+        }
+      ]
+    },
+    {
+      "id": "assemble",
+      "role": "You are the supervisor doing final assembly. The research sub-agent's findings are in 'research.research_out' and the writer sub-agent's draft is in 'write.writer_out'. Combine them into a single polished brief for the audience: lead with the draft, then append a short 'Sources & evidence' note distilled from the research findings. Output object keys: result (the final assembled brief as text).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "compose",
+          "sideEffect": "read",
+          "budgetCents": 60
+        }
+      ]
+    },
+    {
+      "id": "record",
+      "role": "Persist the assembled brief to memory as 'last_brief' so the next run (and any audit) can see what this team produced.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "remember",
+          "sideEffect": "write-reversible",
+          "budgetCents": 5
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "plan",
+      "to": "research"
+    },
+    {
+      "from": "research",
+      "to": "write",
+      "when": {
+        "op": "and",
+        "clauses": [
+          {
+            "op": "ne",
+            "left": {
+              "op": "var",
+              "key": "research.research_out"
+            },
+            "right": {
+              "op": "const",
+              "value": null
+            }
+          },
+          {
+            "op": "ne",
+            "left": {
+              "op": "var",
+              "key": "research.research_out"
+            },
+            "right": {
+              "op": "const",
+              "value": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "from": "write",
+      "to": "assemble"
+    },
+    {
+      "from": "assemble",
+      "to": "record"
+    }
+  ]
+}
