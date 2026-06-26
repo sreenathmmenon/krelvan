@@ -124,10 +124,17 @@ export const llmRouteCapability: CapabilityPlugin = {
     }
 
     const chosen = parsed.chosen_node?.trim() ?? "";
-    const finalChosen = candidates.includes(chosen) ? chosen : candidates[0]!;
+    // Fail-CLOSED routing (opt-in): a manifest may declare `fallback` — the node to take when
+    // the model returns a garbled/invalid choice. For a safety-critical router (e.g. support
+    // resolve-vs-escalate) set fallback to the SAFE branch ("escalate"), so a routing failure
+    // errs toward a human instead of silently taking candidates[0] (which could be "resolve").
+    // No fallback declared → legacy behavior (first candidate), so existing manifests are unchanged.
+    const fallbackRaw = String(input["fallback"] ?? input[`${call.nodeId}.fallback`] ?? "").trim();
+    const fallback = candidates.includes(fallbackRaw) ? fallbackRaw : candidates[0]!;
+    const finalChosen = candidates.includes(chosen) ? chosen : fallback;
 
     if (!candidates.includes(chosen)) {
-      log.warn({ nodeId: call.nodeId, chosen, candidates }, "llm_route: LLM chose invalid node, falling back to first candidate");
+      log.warn({ nodeId: call.nodeId, chosen, fallback, candidates }, "llm_route: LLM chose invalid node, routing to fallback (fail-closed if declared)");
     }
 
     const costCents = estimateCostCents(provider, model, response.inputTokens, response.outputTokens);

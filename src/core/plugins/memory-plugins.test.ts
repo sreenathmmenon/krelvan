@@ -60,3 +60,44 @@ test("remember: a malformed remember_map pair is ignored, not crashed", async ()
   assert.ok(r.output, "invoke must succeed even with a malformed remember_map");
   assert.ok(!existsSync(join(dir, "memory", "a5.semantic.json")) || readFileSync(join(dir, "memory", "a5.semantic.json"), "utf8").length >= 0);
 });
+
+// ── per-sender memory isolation (the support-agent #1 safety fix) ────────────────────────
+// A multi-customer agent must NEVER surface customer A's remembered facts for customer B.
+// recall/remember scope by a sender identity when present in run state.
+
+test("memory isolation: customer A's fact does NOT leak to customer B (same agentId, different sender)", async () => {
+  // Customer A tells the support agent their order number.
+  await rememberCapability.invoke(call({ _agentId: "support", from_address: "alice@example.com", "note.remember_order": "A-1001" }));
+  // Customer B has their own conversation with the SAME support agent.
+  await rememberCapability.invoke(call({ _agentId: "support", from_address: "bob@example.com", "note.remember_order": "B-2002" }));
+
+  const aOut = (await recallCapability.invoke(recallCall({ _agentId: "support", from_address: "alice@example.com" }))).output as Record<string, unknown>;
+  const bOut = (await recallCapability.invoke(recallCall({ _agentId: "support", from_address: "bob@example.com" }))).output as Record<string, unknown>;
+
+  assert.equal(aOut["recall.order"], "A-1001", "Alice recalls only her own order");
+  assert.equal(bOut["recall.order"], "B-2002", "Bob recalls only his own order");
+  assert.notEqual(aOut["recall.order"], bOut["recall.order"], "the two customers' memories must be isolated");
+  // And cross-contamination must be impossible: Alice's recall must NOT contain Bob's value.
+  assert.notEqual(aOut["recall.order"], "B-2002", "Bob's order must NEVER surface for Alice");
+});
+
+test("memory isolation: no sender → bare agentId store (single-user agents unchanged)", async () => {
+  await rememberCapability.invoke(call({ _agentId: "solo", "note.remember_x": "v1" }));
+  const out = (await recallCapability.invoke(recallCall({ _agentId: "solo" }))).output as Record<string, unknown>;
+  assert.equal(out["recall.x"], "v1", "a no-sender agent still reads its own memory exactly as before");
+  // The raw sender must never appear in the on-disk filename (it is hashed).
+  assert.ok(!existsSync(join(dir, "memory", "solo@.semantic.json")), "no empty-sender suffix file");
+});
+
+test("memory isolation: the on-disk filename hashes the sender (no raw email on disk)", async () => {
+  await rememberCapability.invoke(call({ _agentId: "supportx", from_address: "carol@example.com", "note.remember_y": "v2" }));
+  // The memory dir is whatever the module resolved at import (KRELVAN_DATA_DIR or ./data) — search
+  // both the test temp dir and ./data so the assertion is robust to import-time path capture.
+  const { readdirSync } = await import("node:fs");
+  const candidates = [join(dir, "memory"), join(process.cwd(), "data", "memory")];
+  let files: string[] = [];
+  for (const d of candidates) { if (existsSync(d)) files = files.concat(readdirSync(d)); }
+  const supportFiles = files.filter((f) => f.startsWith("supportx@"));
+  assert.ok(supportFiles.length > 0, "a sender-scoped store exists (hashed suffix)");
+  assert.ok(!supportFiles.some((f) => f.includes("carol@example.com")), "raw sender email must NEVER appear in a memory filename (it is hashed)");
+});

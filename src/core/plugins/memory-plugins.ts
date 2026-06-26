@@ -28,6 +28,7 @@
 
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
 import type { SemanticFact, Episode, Soul } from "../memory/memory.js";
 import { getLogger } from "../observability/logger.js";
@@ -39,6 +40,25 @@ const MEMORY_DIR = join(DATA_DIR, "memory");
 
 function ensureMemoryDir(): void {
   mkdirSync(MEMORY_DIR, { recursive: true });
+}
+
+/**
+ * Per-sender memory isolation (the support-agent correctness fix).
+ *
+ * A multi-customer agent (e.g. support) MUST NOT let customer A's remembered facts surface for
+ * customer B. When the run state carries a sender identity, scope the memory store to
+ * `<agentId>@<sender>` so each customer gets an isolated store. The sender is read from the first
+ * present of these keys; it is HASHED (not stored raw) so the on-disk filename never leaks a raw
+ * email/phone, and sanitized to a safe filename token. With no sender present, the key is the bare
+ * agentId — so existing single-user agents are byte-identical (same file path as before).
+ */
+function scopeKey(agentId: string, input: Record<string, unknown>): string {
+  const senderRaw = ["senderId", "sender", "from_address", "from", "customer_id", "conversationId"]
+    .map((k) => input[k])
+    .find((v) => typeof v === "string" && (v as string).trim().length > 0) as string | undefined;
+  if (!senderRaw) return agentId;
+  const senderHash = createHash("sha256").update(senderRaw.trim().toLowerCase(), "utf8").digest("hex").slice(0, 16);
+  return `${agentId}@${senderHash}`;
 }
 
 function semanticPath(agentId: string): string {
@@ -116,7 +136,9 @@ export const recallCapability: CapabilityPlugin = {
 
   async invoke(call: EffectCall) {
     const input = call.input as Record<string, unknown>;
-    const agentId = String(input["agentId"] ?? input["_agentId"] ?? "default");
+    // Scope by sender when present, so a multi-customer (support) agent reads only THIS
+    // customer's memory — never another's. No sender → bare agentId (single-user, unchanged).
+    const agentId = scopeKey(String(input["agentId"] ?? input["_agentId"] ?? "default"), input);
     const keysParam = input["keys"] ? String(input["keys"]) : null;
 
     const facts = loadSemantic(agentId);
@@ -166,7 +188,9 @@ export const rememberCapability: CapabilityPlugin = {
 
   async invoke(call: EffectCall) {
     const input = call.input as Record<string, unknown>;
-    const agentId = String(input["agentId"] ?? input["_agentId"] ?? "default");
+    // Same sender-scoping as recall: writes land in THIS customer's isolated store, so a later
+    // recall for a different customer can never surface them. No sender → bare agentId (unchanged).
+    const agentId = scopeKey(String(input["agentId"] ?? input["_agentId"] ?? "default"), input);
     const runId = String(input["_runId"] ?? call.nodeId ?? "unknown");
 
     // Build summary from explicit input or from run state
