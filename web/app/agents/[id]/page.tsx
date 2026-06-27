@@ -26,18 +26,24 @@ function layoutNodes(
 ): Map<string, NodePos> {
   const ids = nodes.map(n => n.id);
   const layer = new Map<string, number>();
-  const visited = new Set<string>();
 
-  function visit(id: string, depth: number) {
-    if (!visited.has(id) || (layer.get(id) ?? 0) < depth) {
-      layer.set(id, depth);
-      visited.add(id);
-      for (const e of edges) {
-        if (e.from === id) visit(e.to, depth + 1);
-      }
+  // CYCLE-SAFE longest-path layering. Evaluator-optimizer manifests have back-edges
+  // (judge -> answer -> judge); the naive "deeper path => revisit" walk recurses forever on a
+  // cycle ("Maximum call stack size exceeded") and crashes this agent page. Guard with a per-path
+  // set (do not descend through a node already on the current path) + a hard depth cap.
+  const maxDepth = ids.length;
+  function visit(id: string, depth: number, inPath: Set<string>) {
+    if (depth > maxDepth) return;
+    const prev = layer.get(id);
+    if (prev === undefined || prev < depth) layer.set(id, depth);
+    if (inPath.has(id)) return;
+    inPath.add(id);
+    for (const e of edges) {
+      if (e.from === id) visit(e.to, depth + 1, inPath);
     }
+    inPath.delete(id);
   }
-  visit(entry, 0);
+  visit(entry, 0, new Set<string>());
   for (const id of ids) if (!layer.has(id)) layer.set(id, 0);
 
   const byLayer = new Map<number, string[]>();
