@@ -20,16 +20,23 @@ export function layoutGraph(
   const { nodeW, nodeH, hGap, vGap } = { ...DEFAULTS, ...opts };
 
   const layer = new Map<string, number>();
-  const visited = new Set<string>();
 
-  function visit(id: string, depth: number) {
-    if (!visited.has(id) || (layer.get(id) ?? 0) < depth) {
-      layer.set(id, depth);
-      visited.add(id);
-      for (const e of edges) if (e.from === id) visit(e.to, depth + 1);
-    }
+  // Longest-path layering, made CYCLE-SAFE. Evaluator-optimizer manifests have back-edges
+  // (e.g. judge -> answer -> judge), so a naive "deeper path => revisit" walk recurses forever
+  // ("Maximum call stack size exceeded"). Two guards: (1) a per-path `inPath` set so we never
+  // descend through a node already on the current path (the back-edge that closes a cycle is not
+  // followed), and (2) a hard depth cap at the node count (a longest acyclic path can't exceed it).
+  const maxDepth = nodes.length;
+  function visit(id: string, depth: number, inPath: Set<string>) {
+    if (depth > maxDepth) return;
+    const prev = layer.get(id);
+    if (prev === undefined || prev < depth) layer.set(id, depth);
+    if (inPath.has(id)) return; // cycle edge — do not recurse back into the current path
+    inPath.add(id);
+    for (const e of edges) if (e.from === id) visit(e.to, depth + 1, inPath);
+    inPath.delete(id);
   }
-  visit(entry, 0);
+  visit(entry, 0, new Set<string>());
   for (const n of nodes) if (!layer.has(n.id)) layer.set(n.id, 0);
 
   const byLayer = new Map<number, string[]>();
