@@ -314,17 +314,33 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                       },
                       {
                               "from": "retrieve",
-                              "to": "escalate",
+                              "to": "answer",
                               "when": {
-                                      "op": "eq",
-                                      "left": {
-                                              "op": "var",
-                                              "key": "retrieve.hits"
-                                      },
-                                      "right": {
-                                              "op": "const",
-                                              "value": 0
-                                      }
+                                      "op": "and",
+                                      "clauses": [
+                                              {
+                                                      "op": "eq",
+                                                      "left": {
+                                                              "op": "var",
+                                                              "key": "retrieve.ok"
+                                                      },
+                                                      "right": {
+                                                              "op": "const",
+                                                              "value": true
+                                                      }
+                                              },
+                                              {
+                                                      "op": "gte",
+                                                      "left": {
+                                                              "op": "var",
+                                                              "key": "retrieve.top_score_pct"
+                                                      },
+                                                      "right": {
+                                                              "op": "const",
+                                                              "value": 50
+                                                      }
+                                              }
+                                      ]
                               }
                       },
                       {
@@ -333,6 +349,17 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                               "when": {
                                       "op": "and",
                                       "clauses": [
+                                              {
+                                                      "op": "eq",
+                                                      "left": {
+                                                              "op": "var",
+                                                              "key": "retrieve.ok"
+                                                      },
+                                                      "right": {
+                                                              "op": "const",
+                                                              "value": true
+                                                      }
+                                              },
                                               {
                                                       "op": "gt",
                                                       "left": {
@@ -360,18 +387,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                       },
                       {
                               "from": "retrieve",
-                              "to": "answer",
-                              "when": {
-                                      "op": "gte",
-                                      "left": {
-                                              "op": "var",
-                                              "key": "retrieve.top_score_pct"
-                                      },
-                                      "right": {
-                                              "op": "const",
-                                              "value": 50
-                                      }
-                              }
+                              "to": "escalate"
                       },
                       {
                               "from": "clarify",

@@ -104,13 +104,17 @@ test("support-agent v2: distress / out-of-scope hard-route to a human from the d
   assert.match(j, /triage\.out_of_scope/);
 });
 
-test("support-agent v2: three grounding tiers — answer (strong), clarify (weak), escalate (none)", () => {
+test("support-agent v2: grounding tiers + FAIL-SAFE — answer (strong), clarify (weak), escalate (none/failed)", () => {
   const toAnswer = manifest.edges.find((x) => x.from === "retrieve" && x.to === "answer");
   const toClarify = manifest.edges.find((x) => x.from === "retrieve" && x.to === "clarify");
   const toEscalate = manifest.edges.find((x) => x.from === "retrieve" && x.to === "escalate");
-  assert.ok(toAnswer?.when && toClarify?.when && toEscalate?.when, "retrieve must branch into answer/clarify/escalate by confidence");
+  assert.ok(toAnswer?.when && toClarify?.when, "answer/clarify must be confidence-gated");
+  // answer & clarify require a SUCCESSFUL retrieval (retrieve.ok) plus a score check.
+  assert.match(JSON.stringify(toAnswer!.when), /retrieve\.ok/, "the answer branch must require a successful retrieval");
   assert.match(JSON.stringify(toClarify!.when), /top_score/, "the clarify branch must gate on the match score (weak grounding)");
-  assert.match(JSON.stringify(toEscalate!.when), /retrieve\.hits/, "the escalate branch must gate on zero hits");
+  // escalate is the UNCONDITIONAL catch-all: zero hits OR a failed/empty retrieval falls through
+  // to a human instead of silently completing the run (the live-run robustness fix).
+  assert.ok(toEscalate && !toEscalate.when, "escalate must be the unconditional fail-safe fallback from retrieve");
 });
 
 test("support-agent v2: every terminal path flows through QA scoring then record", () => {
