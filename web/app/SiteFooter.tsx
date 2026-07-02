@@ -30,6 +30,7 @@ export default function SiteFooter() {
               <li><Link href="/capabilities" className="small" style={{ color: "var(--ink-soft)" }}>Capabilities</Link></li>
               <li><Link href="/runs" className="small" style={{ color: "var(--ink-soft)" }}>Runs</Link></li>
               <li><Link href="/schedules" className="small" style={{ color: "var(--ink-soft)" }}>Schedules</Link></li>
+              <li><Link href="/faq" className="small" style={{ color: "var(--ink-soft)" }}>FAQ</Link></li>
             </ul>
           </nav>
 
