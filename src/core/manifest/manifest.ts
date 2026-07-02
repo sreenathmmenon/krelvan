@@ -120,6 +120,41 @@ export interface Manifest {
    * a daily digest) genuinely self-running instead of needing a schedule wired up by hand.
    */
   schedule?: { kind: "cron"; expr: string } | { kind: "interval"; ms: number };
+  /**
+   * Optional builder-settable knobs — the template's "make it mine" surface.
+   *
+   * A template author declares which parts of the agent a BUILDER may customize when
+   * cloning it for their own customer (rename it, point it at a different knowledge
+   * base, change the tone, toggle auto-send vs approval) — without touching the graph.
+   * A UI renders this block as a form; `applyCustomize` (customize.ts) bakes the chosen
+   * settings into a fresh, self-contained manifest that installs as the builder's own
+   * signed agent. Deny-by-default: only keys declared here are customizable.
+   */
+  customize?: Record<string, CustomizeField>;
+}
+
+/**
+ * One builder-settable knob. Exactly ONE binding must be set:
+ *  - `rename: true`       — the value becomes the cloned agent's display name.
+ *  - `seedKey`            — the value is baked into manifest.seed[seedKey].
+ *  - `autonomy`           — a toggle that flips a node's autonomy level (e.g. the
+ *                           "send automatically?" switch: on="full", off="suggest").
+ */
+export interface CustomizeField {
+  /** human label shown on the customize form */
+  label: string;
+  /** control kind + value validation: free text, one-of choice, or boolean toggle */
+  type: "text" | "choice" | "toggle";
+  /** for "choice": the allowed values (the form renders these as options) */
+  options?: string[];
+  /** prefill shown on the form; NOT auto-applied — an omitted setting leaves the template as-is */
+  default?: string | number | boolean;
+  /** bake the value into seed[seedKey] */
+  seedKey?: string;
+  /** toggle binding: flip node `nodeId`'s autonomy to `on` when true, `off` when false */
+  autonomy?: { nodeId: string; on: AutonomyLevel; off: AutonomyLevel };
+  /** this field renames the cloned agent (manifest.name) */
+  rename?: boolean;
 }
 
 export interface ValidationIssue {
@@ -172,6 +207,34 @@ export function validateManifest(m: Manifest): ValidationIssue[] {
       if (!Number.isInteger(c.budgetCents) || c.budgetCents < 0) {
         issues.push({ code: "BAD_CAP_BUDGET", message: `node '${n.id}' cap '${c.name}' budget must be a non-negative integer cents` });
       }
+    }
+  }
+
+  // optional customize block — every declared knob must be well-formed and bind to
+  // something real, otherwise the customize form would silently do nothing (or worse,
+  // applyCustomize would write into a node that does not exist).
+  if (m.customize) {
+    const AUTONOMY = new Set(["suggest", "act-with-veto", "full"]);
+    for (const [key, f] of Object.entries(m.customize)) {
+      if (!f.label) issues.push({ code: "BAD_CUSTOMIZE", message: `customize '${key}' has no label` });
+      if (f.type !== "text" && f.type !== "choice" && f.type !== "toggle") {
+        issues.push({ code: "BAD_CUSTOMIZE", message: `customize '${key}' type must be text | choice | toggle` });
+      }
+      if (f.type === "choice" && (!Array.isArray(f.options) || f.options.length === 0)) {
+        issues.push({ code: "BAD_CUSTOMIZE", message: `customize '${key}' is a choice but declares no options` });
+      }
+      const bindings = [f.rename === true, typeof f.seedKey === "string" && f.seedKey.length > 0, f.autonomy !== undefined].filter(Boolean).length;
+      if (bindings !== 1) {
+        issues.push({ code: "BAD_CUSTOMIZE", message: `customize '${key}' must bind exactly one of rename | seedKey | autonomy` });
+      }
+      if (f.autonomy) {
+        if (f.type !== "toggle") issues.push({ code: "BAD_CUSTOMIZE", message: `customize '${key}' binds autonomy so its type must be 'toggle'` });
+        if (!ids.has(f.autonomy.nodeId)) issues.push({ code: "BAD_CUSTOMIZE", message: `customize '${key}' targets unknown node '${f.autonomy.nodeId}'` });
+        if (!AUTONOMY.has(f.autonomy.on) || !AUTONOMY.has(f.autonomy.off)) {
+          issues.push({ code: "BAD_CUSTOMIZE", message: `customize '${key}' autonomy on/off must be a valid autonomy level` });
+        }
+      }
+      if (f.rename && f.type !== "text") issues.push({ code: "BAD_CUSTOMIZE", message: `customize '${key}' renames the agent so its type must be 'text'` });
     }
   }
 

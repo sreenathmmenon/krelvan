@@ -166,3 +166,20 @@ test("support-agent v2: zero grounding escalates instead of guessing", async () 
   assert.ok(seq.includes("escalate"), "no grounding must escalate");
   assert.ok(!seq.includes("answer") && !seq.includes("clarify"), "with zero grounding the bot must not answer or clarify");
 });
+
+test("support-agent v2: the customize surface — clone-and-make-it-mine works (the builder flow)", async () => {
+  const { applyCustomize } = await import("../src/core/manifest/customize.js");
+  assert.ok(manifest.customize, "the flagship template must declare a customize surface");
+  // A builder clones it for their customer: rename, their KB, their tone, keep approval on sends.
+  const r = applyCustomize(manifest, { agent_name: "Acme Support", kb: "acme-docs", brand_tone: "formal", auto_send: false });
+  assert.ok(r.ok, r.ok ? "" : r.error);
+  if (!r.ok) return;
+  assert.equal(r.manifest.name, "Acme Support");
+  assert.equal(r.manifest.seed?.["kb"], "acme-docs");
+  assert.equal(r.manifest.seed?.["brand_tone"], "formal");
+  assert.equal(r.manifest.nodes.find((n) => n.id === "send_reply")?.autonomy, "suggest", "auto_send=false keeps the human approval gate");
+  assert.deepEqual(validateManifest(r.manifest), [], "the customized clone must be a valid agent");
+  // The full-auto variant is a deliberate, explicit choice — and also valid.
+  const auto = applyCustomize(manifest, { auto_send: true });
+  assert.ok(auto.ok && auto.manifest.nodes.find((n) => n.id === "send_reply")?.autonomy === "full", "auto_send=true flips the send node to full autonomy");
+});

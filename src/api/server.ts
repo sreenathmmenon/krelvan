@@ -43,6 +43,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { getLogger } from "../core/observability/logger.js";
 import type { KrelvanRuntime } from "./runtime.js";
 import type { Manifest } from "../core/manifest/manifest.js";
+import { applyCustomize } from "../core/manifest/customize.js";
 import { getLLMClient } from "../adapters/llm-client.js";
 import { authenticate, clientIp, type AuthState } from "./auth.js";
 
@@ -194,6 +195,7 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "POST",   pattern: ["api", "agents", "build"],         handler: (q, r) => handleBuildAgent(q, r, runtime) },
     { method: "POST",   pattern: ["api", "agents", "import"],        handler: (q, r) => handleImportAgent(q, r, runtime) },
     { method: "POST",   pattern: ["api", "templates", "install"],    handler: (q, r) => handleInstallTemplate(q, r, runtime) },
+    { method: "POST",   pattern: ["api", "templates", "customize"],  handler: (q, r) => handleCustomizeTemplate(q, r, runtime) },
     { method: "GET",    pattern: ["api", "agents", ":id"],           handler: (q, r, p) => handleGetAgent(q, r, p, runtime) },
     { method: "DELETE", pattern: ["api", "agents", ":id"],           handler: (q, r, p) => handleDeleteAgent(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "agents", ":id", "runs"],   handler: (q, r, p) => handleAgentRuns(q, r, p, runtime) },
@@ -501,6 +503,41 @@ async function handleInstallTemplate(req: IncomingMessage, res: ServerResponse, 
 
   const result = rt.installTemplate({
     manifest: body.manifest as Manifest,
+    capabilities: Array.isArray(body.capabilities) ? body.capabilities : [],
+    secretRefs: Array.isArray(body.secretRefs) ? body.secretRefs : [],
+  });
+  if (!result.ok) {
+    json(res, 422, { error: result.error, ...(result.issues ? { issues: result.issues } : {}) });
+    return;
+  }
+  json(res, 201, {
+    agent: result.agent,
+    installedCapabilities: result.installedCapabilities,
+    missingSecrets: result.missingSecrets,
+  });
+}
+
+/**
+ * POST /api/templates/customize — the "make it mine" clone flow (the WordPress model).
+ * Body: { manifest, settings, capabilities?, secretRefs? }. Bakes the builder's settings
+ * (declared by the template's `customize` block — rename / seed values / autonomy toggles)
+ * into a FRESH manifest via applyCustomize, then installs it through the normal template
+ * path, so the clone is an ordinary signed agent. Undeclared settings are rejected.
+ */
+async function handleCustomizeTemplate(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  const raw = await readBody(req);
+  let body: { manifest?: unknown; settings?: unknown; capabilities?: { name: string; yaml: string }[]; secretRefs?: string[] };
+  try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  if (!body.manifest || typeof body.manifest !== "object") { jsonError(res, 400, "manifest is required"); return; }
+  if (body.settings !== undefined && (typeof body.settings !== "object" || body.settings === null || Array.isArray(body.settings))) {
+    jsonError(res, 400, "settings must be an object of { settingKey: value }"); return;
+  }
+
+  const customized = applyCustomize(body.manifest as Manifest, (body.settings ?? {}) as Record<string, string | number | boolean>);
+  if (!customized.ok) { json(res, 422, { error: customized.error }); return; }
+
+  const result = rt.installTemplate({
+    manifest: customized.manifest,
     capabilities: Array.isArray(body.capabilities) ? body.capabilities : [],
     secretRefs: Array.isArray(body.secretRefs) ? body.secretRefs : [],
   });
