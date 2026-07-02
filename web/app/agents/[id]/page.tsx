@@ -9,6 +9,8 @@ import {
   type AgentRecord, type RunRecord, type ScheduleRecord, type ManifestNode, type ManifestEdge,
 } from "../../../lib/api";
 import MemoryTab from "./MemoryTab";
+import { edgeGeometry, edgeConditionLabel, type Box } from "../../../lib/graph-edges";
+import { glyphFor } from "../../../lib/glyphs";
 
 // ── Layout (shared with run detail — same Sugiyama-lite algorithm) ────────────
 
@@ -16,8 +18,10 @@ interface NodePos { x: number; y: number; w: number; h: number; }
 
 const NODE_W = 160;
 const NODE_H = 72;
-const H_GAP  = 80;
-const V_GAP  = 56;
+const H_GAP  = 72;
+const V_GAP  = 48;
+// How far a back-edge (retry loop) lane arcs beyond the node rows.
+const LOOP_CLEARANCE = 30;
 
 function layoutNodes(
   nodes: ManifestNode[],
@@ -34,9 +38,12 @@ function layoutNodes(
   const maxDepth = ids.length;
   function visit(id: string, depth: number, inPath: Set<string>) {
     if (depth > maxDepth) return;
+    // Cycle re-entry must not deepen the node: check the path BEFORE updating the layer,
+    // or a retry loop (judge -> answer) inflates the target past its judge and the loop
+    // renders backwards (the forward flow becomes the arc).
+    if (inPath.has(id)) return;
     const prev = layer.get(id);
     if (prev === undefined || prev < depth) layer.set(id, depth);
-    if (inPath.has(id)) return;
     inPath.add(id);
     for (const e of edges) {
       if (e.from === id) visit(e.to, depth + 1, inPath);
@@ -76,15 +83,6 @@ function canvasBounds(positions: Map<string, NodePos>) {
     maxY = Math.max(maxY, p.y + p.h);
   }
   return { w: maxX + H_GAP, h: maxY + V_GAP };
-}
-
-function edgePath(from: NodePos, to: NodePos): string {
-  const x1 = from.x + from.w;
-  const y1 = from.y + from.h / 2;
-  const x2 = to.x;
-  const y2 = to.y + to.h / 2;
-  const cx = (x1 + x2) / 2;
-  return `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`;
 }
 
 // ── Capability glyphs — teal geometric SVG, authored on a 16×16 grid, matching
@@ -178,11 +176,33 @@ function capGlyphPaths(name: string): React.ReactNode {
   }
 }
 
+// Capability names covered by the hand-drawn vocabulary above. Anything else
+// (rag.search, delegate, identify, …) falls back to the marketplace glyph set
+// (lib/glyphs.ts) so no capability ever renders as an anonymous square.
+const KNOWN_CAP_GLYPHS = new Set([
+  "think", "recall", "remember", "llm_route", "web_search", "compose", "text_transform",
+  "http_get", "http_post", "telegram_send", "email_send", "slack_send", "notify_webhook",
+]);
+
+function capNodeGlyph(name: string): React.ReactNode {
+  if (KNOWN_CAP_GLYPHS.has(name)) return capGlyphPaths(name);
+  return (
+    <path
+      d={glyphFor(name)}
+      stroke="currentColor"
+      strokeWidth={1.2}
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  );
+}
+
 // Inline capability glyph for HTML contexts (sidebar list, etc.)
 function CapIcon({ name, size = 14, color = "var(--brand)" }: { name: string; size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ flexShrink: 0, color }}>
-      {capGlyphPaths(name)}
+      {capNodeGlyph(name)}
     </svg>
   );
 }
@@ -221,7 +241,21 @@ function AgentGraphCanvas({
 }) {
   const positions = layoutNodes(nodes, edges, entry);
   const { w, h } = canvasBounds(positions);
-  const PAD = 24;
+  const allBoxes: Box[] = [...positions.values()];
+
+  // Pre-compute edge geometry: back-edges (retry loops) arc through a lane above
+  // or below the rows, so the canvas needs extra headroom on that side.
+  const geoms = edges.map(e => {
+    const fp = positions.get(e.from);
+    const tp = positions.get(e.to);
+    if (!fp || !tp) return null;
+    return { edge: e, g: edgeGeometry(fp, tp, allBoxes, LOOP_CLEARANCE) };
+  });
+  const hasLoop = geoms.some(x => x?.g.back);
+  const hasCond = edges.some(e => e.when);
+  const PAD_X = 24;
+  const PAD_TOP = geoms.some(x => x?.g.side === "above") ? 60 : 24;
+  const PAD_BOTTOM = geoms.some(x => x?.g.side === "below") ? 60 : 24;
 
   return (
     <div
@@ -232,7 +266,9 @@ function AgentGraphCanvas({
         position: "relative",
         display: "flex",
         alignItems: "center",
-        justifyContent: "center",
+        // flex-start + auto margins on the svg = "safe" centering: a wide 12-node
+        // graph scrolls from its left edge instead of clipping both ends.
+        justifyContent: "flex-start",
         minHeight: nodes.length <= 2 ? 200 : 280,
         padding: "var(--s5)",
       }}
@@ -254,30 +290,68 @@ function AgentGraphCanvas({
       <svg
         role="img"
         aria-label={`Agent graph with ${nodes.length} nodes and ${edges.length} edges`}
-        width={w + PAD * 2}
-        height={Math.max(h + PAD * 2, 200)}
-        style={{ display: "block", margin: "0 auto" }}
+        width={w + PAD_X * 2}
+        height={Math.max(h + PAD_TOP + PAD_BOTTOM, 200)}
+        style={{ display: "block", margin: "auto" }}
       >
         <defs>
           <marker id="ag-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
             <path d="M0,0 L0,6 L8,3 z" fill="var(--ink-muted)" />
           </marker>
+          <marker id="ag-arrow-loop" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="var(--brand)" fillOpacity={0.75} />
+          </marker>
         </defs>
-        <g transform={`translate(${PAD},${PAD})`}>
-          {/* edges */}
-          {edges.map((e, i) => {
-            const fp = positions.get(e.from);
-            const tp = positions.get(e.to);
-            if (!fp || !tp) return null;
+        <g transform={`translate(${PAD_X},${PAD_TOP})`}>
+          {/* edges — back-edges (loops) arc through a clear lane, dashed teal;
+              conditional edges carry a small decision dot at their source. */}
+          {geoms.map((it, i) => {
+            if (!it) return null;
+            const { edge: e, g } = it;
+            const cond = e.when ? edgeConditionLabel(e.when) : null;
             return (
-              <path
-                key={i}
-                d={edgePath(fp, tp)}
-                fill="none"
-                stroke="var(--line-strong)"
-                strokeWidth={1.5}
-                markerEnd="url(#ag-arrow)"
-              />
+              <g key={i}>
+                <title>
+                  {e.from} → {e.to}
+                  {g.back ? " (loops back)" : ""}
+                  {cond ? ` · when ${cond}` : ""}
+                </title>
+                {/* generous invisible hit area so the tooltip is easy to reach */}
+                <path d={g.d} fill="none" stroke="transparent" strokeWidth={10} />
+                <path
+                  d={g.d}
+                  fill="none"
+                  stroke={g.back ? "var(--brand)" : "var(--line-strong)"}
+                  strokeOpacity={g.back ? 0.6 : 1}
+                  strokeWidth={1.5}
+                  strokeDasharray={g.back ? "6 5" : undefined}
+                  markerEnd={g.back ? "url(#ag-arrow-loop)" : "url(#ag-arrow)"}
+                />
+                {cond && (
+                  <circle
+                    cx={g.sx}
+                    cy={g.sy}
+                    r={3}
+                    fill="var(--surface)"
+                    stroke={g.back ? "var(--brand)" : "var(--ink-muted)"}
+                    strokeWidth={1.4}
+                  />
+                )}
+                {/* a quiet condition hint on loop arcs only — the lane is empty there */}
+                {g.back && cond && g.laneY !== null && (
+                  <text
+                    x={g.midX}
+                    y={g.side === "above" ? g.midY - 6 : g.midY + 12}
+                    textAnchor="middle"
+                    fontSize={9.5}
+                    fontFamily="var(--font-mono)"
+                    fill="var(--brand)"
+                    letterSpacing={0.2}
+                  >
+                    {cond.length > 28 ? cond.slice(0, 27) + "…" : cond}
+                  </text>
+                )}
+              </g>
             );
           })}
           {/* nodes */}
@@ -294,8 +368,8 @@ function AgentGraphCanvas({
             return (
               <g
                 key={n.id}
+                className="graph-node"
                 transform={`translate(${p.x},${p.y})`}
-                style={{ cursor: "pointer" }}
                 onClick={() => onSelectNode(isSelected ? null : n.id)}
                 role="button"
                 tabIndex={0}
@@ -310,13 +384,14 @@ function AgentGraphCanvas({
               >
                 <title>{n.id} — {n.role}</title>
                 <rect
+                  className="graph-node__box"
                   width={p.w}
                   height={p.h}
                   rx={8}
                   fill="var(--surface)"
                   stroke={isSelected ? "var(--brand)" : isEntry ? "var(--brand)" : "var(--line-strong)"}
                   strokeWidth={isSelected ? 2.5 : isEntry ? 2 : 1.5}
-                  style={{ filter: isSelected ? "drop-shadow(0 4px 12px rgba(14,124,117,0.18))" : "none", transition: "stroke 120ms" }}
+                  style={isSelected ? { filter: "drop-shadow(0 4px 12px rgba(14,124,117,0.18))" } : undefined}
                 />
                 {isEntry && (
                   <rect width={p.w} height={4} rx={2} fill="var(--brand)" />
@@ -330,13 +405,13 @@ function AgentGraphCanvas({
                   fill="var(--ink)"
                   fontFamily="var(--font-sans)"
                 >
-                  {n.id.length > 16 ? n.id.slice(0, 15) + "…" : n.id}
+                  {n.id.length > 18 ? n.id.slice(0, 17) + "…" : n.id}
                 </text>
                 {glyphCaps.length > 0 ? (
                   <g color="var(--brand)" opacity={0.9}>
                     {glyphCaps.map((c, gi) => (
                       <g key={c.name} transform={`translate(${glyphStart + gi * glyphGap - 7},${33})`}>
-                        {capGlyphPaths(c.name)}
+                        {capNodeGlyph(c.name)}
                       </g>
                     ))}
                   </g>
@@ -374,6 +449,20 @@ function AgentGraphCanvas({
           <span aria-hidden="true" style={{ width: 10, height: 3, borderRadius: 2, background: "var(--brand)" }} />
           entry step
         </span>
+        {hasLoop && (
+          <span className="micro" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)", letterSpacing: ".02em" }}>
+            <svg aria-hidden="true" width={18} height={6} style={{ flexShrink: 0 }}>
+              <path d="M0 3h18" stroke="var(--brand)" strokeWidth={1.5} strokeDasharray="4 3" strokeOpacity={0.7} />
+            </svg>
+            loops back
+          </span>
+        )}
+        {hasCond && (
+          <span className="micro" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)", letterSpacing: ".02em" }}>
+            <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", border: "1.5px solid var(--ink-muted)", background: "var(--surface)", flexShrink: 0 }} />
+            conditional
+          </span>
+        )}
         <span className="micro" style={{ letterSpacing: ".02em" }}>click a step for details</span>
       </div>
     </div>

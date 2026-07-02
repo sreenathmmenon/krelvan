@@ -5,32 +5,18 @@ import Link from "next/link";
 import {
   getAgent, getAgentRuns, getRun, getRunEvents, startRun, verifyRun, timeAgo,
   type AgentRecord, type RunRecord, type RunDetail, type LedgerEvent, type RunVerification,
-  type ManifestNode, type ManifestEdge, type ManifestExpr, API_BASE,
+  type ManifestNode, type ManifestEdge, API_BASE,
 } from "../../../lib/api";
-import { layoutGraph, graphBounds, edgePath, type NodePos } from "../../../lib/layout";
+import { layoutGraph, graphBounds, type NodePos } from "../../../lib/layout";
+import { edgeGeometry, edgeConditionLabel, type Box } from "../../../lib/graph-edges";
+import { glyphFor } from "../../../lib/glyphs";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ViewXform { tx: number; ty: number; scale: number; }
 
-// ── Edge condition label renderer ─────────────────────────────────────────────
-
-function exprLabel(expr: ManifestExpr, depth = 0): string {
-  if (depth > 3) return "…";
-  switch (expr.op) {
-    case "const": return expr.value === null ? "null" : String(expr.value);
-    case "var":   return expr.key;
-    case "eq":    return `${exprLabel(expr.left, depth+1)} = ${exprLabel(expr.right, depth+1)}`;
-    case "ne":    return `${exprLabel(expr.left, depth+1)} ≠ ${exprLabel(expr.right, depth+1)}`;
-    case "lt":    return `${exprLabel(expr.left, depth+1)} < ${exprLabel(expr.right, depth+1)}`;
-    case "lte":   return `${exprLabel(expr.left, depth+1)} ≤ ${exprLabel(expr.right, depth+1)}`;
-    case "gt":    return `${exprLabel(expr.left, depth+1)} > ${exprLabel(expr.right, depth+1)}`;
-    case "gte":   return `${exprLabel(expr.left, depth+1)} ≥ ${exprLabel(expr.right, depth+1)}`;
-    case "and":   return expr.clauses.map(c => exprLabel(c, depth+1)).join(" & ");
-    case "or":    return expr.clauses.map(c => exprLabel(c, depth+1)).join(" | ");
-    case "not":   return `!${exprLabel(expr.clause, depth+1)}`;
-  }
-}
+// How far a back-edge (retry loop) lane arcs beyond the node rows.
+const LOOP_CLEARANCE = 36;
 
 // ── Capability glyphs (teal geometric SVG — no emoji; matches the homepage glyph
 // style on page.tsx / _builder.tsx CapGlyph). Each glyph is authored on a 16×16
@@ -110,11 +96,21 @@ function capGlyphPaths(name: string, color = "var(--brand)"): React.ReactNode {
   }
 }
 
+// Capability names covered by the hand-drawn vocabulary above; anything else
+// (rag.search, delegate, …) falls back to the marketplace glyph set (lib/glyphs.ts)
+// so unknown capabilities never collapse to an anonymous square.
+const KNOWN_CAP_GLYPHS = new Set([
+  "think", "recall", "remember", "llm_route", "web_search", "compose", "text_transform",
+  "http_get", "http_post", "telegram_send", "email_send", "slack_send", "notify_webhook", "identify",
+]);
+
 // HTML-context glyph (detail drawer, dropdowns): a fixed 16×16 inline SVG.
 function CapGlyphInline({ name, size = 14, color = "var(--brand)" }: { name: string; size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true" style={{ flexShrink: 0, display: "block" }}>
-      {capGlyphPaths(name, color)}
+      {KNOWN_CAP_GLYPHS.has(name)
+        ? capGlyphPaths(name, color)
+        : <path d={glyphFor(name)} stroke={color} strokeWidth={1.2} fill="none" strokeLinecap="round" strokeLinejoin="round" />}
     </svg>
   );
 }
@@ -489,6 +485,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
     [manifest],
   );
   const { w: graphW, h: graphH } = graphBounds(positions);
+  const allBoxes: Box[] = useMemo(() => [...positions.values()], [positions]);
 
   useEffect(() => {
     if (!containerRef.current || !manifest) return;
@@ -926,6 +923,9 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
                 <marker id="c-arrow-idle" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
                   <polygon points="0 0, 10 3.5, 0 7" fill="var(--line-strong)" />
                 </marker>
+                <marker id="c-arrow-loop" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                  <polygon points="0 0, 10 3.5, 0 7" fill="var(--brand)" fillOpacity={0.75} />
+                </marker>
                 <style>{`
                   .c-edge-active { stroke-dasharray: 8 6; animation: c-dash 0.7s linear infinite; }
                   @keyframes c-dash { to { stroke-dashoffset: -28; } }
@@ -950,24 +950,34 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
                   const toStatus   = nodeStatus(edge.to);
                   const isActive   = fromStatus === "running" || toStatus === "running";
                   const isDone     = fromStatus === "done" && toStatus !== "idle";
-                  const d          = edgePath(fp, tp);
-                  const stroke     = mode === "blueprint" ? "var(--line-strong)"
-                    : isActive ? "var(--live)" : isDone ? "var(--ok)" : "var(--line-strong)";
-                  const marker     = mode === "blueprint" ? "url(#c-arrow-idle)"
-                    : isActive ? "url(#c-arrow-active)" : isDone ? "url(#c-arrow-done)" : "url(#c-arrow-idle)";
+
+                  // Geometry — back-edges (retry loops, e.g. judge -> answer) arc
+                  // through a clear lane above/below the rows instead of cutting
+                  // backwards across the graph. Rendered dashed so a loop reads as
+                  // a deliberate loop.
+                  const geom       = edgeGeometry(fp, tp, allBoxes, LOOP_CLEARANCE);
+                  const d          = geom.d;
+                  const isNeutral  = mode === "blueprint" || (!isActive && !isDone);
+                  const stroke     = !isNeutral
+                    ? (isActive ? "var(--live)" : "var(--ok)")
+                    : geom.back ? "var(--brand)" : "var(--line-strong)";
+                  const marker     = !isNeutral
+                    ? (isActive ? "url(#c-arrow-active)" : "url(#c-arrow-done)")
+                    : geom.back ? "url(#c-arrow-loop)" : "url(#c-arrow-idle)";
 
                   // Conditional edge label — show full on hover, truncate otherwise
                   const edgeKey = `${edge.from}-${edge.to}`;
                   const when = edge.when;
-                  const condLabel = when ? exprLabel(when) : null;
+                  const condLabel = when ? edgeConditionLabel(when) : null;
                   const isHovered = hoveredEdge === edgeKey;
                   const condText = condLabel
                     ? (isHovered || condLabel.length <= 22 ? condLabel : condLabel.slice(0, 20) + "…")
                     : null;
 
-                  // Midpoint for label
-                  const midX = (fp.x + fp.w + tp.x) / 2;
-                  const midY = (fp.y + fp.h / 2 + tp.y + tp.h / 2) / 2 - 12;
+                  // Label anchor: curve midpoint. Loop arcs get the label on the
+                  // (empty) lane side; forward edges lift it slightly off the line.
+                  const midX = geom.midX;
+                  const midY = geom.back ? geom.midY : geom.midY - 12;
 
                   // Pill width scales with label length
                   const pillW = condText ? Math.max(52, condText.length * 7 + 18) : 0;
@@ -980,8 +990,18 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
                       {/* wider invisible hit area for hover */}
                       <path d={d} fill="none" stroke="transparent" strokeWidth={12} style={{ cursor: "pointer" }} />
                       <path d={d} fill="none" stroke={isHovered ? (isActive ? "var(--live)" : isDone ? "var(--ok)" : "var(--brand)") : stroke}
+                        strokeOpacity={isNeutral && geom.back && !isHovered ? 0.6 : 1}
                         strokeWidth={isHovered ? 2.5 : isActive ? 2.5 : isDone ? 2 : 1.5}
+                        strokeDasharray={geom.back ? "7 5" : undefined}
                         markerEnd={marker} style={{ transition: "stroke 200ms, stroke-width 150ms" }} />
+                      {/* conditional edge: a decision dot at the source end */}
+                      {when && (
+                        <circle cx={geom.sx} cy={geom.sy} r={3.5}
+                          fill="var(--surface)"
+                          stroke={isHovered ? "var(--brand)" : geom.back && isNeutral ? "var(--brand)" : stroke}
+                          strokeWidth={1.5}
+                          style={{ pointerEvents: "none", transition: "stroke 200ms" }} />
+                      )}
                       {mode === "live" && isActive && (
                         <>
                           <path d={d} fill="none" stroke="var(--live)" strokeWidth={2.5} className="c-edge-active" opacity={0.6} />

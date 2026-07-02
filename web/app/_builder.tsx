@@ -10,6 +10,8 @@ import {
   deleteAgent, explainBuild, timeAgo,
   type AgentRecord, type RunRecord, type BuildResult, type ManifestNode, type ManifestEdge,
 } from "../lib/api";
+import { edgeGeometry, type Box } from "../lib/graph-edges";
+import { glyphFor } from "../lib/glyphs";
 
 // Chips span Krelvan's real range — a scheduled watcher, a grounded support bot, a
 // personal advisor, and a research digest — so the box doesn't read as research-only.
@@ -54,9 +56,11 @@ function miniLayout(nodes: ManifestNode[], edges: ManifestEdge[], entry: string)
   const maxDepth = nodes.length;
   function visit(id: string, depth: number, inPath: Set<string>) {
     if (depth > maxDepth) return;
+    // Cycle re-entry must not deepen the node (see agents/[id] layoutNodes): otherwise a
+    // retry loop inflates its target past the judge and the loop renders backwards.
+    if (inPath.has(id)) return;
     const prev = layer.get(id);
     if (prev === undefined || prev < depth) layer.set(id, depth);
-    if (inPath.has(id)) return;
     inPath.add(id);
     for (const e of edges) if (e.from === id) visit(e.to, depth + 1, inPath);
     inPath.delete(id);
@@ -91,18 +95,34 @@ export function MiniGraph({ nodes, edges, entry, variant = "light", maxHeight = 
     maxX = Math.max(maxX, p.x + MNW);
     maxY = Math.max(maxY, p.y + MNH);
   }
-  const vw = maxX + MHG;
-  const vh = Math.max(maxY + MVG, 50);
   const dark = variant === "dark";
   const nodeFill = dark ? "var(--dark-node-fill, #14201F)" : "var(--surface)";
   const lineColor = dark ? "var(--dark-line, #2A3331)" : "var(--line-strong)";
   const entryStroke = dark ? "var(--dark-brand-bright, #1AA39A)" : "var(--brand)";
   const arrowId = dark ? "mg-arrow-dark" : "mg-arrow";
 
+  // Back-edges (retry loops) arc through a lane above/below the rows — extend the
+  // viewBox so the arc isn't clipped.
+  const boxes: Box[] = [...positions.values()].map(p => ({ x: p.x, y: p.y, w: MNW, h: MNH }));
+  const geoms = edges.map(e => {
+    const fp = positions.get(e.from);
+    const tp = positions.get(e.to);
+    if (!fp || !tp) return null;
+    return { when: e.when, g: edgeGeometry({ x: fp.x, y: fp.y, w: MNW, h: MNH }, { x: tp.x, y: tp.y, w: MNW, h: MNH }, boxes, 14) };
+  });
+  let top = 0, bottom = Math.max(maxY + MVG, 50);
+  for (const it of geoms) {
+    if (it?.g.laneY == null) continue;
+    if (it.g.side === "above") top = Math.min(top, it.g.laneY - 4);
+    if (it.g.side === "below") bottom = Math.max(bottom, it.g.laneY + 4);
+  }
+  const vw = maxX + MHG;
+  const vh = bottom - top;
+
   return (
     <div style={{ position: "relative" }}>
       <svg
-        viewBox={`0 0 ${vw} ${vh}`}
+        viewBox={`0 ${top} ${vw} ${vh}`}
         width="100%"
         style={{ display: "block", maxHeight, overflow: "visible" }}
         aria-hidden
@@ -111,18 +131,27 @@ export function MiniGraph({ nodes, edges, entry, variant = "light", maxHeight = 
           <marker id={arrowId} markerWidth="5" markerHeight="5" refX="4" refY="2" orient="auto">
             <path d="M0,0 L0,4 L5,2 z" fill={lineColor} />
           </marker>
+          <marker id={`${arrowId}-loop`} markerWidth="5" markerHeight="5" refX="4" refY="2" orient="auto">
+            <path d="M0,0 L0,4 L5,2 z" fill={entryStroke} fillOpacity={0.75} />
+          </marker>
         </defs>
-        {edges.map((e, i) => {
-          const fp = positions.get(e.from);
-          const tp = positions.get(e.to);
-          if (!fp || !tp) return null;
-          const x1 = fp.x + MNW, y1 = fp.y + MNH / 2;
-          const x2 = tp.x, y2 = tp.y + MNH / 2;
-          const cx = (x1 + x2) / 2;
+        {geoms.map((it, i) => {
+          if (!it) return null;
+          const { when, g } = it;
           return (
-            <path key={i} d={`M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`}
-              fill="none" stroke={lineColor} strokeWidth={1.4}
-              markerEnd={`url(#${arrowId})`} />
+            <g key={i}>
+              <path d={g.d}
+                fill="none"
+                stroke={g.back ? entryStroke : lineColor}
+                strokeOpacity={g.back ? 0.6 : 1}
+                strokeWidth={1.4}
+                strokeDasharray={g.back ? "4 3" : undefined}
+                markerEnd={`url(#${arrowId}${g.back ? "-loop" : ""})`} />
+              {/* conditional edge: a quiet decision dot at the source end */}
+              {when && (
+                <circle cx={g.sx} cy={g.sy} r={2} fill={nodeFill} stroke={g.back ? entryStroke : lineColor} strokeWidth={1.2} />
+              )}
+            </g>
           );
         })}
         {nodes.map(n => {
@@ -265,10 +294,20 @@ function capGlyphPaths(name: string): React.ReactNode {
   }
 }
 
+// Capability names covered by the hand-drawn vocabulary above; anything else
+// (rag.search, delegate, …) falls back to the marketplace glyph set (lib/glyphs.ts)
+// so unknown capabilities never collapse to an anonymous square.
+const KNOWN_CAP_GLYPHS = new Set([
+  "think", "recall", "remember", "llm_route", "web_search", "compose",
+  "http_get", "http_post", "telegram_send", "email_send", "slack_send", "notify_webhook",
+]);
+
 function CapGlyph({ name, cx, cy }: { name: string; cx: number; cy: number }) {
   return (
     <g transform={`translate(${cx - 8},${cy - 8})`} opacity={0.85}>
-      {capGlyphPaths(name)}
+      {KNOWN_CAP_GLYPHS.has(name)
+        ? capGlyphPaths(name)
+        : <path d={glyphFor(name)} stroke="var(--brand)" strokeWidth={1.2} fill="none" strokeLinecap="round" strokeLinejoin="round" />}
     </g>
   );
 }
@@ -276,12 +315,9 @@ function CapGlyph({ name, cx, cy }: { name: string; cx: number; cy: number }) {
 function FullMiniGraph({ nodes, edges, entry }: { nodes: ManifestNode[]; edges: ManifestEdge[]; entry: string }) {
   const positions = miniLayout(nodes.map(n => ({ ...n })), edges, entry);
 
-  let maxX = 0, maxY = 0;
-  for (const p of positions.values()) {
-    maxX = Math.max(maxX, p.x * (MFN_W / MNW) + MFN_W);
-    maxY = Math.max(maxY, p.y * (MFN_H / MNH) + MFN_H);
-  }
-
+  // Scale the mini layout up to full-preview node dimensions FIRST, then measure —
+  // measuring the unscaled x with a different factor used to under-size the viewBox
+  // and clip the last column.
   const scaledPositions = new Map<string, MiniNodePos>();
   for (const [id, p] of positions.entries()) {
     scaledPositions.set(id, {
@@ -290,27 +326,56 @@ function FullMiniGraph({ nodes, edges, entry }: { nodes: ManifestNode[]; edges: 
     });
   }
 
+  let maxX = 0, maxY = 0;
+  for (const p of scaledPositions.values()) {
+    maxX = Math.max(maxX, p.x + MFN_W);
+    maxY = Math.max(maxY, p.y + MFN_H);
+  }
+
+  // Edge geometry — back-edges (retry loops) arc through a lane above/below the rows.
+  const boxes: Box[] = [...scaledPositions.values()].map(p => ({ x: p.x, y: p.y, w: MFN_W, h: MFN_H }));
+  const geoms = edges.map(e => {
+    const fp = scaledPositions.get(e.from);
+    const tp = scaledPositions.get(e.to);
+    if (!fp || !tp) return null;
+    return { when: e.when, g: edgeGeometry({ x: fp.x, y: fp.y, w: MFN_W, h: MFN_H }, { x: tp.x, y: tp.y, w: MFN_W, h: MFN_H }, boxes, 24) };
+  });
+  let top = 0, bottom = Math.max(maxY + MFV_G, 100);
+  for (const it of geoms) {
+    if (it?.g.laneY == null) continue;
+    if (it.g.side === "above") top = Math.min(top, it.g.laneY - 6);
+    if (it.g.side === "below") bottom = Math.max(bottom, it.g.laneY + 6);
+  }
   const vw = maxX + MFH_G;
-  const vh = Math.max(maxY + MFV_G, 100);
+  const vh = bottom - top;
 
   return (
-    <svg viewBox={`0 0 ${vw} ${vh}`} width="100%" style={{ display: "block", maxHeight: 220 }} aria-hidden>
+    <svg viewBox={`0 ${top} ${vw} ${vh}`} width="100%" style={{ display: "block", maxHeight: 220 }} aria-hidden>
       <defs>
         <marker id="fp-arrow" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
           <path d="M0,0 L0,6 L7,3 z" fill="var(--ink-muted)" />
         </marker>
+        <marker id="fp-arrow-loop" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L7,3 z" fill="var(--brand)" fillOpacity={0.75} />
+        </marker>
       </defs>
-      {edges.map((e, i) => {
-        const fp = scaledPositions.get(e.from);
-        const tp = scaledPositions.get(e.to);
-        if (!fp || !tp) return null;
-        const x1 = fp.x + MFN_W, y1 = fp.y + MFN_H / 2;
-        const x2 = tp.x, y2 = tp.y + MFN_H / 2;
-        const cx = (x1 + x2) / 2;
+      {geoms.map((it, i) => {
+        if (!it) return null;
+        const { when, g } = it;
         return (
-          <path key={i} d={`M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`}
-            fill="none" stroke="var(--line-strong)" strokeWidth={1.5}
-            markerEnd="url(#fp-arrow)" />
+          <g key={i}>
+            <path d={g.d}
+              fill="none"
+              stroke={g.back ? "var(--brand)" : "var(--line-strong)"}
+              strokeOpacity={g.back ? 0.6 : 1}
+              strokeWidth={1.5}
+              strokeDasharray={g.back ? "5 4" : undefined}
+              markerEnd={g.back ? "url(#fp-arrow-loop)" : "url(#fp-arrow)"} />
+            {/* conditional edge: a quiet decision dot at the source end */}
+            {when && (
+              <circle cx={g.sx} cy={g.sy} r={2.5} fill="var(--surface)" stroke={g.back ? "var(--brand)" : "var(--ink-muted)"} strokeWidth={1.2} />
+            )}
+          </g>
         );
       })}
       {nodes.map(n => {
@@ -340,7 +405,10 @@ function FullMiniGraph({ nodes, edges, entry }: { nodes: ManifestNode[]; edges: 
               <circle cx={MFN_W / 2} cy={36} r={3} stroke="var(--ink-muted)" strokeWidth={1.2} fill="none" />
             )}
             <text x={MFN_W / 2} y={54} textAnchor="middle" fontSize={8.5} fill="var(--brand)" fontFamily="var(--font-mono)">
-              {n.capabilities.map(c => c.name).join(" · ")}
+              {(() => {
+                const line = n.capabilities.map(c => c.name).join(" · ");
+                return line.length > 26 ? line.slice(0, 25) + "…" : line;
+              })()}
             </text>
           </g>
         );

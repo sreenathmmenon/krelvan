@@ -29,9 +29,12 @@ export function layoutGraph(
   const maxDepth = nodes.length;
   function visit(id: string, depth: number, inPath: Set<string>) {
     if (depth > maxDepth) return;
+    // Cycle re-entry must not deepen the node: check the path BEFORE updating the layer,
+    // or a retry loop (judge -> answer) inflates the target past its judge and the loop
+    // renders backwards (the forward flow becomes the arc).
+    if (inPath.has(id)) return;
     const prev = layer.get(id);
     if (prev === undefined || prev < depth) layer.set(id, depth);
-    if (inPath.has(id)) return; // cycle edge — do not recurse back into the current path
     inPath.add(id);
     for (const e of edges) if (e.from === id) visit(e.to, depth + 1, inPath);
     inPath.delete(id);
@@ -71,6 +74,8 @@ export function graphBounds(positions: Map<string, NodePos>, hGap = DEFAULTS.hGa
   return { w: maxX + hGap * 2, h: maxY + vGap * 2 };
 }
 
+// Plain forward cubic — kept for callers that don't (yet) route back-edges.
+// Back-edge-aware rendering lives in lib/graph-edges.ts (edgeGeometry).
 export function edgePath(from: NodePos, to: NodePos): string {
   const x1 = from.x + from.w;
   const y1 = from.y + from.h / 2;

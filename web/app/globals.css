@@ -319,6 +319,21 @@ a:hover { color: var(--brand-hover); }
 .graph-node-idle  { opacity: .65; }
 .graph-node-error { box-shadow: 0 0 0 2px var(--danger); }
 
+/* SVG graph nodes (agent detail page) — hover/focus affordance on the whole step */
+.graph-node { cursor: pointer; }
+.graph-node .graph-node__box {
+  transition: stroke var(--t-fast) var(--ease), filter var(--t-fast) var(--ease);
+}
+.graph-node:hover .graph-node__box {
+  stroke: var(--brand);
+  filter: drop-shadow(0 2px 8px rgba(12,114,107,.16));
+}
+.graph-node:focus-visible { outline: none; }
+.graph-node:focus-visible .graph-node__box {
+  stroke: var(--brand);
+  stroke-width: 2.5;
+}
+
 /* focus — visible ring on keyboard nav only */
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 3px; }
