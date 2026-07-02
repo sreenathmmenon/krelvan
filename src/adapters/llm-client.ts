@@ -48,6 +48,7 @@
 
 import { fetchWithRetry } from "./http-retry.js";
 import { getLogger } from "../core/observability/logger.js";
+import { recordMeteredCost } from "../core/capability/cost-meter.js";
 
 const log = getLogger("llm-client");
 
@@ -414,7 +415,20 @@ export function getLLMClient(): LLMClient {
 
   log.info({ provider, hasApiKey: !!apiKey, baseUrl }, "llm-client: initialising");
 
-  _sharedClient = buildClient({ provider, apiKey, baseUrl });
+  const inner = buildClient({ provider, apiKey, baseUrl });
+  // Metering wrapper: every completion's cost — computed HERE from the provider-reported
+  // token usage and the rate table, never from anything the caller claims — is recorded
+  // into the supervisor's meter scope (a no-op outside one). This is what lets budget
+  // settlement use max(pluginClaim, metered): a plugin cannot under-report LLM spend
+  // made through the shared client.
+  _sharedClient = {
+    complete: async (req: LLMRequest): Promise<LLMResponse> => {
+      const res = await inner.complete(req);
+      recordMeteredCost(estimateCostCents(provider, req.model, res.inputTokens, res.outputTokens));
+      return res;
+    },
+    ...(inner.embed ? { embed: inner.embed.bind(inner) } : {}),
+  };
   return _sharedClient;
 }
 

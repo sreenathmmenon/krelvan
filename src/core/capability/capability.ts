@@ -19,6 +19,7 @@
 
 import { canonicalize } from "../ledger/canonical.js";
 import { contentAddress } from "../ledger/crypto.js";
+import { meterRun } from "./cost-meter.js";
 import type { AutonomyLevel, ManifestNode, SideEffectClass } from "../manifest/manifest.js";
 import { findCapability } from "../manifest/manifest.js";
 
@@ -177,19 +178,30 @@ export interface CapabilityPlugin {
 /** What the supervisor co-signs: the OBSERVED result, not the plugin's say-so. */
 export interface ObservedEffect {
   idem: string;
-  /** the cost the SUPERVISOR settled (here: it accepts the plugin claim but records
-   * that it is supervisor-attested; a real supervisor measures egress/tokens). */
+  /**
+   * The cost the SUPERVISOR settles against the budget: max(pluginClaim, metered).
+   * `metered` is measured independently by the cost meter (the shared LLM client
+   * records every completion's cost from provider-reported token usage into the
+   * supervisor's meter scope), so a plugin cannot UNDER-report LLM spend to slip
+   * past the budget ceiling. Work done through a plugin's own I/O stack is not yet
+   * independently metered (that is the sandboxed egress proxy, still roadmap) —
+   * which is why the claim and the meter are both kept, separately, below.
+   */
   costCents: number;
   output: unknown;
   /** the plugin's self-reported claim, kept as explicitly-untrusted data. */
   pluginClaim: { claimedCostCents: number };
+  /** what the cost meter independently measured during this invocation (0 = nothing metered). */
+  meteredCents: number;
 }
 
 /**
- * The supervisor runs the plugin and produces the observed effect. In this core it
- * accepts the plugin's claimed cost but FRAMES it as supervisor-attested and keeps
- * the raw claim separately, establishing the trust boundary the production
- * supervisor (egress proxy + sandbox) will fully enforce.
+ * The supervisor runs the plugin inside a cost-meter scope and produces the observed
+ * effect. Settlement is max(claimed, metered): the plugin's claim can raise the cost
+ * (honest expensive work through its own stack) but can never LOWER it below what the
+ * meter saw. Full independent metering of arbitrary plugin I/O (egress proxy + sandbox)
+ * remains the production-supervisor roadmap; until then that residual gap is explicit,
+ * not hidden — ObservedEffect carries claim and meter separately.
  *
  * Plugin snapshot is an immutable ReadonlyMap. enable/disable swap the pointer
  * atomically in the JS event loop — in-flight calls hold the old snapshot and
@@ -218,14 +230,20 @@ export class Supervisor {
   async run(call: EffectCall, idem: string): Promise<ObservedEffect> {
     const p = this.#plugins.get(call.capability);
     if (!p) throw new Error(`no plugin for capability '${call.capability}'`);
-    const res = await p.invoke(call);
-    // Round to integer — the ledger rejects non-integer numbers (LED-02).
-    const costCents = Math.round(res.claimedCostCents);
+    // Invoke inside a fresh meter scope: billable work done by trusted infrastructure
+    // (LLM completions through the shared client) is measured independently of the plugin.
+    const { result: res, meteredCents } = await meterRun(() => p.invoke(call));
+    // Round to integers — the ledger rejects non-integer numbers (LED-02). Clamp the
+    // claim at 0 (a negative claim must never lower spend; the fold clamps too).
+    const claimed = Math.max(0, Math.round(res.claimedCostCents));
+    // Settle at max(claim, meter): the claim can only ever RAISE the settled cost.
+    const costCents = Math.max(claimed, meteredCents);
     return {
       idem,
       costCents,
       output: res.output,
-      pluginClaim: { claimedCostCents: costCents },
+      pluginClaim: { claimedCostCents: claimed },
+      meteredCents,
     };
   }
 
