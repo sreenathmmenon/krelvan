@@ -383,6 +383,24 @@ export async function installTemplate(payload: {
   });
 }
 
+/**
+ * The "make it mine" clone flow: bake the builder's settings (declared by the template's
+ * customize block — rename / knowledge base / tone / autonomy toggles) into a fresh
+ * manifest and install it as the builder's own named agent. Undeclared settings are
+ * rejected by the server (deny-by-default).
+ */
+export async function customizeTemplate(payload: {
+  manifest: unknown;
+  settings: Record<string, string | number | boolean>;
+  capabilities?: { name: string; yaml: string }[];
+  secretRefs?: string[];
+}): Promise<TemplateInstallResult> {
+  return apiFetch<TemplateInstallResult>("/api/templates/customize", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function enableCapability(name: string): Promise<CapabilityRecord> {
   const data = await apiFetch<{ capability: CapabilityRecord }>(
     `/api/capabilities/${encodeURIComponent(name)}/enable`,

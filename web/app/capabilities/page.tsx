@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
-  listCapabilities, installCapability, installCapabilityFile, installTemplate,
+  listCapabilities, installCapability, installCapabilityFile, installTemplate, customizeTemplate,
   enableCapability, disableCapability, uninstallCapability,
   listMcpServers, connectMcpServer, disconnectMcpServer,
   getCapabilitySource, updateCapabilityYaml, setSecret,
@@ -70,6 +70,7 @@ export default function CapabilitiesPage() {
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [viewSource, setViewSource] = useState<CapabilityRecord | null>(null);
   const [detail, setDetail] = useState<CatalogEntry | null>(null);
+  const [customizing, setCustomizing] = useState<CatalogEntry | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
   const reload = useCallback(async () => {
@@ -149,7 +150,7 @@ export default function CapabilitiesPage() {
         <DiscoverTab
           catalog={catalog} q={q} query={query} setQuery={setQuery}
           installedNames={installedNames} autonomy={autonomy}
-          onInstalled={reload} flash={flash} onDetail={setDetail} onAdd={() => setAddOpen(true)}
+          onInstalled={reload} flash={flash} onDetail={setDetail} onCustomize={setCustomizing} onAdd={() => setAddOpen(true)}
         />
       ) : (
         <InstalledTab
@@ -170,6 +171,11 @@ export default function CapabilitiesPage() {
         <DetailDrawer
           e={detail} installed={installedNames.has(detail.name)} catalog={catalog}
           onClose={() => setDetail(null)} onInstalled={reload} flash={flash}
+        />
+      )}
+      {customizing && (
+        <CustomizeDrawer
+          e={customizing} onClose={() => setCustomizing(null)} onInstalled={reload} flash={flash}
         />
       )}
       {addOpen && <AddOwnDrawer onClose={() => setAddOpen(false)} onInstalled={reload} flash={flash} />}
@@ -271,10 +277,10 @@ const KIND_FACETS: { key: string; label: string; test: (e: CatalogEntry) => bool
   { key: "pack", label: "Packs", test: e => e.kind === "pack" },
 ];
 
-function DiscoverTab({ catalog, q, query, setQuery, installedNames, autonomy, onInstalled, flash, onDetail, onAdd }: {
+function DiscoverTab({ catalog, q, query, setQuery, installedNames, autonomy, onInstalled, flash, onDetail, onCustomize, onAdd }: {
   catalog: CatalogEntry[]; q: string; query: string; setQuery: (s: string) => void;
   installedNames: Set<string>; autonomy: Autonomy;
-  onInstalled: () => Promise<void>; flash: (m: string) => void; onDetail: (e: CatalogEntry) => void; onAdd: () => void;
+  onInstalled: () => Promise<void>; flash: (m: string) => void; onDetail: (e: CatalogEntry) => void; onCustomize: (e: CatalogEntry) => void; onAdd: () => void;
 }) {
   const [kind, setKind] = useState("all");
   const [cat, setCat] = useState<string | null>(null);
@@ -363,7 +369,7 @@ function DiscoverTab({ catalog, q, query, setQuery, installedNames, autonomy, on
       ) : (
         <div className="cap-grid">
           {items.map(e => (
-            <CatalogCard key={e.name} e={e} installed={installedNames.has(e.name)} autonomy={autonomy} onInstalled={onInstalled} flash={flash} onDetail={onDetail} />
+            <CatalogCard key={e.name} e={e} installed={installedNames.has(e.name)} autonomy={autonomy} onInstalled={onInstalled} flash={flash} onDetail={onDetail} onCustomize={onCustomize} />
           ))}
         </div>
       )}
@@ -383,15 +389,19 @@ function FeaturedCard({ e, installed, onDetail }: { e: CatalogEntry; installed: 
   );
 }
 
-function CatalogCard({ e, installed, autonomy, onInstalled, flash, onDetail }: {
-  e: CatalogEntry; installed: boolean; autonomy: Autonomy; onInstalled: () => Promise<void>; flash: (m: string) => void; onDetail: (e: CatalogEntry) => void;
+function CatalogCard({ e, installed, autonomy, onInstalled, flash, onDetail, onCustomize }: {
+  e: CatalogEntry; installed: boolean; autonomy: Autonomy; onInstalled: () => Promise<void>; flash: (m: string) => void; onDetail: (e: CatalogEntry) => void; onCustomize: (e: CatalogEntry) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const gated = needsApproval(autonomy, e.sideEffect);
   const toolCount = e.kind === "mcp" ? (e.mcp?.tools?.length ?? 0) : (e.capabilities?.length ?? 0);
+  const customizable = e.kind === "template" && !!e.manifest?.customize && Object.keys(e.manifest.customize).length > 0;
 
   async function quickInstall(ev: React.MouseEvent) {
     ev.stopPropagation();
+    // A customizable template opens the "make it mine" form first: name it, point it at
+    // your knowledge base, set the tone — the WordPress-style clone flow.
+    if (customizable) { onCustomize(e); return; }
     // Community items + anything needing secrets go through the detail drawer (review first).
     if (e.tier === "community" || (e.secretRefs && e.secretRefs.length > 0) || e.kind === "pack") { onDetail(e); return; }
     setBusy(true);
@@ -436,7 +446,7 @@ function CatalogCard({ e, installed, autonomy, onInstalled, flash, onDetail }: {
           <span className="cap-installed"><Icon d={UI.check} size={13} />Installed</span>
         ) : (
           <button className="btn btn-primary btn-sm" disabled={busy} onClick={quickInstall}>
-            {busy ? "Installing…" : e.kind === "mcp" ? "Connect" : e.kind === "template" ? "Install agent" : e.kind === "pack" ? "View pack" : "Install"}
+            {busy ? "Installing…" : customizable ? "Customize & install" : e.kind === "mcp" ? "Connect" : e.kind === "template" ? "Install agent" : e.kind === "pack" ? "View pack" : "Install"}
           </button>
         )}
         <span className="cap-card__more small muted">Details <Icon d={UI.chevron} size={11} /></span>
@@ -623,6 +633,108 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
 }
 
 // ── "Add your own" drawer (manual install: YAML / JS / MCP) ───────────────────
+/**
+ * The "make it mine" form — the WordPress-style clone flow. Renders the template's
+ * declared customize knobs (rename / knowledge base / tone / autonomy toggles) as a
+ * small form, prefilled with the template's defaults, and creates the builder's own
+ * named agent via POST /api/templates/customize. Empty text fields are omitted so the
+ * template's own values stand; the server rejects anything not declared customizable.
+ */
+function CustomizeDrawer({ e, onClose, onInstalled, flash }: {
+  e: CatalogEntry; onClose: () => void; onInstalled: () => Promise<void>; flash: (m: string) => void;
+}) {
+  const fields = useMemo(() => Object.entries(e.manifest?.customize ?? {}), [e]);
+  const [values, setValues] = useState<Record<string, string | boolean>>(() => {
+    const v: Record<string, string | boolean> = {};
+    for (const [key, f] of Object.entries(e.manifest?.customize ?? {})) {
+      if (f.type === "toggle") v[key] = f.default === true;
+      else if (f.default !== undefined) v[key] = String(f.default);
+      else if (f.type === "choice" && f.options?.length) v[key] = f.options[0]!;
+      else v[key] = "";
+    }
+    return v;
+  });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function submit() {
+    setBusy(true); setErr(null);
+    try {
+      const settings: Record<string, string | boolean> = {};
+      for (const [key, f] of fields) {
+        const val = values[key];
+        if (f.type === "toggle") settings[key] = val === true;
+        else if (typeof val === "string" && val.trim()) settings[key] = val.trim();
+        // empty text -> omitted; the template's own value stands
+      }
+      const res = await customizeTemplate({
+        manifest: e.manifest, settings,
+        capabilities: e.capabilities ?? [], secretRefs: e.secretRefs ?? [],
+      });
+      await onInstalled();
+      const renameField = fields.find(([, f]) => f.rename);
+      const agentName = (renameField && typeof values[renameField[0]] === "string" && (values[renameField[0]] as string).trim()) || e.title;
+      flash(res.missingSecrets.length > 0 ? `${agentName} created — add its keys in Secrets` : `${agentName} created`);
+      window.location.href = `/canvas/${encodeURIComponent(res.agent.id)}`;
+    } catch (ex) { setErr((ex as Error).message); } finally { setBusy(false); }
+  }
+
+  return (
+    <>
+      <button className="nav-scrim" aria-label="Close" onClick={onClose} style={{ inset: 0 }} />
+      <aside className="cap-drawer" role="dialog" aria-modal="true" aria-label={`Customize ${e.title}`}>
+        <div className="cap-drawer__head">
+          <div style={{ minWidth: 0 }}>
+            <div className="cap-card__title">Make it yours</div>
+            <p className="small muted" style={{ margin: "4px 0 0" }}>
+              {e.title} — set the basics; everything else can be edited on the canvas after.
+            </p>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close"><Icon d={UI.close} size={14} /></button>
+        </div>
+        <div style={{ padding: "var(--s5)", display: "grid", gap: "var(--s4)", overflowY: "auto" }}>
+          {fields.map(([key, f]) => (
+            <div key={key}>
+              <label className="label" htmlFor={`cz-${key}`}>{f.label}</label>
+              {f.type === "text" && (
+                <input id={`cz-${key}`} className="input" value={String(values[key] ?? "")}
+                  placeholder={f.default !== undefined ? String(f.default) : ""}
+                  onChange={ev => setValues(p => ({ ...p, [key]: ev.target.value }))} />
+              )}
+              {f.type === "choice" && (
+                <select id={`cz-${key}`} className="input" value={String(values[key] ?? "")}
+                  onChange={ev => setValues(p => ({ ...p, [key]: ev.target.value }))}>
+                  {(f.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              )}
+              {f.type === "toggle" && (
+                <label className="small" style={{ display: "flex", alignItems: "center", gap: "var(--s2)", cursor: "pointer" }}>
+                  <input id={`cz-${key}`} type="checkbox" checked={values[key] === true}
+                    onChange={ev => setValues(p => ({ ...p, [key]: ev.target.checked }))} />
+                  <span className="muted">{values[key] === true ? "On" : "Off"}</span>
+                </label>
+              )}
+            </div>
+          ))}
+          {err && <p className="small" style={{ color: "var(--danger, #b3261e)", margin: 0 }}>{err}</p>}
+          <div style={{ display: "flex", gap: "var(--s3)", alignItems: "center" }}>
+            <button className="btn btn-primary" disabled={busy} onClick={submit}>
+              {busy ? "Creating…" : "Create my agent"}
+            </button>
+            <span className="micro muted">Installs as your own signed agent</span>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
+
 function AddOwnDrawer({ onClose, onInstalled, flash }: { onClose: () => void; onInstalled: () => Promise<void>; flash: (m: string) => void }) {
   const [mode, setMode] = useState<"yaml" | "file" | "mcp">("yaml");
   const [busy, setBusy] = useState(false);

@@ -24,6 +24,16 @@ export interface TemplateManifest {
   intent: string;
   entry: string;
   nodes: { id: string; role: string; autonomy: string; capabilities: { name: string; sideEffect: string; budgetCents: number; loop?: boolean; subAgent?: { manifestId: string; outputMapping: Record<string, string>; onSubFailure?: "propagate" | "return-error" } }[] }[];
+  /** builder-settable knobs — the template's "make it mine" form (see core CustomizeField) */
+  customize?: Record<string, {
+    label: string;
+    type: "text" | "choice" | "toggle";
+    options?: string[];
+    default?: string | number | boolean;
+    seedKey?: string;
+    autonomy?: { nodeId: string; on: string; off: string };
+    rename?: boolean;
+  }>;
   edges: { from: string; to: string; when?: unknown }[];
   runBudgetCents: number;
   maxNodeVisits: number;
@@ -95,7 +105,8 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                       "kb": "support-kb",
                       "candidates": "resolve,escalate",
                       "fallback": "escalate",
-                      "remember_map": "last_topic=triage.category"
+                      "remember_map": "last_topic=triage.category",
+                      "brand_tone": "warm"
               },
               "nodes": [
                       {
@@ -148,7 +159,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                       },
                       {
                               "id": "answer",
-                              "role": "You are a senior support agent drafting an answer. The retrieved knowledge-base context is in the CURRENT DATA TO ANALYZE section — each passage is tagged with its source like [1] (source: handbook). The MEMORY section holds what we know about this customer from previous interactions (background, not the current question). Answer EVERY ask in 'triage.asks' using ONLY the retrieved context. CITE-OR-ABSTAIN: every factual claim must trace to a retrieved passage; if the context does not cover an ask, say plainly you need to check with a human rather than guessing — NEVER invent a policy, price, date, refund, or promise. Write the reply in the customer's language ('triage.language') and match the tone to 'triage.sentiment' (be extra empathetic and de-escalating for frustrated/angry). If the judge returned a critique (judge.critique present), fix exactly what it flagged. Output object keys: reply (the full customer-ready reply), grounded (true if every claim came from the retrieved context), cited_source (the source tag(s) used, or 'none'), makes_promise (true if it commits to a refund, a specific date, a guarantee, or any consequential action).",
+                              "role": "You are a senior support agent drafting an answer. The retrieved knowledge-base context is in the CURRENT DATA TO ANALYZE section — each passage is tagged with its source like [1] (source: handbook). The MEMORY section holds what we know about this customer from previous interactions (background, not the current question). Answer EVERY ask in 'triage.asks' using ONLY the retrieved context. CITE-OR-ABSTAIN: every factual claim must trace to a retrieved passage; if the context does not cover an ask, say plainly you need to check with a human rather than guessing — NEVER invent a policy, price, date, refund, or promise. Write the reply in the customer's language ('triage.language'), in the configured 'brand_tone' voice, and match the empathy level to 'triage.sentiment' (be extra empathetic and de-escalating for frustrated/angry). If the judge returned a critique (judge.critique present), fix exactly what it flagged. Output object keys: reply (the full customer-ready reply), grounded (true if every claim came from the retrieved context), cited_source (the source tag(s) used, or 'none'), makes_promise (true if it commits to a refund, a specific date, a guarantee, or any consequential action).",
                               "autonomy": "full",
                               "capabilities": [
                                       {
@@ -473,7 +484,43 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                               "from": "qa",
                               "to": "record"
                       }
-              ]
+              ],
+              "customize": {
+                      "agent_name": {
+                              "label": "Agent name",
+                              "type": "text",
+                              "rename": true,
+                              "default": "Support Resolution Agent"
+                      },
+                      "kb": {
+                              "label": "Knowledge base",
+                              "type": "text",
+                              "seedKey": "kb",
+                              "default": "support-kb"
+                      },
+                      "brand_tone": {
+                              "label": "Brand tone",
+                              "type": "choice",
+                              "options": [
+                                      "warm",
+                                      "formal",
+                                      "concise",
+                                      "playful"
+                              ],
+                              "seedKey": "brand_tone",
+                              "default": "warm"
+                      },
+                      "auto_send": {
+                              "label": "Send replies automatically (skip human approval)?",
+                              "type": "toggle",
+                              "autonomy": {
+                                      "nodeId": "send_reply",
+                                      "on": "full",
+                                      "off": "suggest"
+                              },
+                              "default": false
+                      }
+              }
       }
   },
   {
