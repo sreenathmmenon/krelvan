@@ -831,11 +831,22 @@ function OutputPanel({ projection, manifest, run }: {
     const nodeId = dot >= 0 ? k.slice(0, dot) : k;
     const shortKey = dot >= 0 ? k.slice(dot + 1) : k;
     // Robustness: a genuine output key is a short identifier (snake_case / a single word).
-    // When a weak model leaks prose into extra keys, the key becomes a sentence fragment
-    // ("one real", "not echoing", "this instruction") — do NOT render those as if they were
-    // signed decisions. Keep only key-shaped keys; the reasoning still shows as primary text.
+    // When a weak model leaks prose into extra keys, the key is either a multi-word fragment
+    // ("one real", "about THIS") or a bare English STOPWORD ("one", "about", "not", "this",
+    // "sentence") whose value is another prose word — no real schema names an output key that.
+    // Drop both so leaked prose never renders as if it were a signed decision; the reasoning
+    // still shows as primary text above.
     const keyShaped = /^[a-z][a-z0-9_]*$/i.test(shortKey) && shortKey.length <= 40;
     if (!keyShaped) continue;
+    const LEAK_STOPWORDS = new Set(["a","an","the","one","two","about","not","this","that","these","those","and","or","but","for","to","of","in","on","is","are","was","be","it","its","as","at","by","with","sentence","instruction","echoing","real","word","words","output","object","keys","key","e","g","eg","ie"]);
+    if (LEAK_STOPWORDS.has(shortKey.toLowerCase())) continue;
+    // A real decision value is short/scalar; a leaked one is a stray prose word next to a
+    // stopword key. If BOTH key and value are lowercase dictionary-ish words with no digits
+    // or structure, it's almost certainly leaked prose, not a decision — skip it.
+    if (/^[a-z]{1,12}$/i.test(shortKey) && /^[A-Za-z]{1,14}$/.test(val.trim()) && !/^(true|false|null|yes|no|ok|pass|fail|low|high|medium|none)$/i.test(val.trim())) {
+      // keep only if the key looks like a known decision field
+      if (!/^(id|status|state|verdict|category|sentiment|language|urgency|score|reason|result|action|mode|kind|type|level|priority|intent|route|node|answer|model|words|ok|error|count|episode_count)$/i.test(shortKey)) continue;
+    }
     if (!scalarsByNode[nodeId]) scalarsByNode[nodeId] = [];
     scalarsByNode[nodeId].push({ key: shortKey, value: val });
   }
