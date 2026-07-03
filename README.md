@@ -13,6 +13,20 @@ signed, replayable record of every step it took — self-hosted, on your machine
 
 ---
 
+<div align="center">
+
+_A real Research Analyst run — every step signed into a tamper-evident ledger you can verify offline._
+
+![A completed run with a signed, verifiable ledger](docs/images/run-signed-ledger.png)
+
+_The agent canvas maps 1:1 to what executed — nodes are real steps, the dashed arc is a real retry loop._
+
+![The Krelvan agent canvas](docs/images/canvas.png)
+
+</div>
+
+---
+
 ## Why Krelvan
 
 Every AI-agent platform can *describe* what an agent will do. Krelvan can **prove what it
@@ -119,6 +133,22 @@ model. Anyone publishes a capability by opening a PR. Entries are real and insta
 - **Agent templates** — a whole pre-built agent (a signed manifest + the capabilities it needs). One click installs the capabilities, creates the agent, and tells you which secrets to set. Ships with **Price Monitor**, **RAG Support Bot**, and **Knowledge Base Ingest**.
 - **Deploy capabilities** — ship a site/app to **Vercel, Netlify, Cloudflare Pages, Render, or Railway** via the provider's deploy hook. These are `write-irreversible`, so an agent pauses for your approval before it ships.
 - **Free + paid** — paid entries carry pricing + a license link; the platform never touches the money.
+
+### Proven end-to-end
+
+These flagship agents were run to completion through a real LLM provider (Groq,
+`llama-3.1-8b-instant`) — each finished with a signed, offline-verifiable ledger:
+
+| Agent | Outcome | Ledger |
+|---|---|---|
+| **Research Analyst** | search → synthesise → compose a briefing | ✓ 22/22 events signed |
+| **Price Monitor** | fetch a page, detect a change vs last run | ✓ 22/22 events signed |
+| **Personal Advisor** | grounded advice weighed against your stored goals | ✓ 17/17 events signed |
+| **Support Resolution Agent** | triage → retrieve → judge → **pause for your approval** before sending | ✓ 23/23 events signed |
+
+Every provider (Anthropic / OpenAI / Groq / Mistral / Gemini / Ollama / any
+OpenAI-compatible gateway) goes through one client with graceful structured-output
+fallback, so a model that lacks `json_schema` still produces reliable output.
 
 Authoring guide: [`docs/CAPABILITY_AUTHORING.md`](docs/CAPABILITY_AUTHORING.md). Every PR to the
 registry runs a validator ([`registry/validate.test.ts`](registry/validate.test.ts)) — the same pure
