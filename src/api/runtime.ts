@@ -1545,8 +1545,12 @@ export class KrelvanRuntime {
    */
   setModelConfig(cfg: { provider?: string; apiKey?: string; model?: string; baseUrl?: string }): { ok: true; status: ReturnType<KrelvanRuntime["modelStatusGetter"]> } | { ok: false; error: string } {
     const provider = (cfg.provider ?? "").trim().toLowerCase();
-    if (provider && !["anthropic", "openai", "ollama"].includes(provider)) {
-      return { ok: false, error: "provider must be one of: anthropic, openai, ollama" };
+    // The llm-client adapter natively supports these OpenAI-compatible providers (each with a
+    // built-in base URL) plus anthropic and local ollama — keep this list in sync with it so a
+    // supported provider isn't rejected here. "compatible" requires an explicit baseUrl.
+    const SUPPORTED = ["anthropic", "openai", "ollama", "groq", "mistral", "gemini", "compatible"];
+    if (provider && !SUPPORTED.includes(provider)) {
+      return { ok: false, error: `provider must be one of: ${SUPPORTED.join(", ")}` };
     }
     const apply = (name: string, value: string | undefined) => {
       const v = (value ?? "").trim();
