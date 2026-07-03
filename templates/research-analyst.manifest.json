@@ -36,18 +36,6 @@
       ]
     },
     {
-      "id": "deepen",
-      "role": "The first synthesis was low-confidence. Run a second, MORE TARGETED web search to fill the specific gaps the analyst flagged in 'summary' — chase named sources, recent dates, and any contradictions. Output object keys: findings (the additional gathered material as text, appended to what is known), query_used (the refined search query you ran).",
-      "autonomy": "full",
-      "capabilities": [
-        {
-          "name": "web_search",
-          "sideEffect": "read",
-          "budgetCents": 16
-        }
-      ]
-    },
-    {
       "id": "compose",
       "role": "You are an executive editor. Using the analyst's 'summary' and 'key_points' from the CURRENT DATA TO ANALYZE section, write a clean, self-contained one-page brief for the 'audience' state value. Lead with a one-line bottom-line-up-front, then 3-6 tight bullet takeaways, then a short 'what we don't yet know' caveat line. No fluff, no invented facts beyond what the analyst provided. Output object keys: body (the finished brief as plain text), title (a short headline for the brief).",
       "autonomy": "full",
@@ -79,37 +67,7 @@
     },
     {
       "from": "synthesize",
-      "to": "deepen",
-      "when": {
-        "op": "lt",
-        "left": {
-          "op": "var",
-          "key": "synthesize.confidence"
-        },
-        "right": {
-          "op": "const",
-          "value": 70
-        }
-      }
-    },
-    {
-      "from": "synthesize",
-      "to": "compose",
-      "when": {
-        "op": "gte",
-        "left": {
-          "op": "var",
-          "key": "synthesize.confidence"
-        },
-        "right": {
-          "op": "const",
-          "value": 70
-        }
-      }
-    },
-    {
-      "from": "deepen",
-      "to": "synthesize"
+      "to": "compose"
     },
     {
       "from": "compose",
