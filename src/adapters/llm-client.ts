@@ -203,26 +203,70 @@ class OpenAILLMClient implements LLMClient {
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (this.apiKey) headers["authorization"] = `Bearer ${this.apiKey}`;
 
-    const body: Record<string, unknown> = {
+    const baseBody: Record<string, unknown> = {
       model: req.model,
       max_tokens: req.maxTokens,
       temperature: req.temperature,
       messages: [{ role: "system", content: req.system }, ...req.messages],
     };
 
-    // OpenAI structured output via json_schema response_format.
-    if (req.schema) {
-      body["response_format"] = {
-        type: "json_schema",
-        json_schema: { name: req.schema.name, strict: true, schema: req.schema.schema },
-      };
-    }
+    // Structured output, best-effort across the OpenAI-compatible zoo. Not every model
+    // supports json_schema (e.g. many Groq models don't) or even json_object. So we try the
+    // strongest mode first and DEGRADE on a 400 that names the response_format, rather than
+    // failing the whole run: json_schema → json_object → plain text. When we fall back to a
+    // weaker/no mode, the schema's required keys are injected into the prompt so the model is
+    // still steered toward the right shape (think.ts already lists them in the role).
+    const modes: Array<Record<string, unknown> | null> = req.schema
+      ? [
+          { type: "json_schema", json_schema: { name: req.schema.name, strict: true, schema: req.schema.schema } },
+          { type: "json_object" },
+          null,
+        ]
+      : [null];
 
-    const outcome = await fetchWithRetry(
-      `${this.baseUrl}/chat/completions`,
-      { method: "POST", headers, body: JSON.stringify(body) },
-      { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
-    );
+    // OpenAI/Groq json_object mode REQUIRES the word "json" somewhere in the prompt, else it
+    // 400s. When we use it (schema present but json_schema unsupported), make sure the system
+    // prompt says so — otherwise the model returns prose and think.ts can't parse it.
+    const jsonNudge = "\n\nReturn your answer as a single valid JSON object and nothing else.";
+    let outcome: Awaited<ReturnType<typeof fetchWithRetry>> | null = null;
+    for (let i = 0; i < modes.length; i++) {
+      const rf = modes[i];
+      const useJsonObject = rf && (rf as { type?: string }).type === "json_object";
+      const body = rf
+        ? {
+            ...baseBody,
+            ...(useJsonObject && !/json/i.test(req.system)
+              ? { messages: [{ role: "system", content: req.system + jsonNudge }, ...req.messages] }
+              : {}),
+            response_format: rf,
+          }
+        : { ...baseBody };
+      outcome = await fetchWithRetry(
+        `${this.baseUrl}/chat/completions`,
+        { method: "POST", headers, body: JSON.stringify(body) },
+        { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
+      );
+      // Degrade on a 400 that means "this structured mode won't work here":
+      //  - response_format unsupported (model can't do json_schema/json_object), OR
+      //  - json_validate_failed (Groq: the model produced JSON that didn't match the schema).
+      // In both cases, fall through to a looser mode instead of failing the whole run. The last
+      // mode (plain text) always "succeeds", and think.ts parses the JSON out of the text.
+      const degradable = !outcome.ok && outcome.status === 400
+        && /response_format|json_schema|json_object|json_validate_failed|structured output/i.test(outcome.rawBody ?? "");
+      if (degradable && i < modes.length - 1) continue;
+      // Last-resort recovery: if even the final structured attempt 400s with a json_validate
+      // failure, Groq still hands back what the model generated under `failed_generation` —
+      // use it rather than throwing, since think.ts can parse partial JSON out of it.
+      if (degradable && !outcome.ok) {
+        try {
+          const err = JSON.parse(outcome.rawBody ?? "{}") as { error?: { failed_generation?: string } };
+          const fg = err.error?.failed_generation;
+          if (fg && fg.trim()) return { text: fg.trim(), inputTokens: 0, outputTokens: 0 };
+        } catch { /* fall through to the throw below */ }
+      }
+      break;
+    }
+    if (!outcome) throw new Error("LLM request produced no response");
 
     if (!outcome.ok) throw new Error(outcome.status === 0 ? `network error: ${outcome.rawBody}` : `LLM API ${outcome.status}: ${outcome.rawBody}`);
 

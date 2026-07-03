@@ -46,10 +46,16 @@ export const thinkCapability: CapabilityPlugin = {
     // checklist shown to the model, so well-specified roles get reliable structured output.
     const requiredKeySet = new Set<string>();
     for (const m of role.matchAll(/\bset (\w+) to\b/gi)) if (m[1]) requiredKeySet.add(m[1]);
-    const listMatch = role.match(/output\s+(?:object\s+)?keys?\s*:?\s*([^.]+)/i);
+    // Parse an explicit "Output [object] keys: key1 (desc), key2 (desc), ..." list. Only the
+    // token IMMEDIATELY BEFORE each "(" or "," is a real key — a naive word-scan of the whole
+    // sentence pulls prose ("what", "the", "say"...) as keys, which then leak into state on a
+    // weaker model. Extract only the leading identifier of each comma-separated clause.
+    const listMatch = role.match(/output\s+(?:object\s+)?keys?\s*:?\s*(.+)/i);
     if (listMatch?.[1]) {
-      for (const m of listMatch[1].matchAll(/\b([a-z][a-z0-9_]*)\b/gi)) {
-        if (m[1] && m[1].length > 2) requiredKeySet.add(m[1]);
+      for (const clause of listMatch[1].split(",")) {
+        const m = clause.trim().match(/^([a-z][a-z0-9_]{2,39})\b/i);
+        if (m?.[1]) requiredKeySet.add(m[1]);
+        if (requiredKeySet.size >= 24) break; // hard cap — no real node has this many outputs
       }
     }
     const requiredOutputKeys = [...requiredKeySet];
@@ -193,12 +199,37 @@ export const thinkCapability: CapabilityPlugin = {
     log.info({ nodeId: call.nodeId, model, provider }, "think: calling LLM");
 
     const client = getLLMClient();
+    // When the role declares its output keys, FORCE the provider to return exactly that shape
+    // via structured output (OpenAI/Groq json_schema, Anthropic tool, Ollama format). This is
+    // what makes a weaker/local model reliable: it cannot leak the prompt as stray keys or
+    // return prose instead of JSON. Falls back to free-text parsing when no keys are declared.
+    const outputsSchema = requiredOutputKeys.length > 0
+      ? {
+          name: "node_outputs",
+          description: "The exact output fields this node must produce.",
+          schema: {
+            type: "object",
+            properties: {
+              thought: { type: "string" },
+              outputs: {
+                type: "object",
+                properties: Object.fromEntries(requiredOutputKeys.map(k => [k, {}])),
+                required: requiredOutputKeys,
+                additionalProperties: false,
+              },
+            },
+            required: ["outputs"],
+            additionalProperties: false,
+          } as Record<string, unknown>,
+        }
+      : undefined;
     const response = await client.complete({
       system,
       messages: [{ role: "user", content: userMsg }],
       model,
       maxTokens: 2048,
       temperature: 0,
+      ...(outputsSchema ? { schema: outputsSchema } : {}),
     });
 
     let parsed: { thought?: string; result?: string; next?: string | null; outputs?: Record<string, unknown> };
