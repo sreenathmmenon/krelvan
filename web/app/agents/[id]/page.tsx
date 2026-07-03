@@ -707,6 +707,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
 
   const [agent, setAgent] = useState<AgentRecord | null>(null);
   const [runs, setRuns] = useState<RunRecord[]>([]);
+  const [intentOpen, setIntentOpen] = useState(false);
   const [schedules, setSchedules] = useState<ScheduleRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -833,9 +834,20 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                     : "never run"}
                 </span>
               </div>
-              <p className="soft body-lg" style={{ maxWidth: "60ch", margin: 0 }}>
+              {/* Clamp the long intent to 2 lines so it doesn't dominate the hero as a wall of
+                  text; the full text is one click away and always in the manifest below. */}
+              <p className="soft body-lg" title={agent.signed.provenance.intent} style={{
+                maxWidth: "62ch", margin: 0,
+                display: "-webkit-box", WebkitLineClamp: intentOpen ? "unset" : 2,
+                WebkitBoxOrient: "vertical", overflow: "hidden",
+              }}>
                 {agent.signed.provenance.intent}
               </p>
+              {agent.signed.provenance.intent.length > 130 && (
+                <button type="button" onClick={() => setIntentOpen(o => !o)} className="small" style={{ marginTop: "var(--s1)", color: "var(--brand)", background: "none", border: "none", cursor: "pointer", padding: 0, fontWeight: 500 }}>
+                  {intentOpen ? "Show less" : "Show more"}
+                </button>
+              )}
               <div style={{ display: "flex", gap: "var(--s4)", alignItems: "center", flexWrap: "wrap", marginTop: "var(--s3)" }}>
                 <span className="small muted" style={{ display: "inline-flex", alignItems: "baseline", gap: "var(--s2)" }}>
                   total runs

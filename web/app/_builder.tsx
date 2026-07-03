@@ -5,7 +5,7 @@
  * EXAMPLES, the mini graphs and the agent card) lives here so both surfaces reuse
  * the exact same data/API logic instead of duplicating it.
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import {
   deleteAgent, explainBuild, timeAgo,
   type AgentRecord, type RunRecord, type BuildResult, type ManifestNode, type ManifestEdge,
@@ -36,6 +36,43 @@ export const EXAMPLES: { text: string; label: string; hero?: boolean }[] = [
 ];
 
 export const BUILD_STAGES = ["Proposing graph…", "Validating…", "Finalising agent…"];
+
+// ── Agent-card flow strip ─────────────────────────────────────────────────────
+// A dense 12-node graph crammed into a 90px card thumbnail renders as an illegible
+// grey smear. For the CARD we instead show a clean horizontal "flow" — each step's
+// primary-capability glyph in a chip, arrow-separated, wrapping to at most 2 rows,
+// with a trailing "+N" when there are more steps than fit. It reads instantly at
+// card size and communicates the agent's shape; the full graph lives on the canvas.
+export function AgentCardFlow({ nodes }: { nodes: ManifestNode[] }) {
+  if (nodes.length === 0) return null;
+  const MAX = 7;
+  const shown = nodes.slice(0, MAX);
+  const extra = nodes.length - shown.length;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 4, rowGap: 6 }}>
+      {shown.map((n, i) => {
+        const cap = n.capabilities[0]?.name ?? "";
+        return (
+          <Fragment key={n.id}>
+            <span title={`${n.id}${cap ? " · " + cap : ""}`} style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              padding: "3px 7px", borderRadius: "var(--r-pill)",
+              background: "var(--surface)", border: "1px solid var(--line)",
+              fontSize: 10.5, color: "var(--ink-soft)", whiteSpace: "nowrap", maxWidth: 96, overflow: "hidden",
+            }}>
+              <svg viewBox="0 0 16 16" width={11} height={11} fill="none" aria-hidden="true" style={{ display: "block", color: "var(--brand)", flexShrink: 0 }}>
+                <path d={glyphFor(cap)} stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{n.id.replace(/[_-]+/g, " ")}</span>
+            </span>
+            {i < shown.length - 1 && <span aria-hidden="true" style={{ color: "var(--ink-muted)", fontSize: 11 }}>→</span>}
+          </Fragment>
+        );
+      })}
+      {extra > 0 && <span style={{ fontSize: 10.5, color: "var(--ink-muted)", fontWeight: 600 }}>+{extra}</span>}
+    </div>
+  );
+}
 
 // ── Mini graph preview ────────────────────────────────────────────────────────
 
@@ -654,14 +691,14 @@ export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
           </div>
         </div>
 
-        {/* mini graph */}
+        {/* flow strip — a clean, readable capability sequence (a dense 12-node graph
+            crammed into a 90px card thumbnail was an illegible grey smear). */}
         {nodes.length > 0 && (
           <div style={{
             background: "var(--graph-bg)", borderRadius: "var(--r)",
             border: "1px solid var(--line)", padding: "var(--s3)",
-            overflow: "hidden", maxHeight: 90,
           }}>
-            <MiniGraph nodes={nodes} edges={edges} entry={agent.signed.manifest.entry} />
+            <AgentCardFlow nodes={nodes} />
           </div>
         )}
 
