@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "name": "Publish & Deploy",
+  "intent": "Take a topic, research it, write a publishable post, commit it to a repo, then ship a production deploy — pausing for my approval before the irreversible deploy. A real build-and-ship agent: a sentence becomes a piece of content that goes live. Every step is a signed, replayable record.",
+  "entry": "research",
+  "runBudgetCents": 400,
+  "maxNodeVisits": 2,
+  "seed": {
+    "topic": "the state of open-source AI agent platforms in 2026",
+    "audience": "developers evaluating self-hosted agent tools",
+    "repo_dispatch_event": "publish-post"
+  },
+  "nodes": [
+    {
+      "id": "research",
+      "role": "You are a research writer. Read the 'topic' and 'audience' state values. Gather the key points a short, credible post should make. Output object keys: findings (a tight bulleted list of the 4-6 load-bearing points), angle (one sentence: the post's take).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "web_search",
+          "sideEffect": "read",
+          "budgetCents": 8
+        }
+      ]
+    },
+    {
+      "id": "write",
+      "role": "You are an editor. Using the research 'findings' and 'angle' from the CURRENT DATA TO ANALYZE section, write a short, publishable post for the 'audience'. Lead with the bottom line, then the supporting points, then a one-line takeaway. Ground it only in the findings; invent nothing. Output object keys: title (the post title), body (the full post, 5-9 sentences, plain markdown).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "compose",
+          "sideEffect": "read",
+          "budgetCents": 40
+        }
+      ]
+    },
+    {
+      "id": "commit",
+      "role": "Commit the composed post (write.title / write.body) to the content repo by firing a repository_dispatch event. This is a reversible write (a git commit), so it runs without a gate. Pass the post as the event payload. Output object key: dispatched (true when the event was sent).",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "github.dispatch",
+          "sideEffect": "write-reversible",
+          "budgetCents": 2
+        }
+      ]
+    },
+    {
+      "id": "deploy",
+      "role": "Ship a production deploy so the new post goes live. This is IRREVERSIBLE — it publishes to real users — so the run PAUSES here and shows me exactly what is about to ship (the post title) to approve, edit, or reject before a single deploy is triggered. Nothing goes live without my explicit go-ahead. Output object key: job (the deploy job descriptor).",
+      "autonomy": "suggest",
+      "capabilities": [
+        {
+          "name": "deploy.vercel",
+          "sideEffect": "write-irreversible",
+          "budgetCents": 1
+        }
+      ]
+    },
+    {
+      "id": "record",
+      "role": "Note the outcome: the post title that shipped and the deploy job. One line for the audit trail.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "compose",
+          "sideEffect": "read",
+          "budgetCents": 40
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "research",
+      "to": "write"
+    },
+    {
+      "from": "write",
+      "to": "commit"
+    },
+    {
+      "from": "commit",
+      "to": "deploy"
+    },
+    {
+      "from": "deploy",
+      "to": "record"
+    }
+  ],
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Publish & Deploy"
+    },
+    "repo_dispatch_event": {
+      "label": "GitHub dispatch event type",
+      "type": "text",
+      "seedKey": "repo_dispatch_event",
+      "default": "publish-post"
+    }
+  }
+}
