@@ -724,6 +724,27 @@ export default function Landing() {
         )}
       </section>
 
+      {/* ════════════ 3.4 · THE ACTUAL PRODUCT (show, don't tell) ════════════ */}
+      {/* A skeptic wants to SEE the app, not another terminal. This is a real screenshot
+          of the canvas — the signed graph that maps 1:1 to what executed. */}
+      <section style={{ background: "var(--surface)", borderTop: "1px solid var(--line)" }}>
+        <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
+          <p className="micro" style={{ marginBottom: "var(--s3)" }}>The canvas is the runtime</p>
+          <h2 className="h1" style={{ marginBottom: "var(--s3)", maxWidth: "20ch" }}>
+            What you see <span style={{ color: "var(--brand)" }}>is what runs.</span>
+          </h2>
+          <p className="body-lg soft" style={{ maxWidth: "56ch", marginBottom: "var(--s6)" }}>
+            Every node is a real step, every edge a real branch, and each run replays over the
+            same signed ledger — so the graph is not a diagram of the agent, it is the agent.
+          </p>
+          <figure style={{ margin: 0, borderRadius: "var(--r-xl, 16px)", overflow: "hidden", border: "1px solid var(--line)", boxShadow: "var(--shadow-lg, 0 24px 48px -12px rgba(0,0,0,.12))", background: "var(--graph-bg, #fbfbf9)" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/product-canvas.png" alt="The Krelvan canvas showing a 12-node support agent: triage, retrieve, judge with a revise loop, route, send, escalate — each step signed into the ledger."
+              width={1400} height={640} loading="lazy" style={{ display: "block", width: "100%", height: "auto" }} />
+          </figure>
+        </div>
+      </section>
+
       {/* ════════════ 3.5 · EXAMPLE-AGENT GALLERY (the proof of breadth) ════════════ */}
       <ExampleGallery />
 
