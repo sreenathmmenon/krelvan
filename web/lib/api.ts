@@ -151,7 +151,10 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   // visitor can never see the homepage.
   if (res.status === 401 && typeof window !== "undefined") {
     const p = window.location.pathname;
-    const isPublic = p === "/" || p.startsWith("/login") || p.startsWith("/setup");
+    // Keep this in sync with middleware PUBLIC_PATHS. /faq is a public marketing page — a
+    // logged-out visitor's FAQ API calls may 401 and must degrade gracefully, NOT bounce the
+    // whole window to /login (that made clicking "FAQ" from the nav a dead-end sign-in wall).
+    const isPublic = p === "/" || p === "/faq" || p.startsWith("/login") || p.startsWith("/setup");
     if (!isPublic) window.location.href = "/login";
   }
   if (!res.ok) {
