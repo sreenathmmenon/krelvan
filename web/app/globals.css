@@ -2139,10 +2139,12 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .cta-lane__time { color: var(--dark-brand-bright); font-size: 12px; font-weight: 600; letter-spacing: .04em; }
 .cta-lane__title { color: var(--dark-ink); font-weight: 650; font-size: 18px; }
 .cta-lane__desc { color: var(--dark-ink-soft); font-size: 13.5px; line-height: 1.55; margin: 0; flex: 1; }
-.cta-lane .install-cmd { max-width: 100%; margin: 0; align-items: center; }
+.cta-lane .install-cmd { max-width: 100%; margin: 0; align-items: flex-start; }
 /* Keep the clone command on ONE logical line (mid-token 'github.co / m' wrapping reads
    as broken). Horizontal-scroll if it overflows; the Copy button carries the full string. */
-.cta-lane .install-cmd__code { white-space: nowrap; overflow-x: auto; word-break: normal; overflow-wrap: normal; font-size: 12.5px; scrollbar-width: none; }
+/* In the narrow CTA lane the full clone command must be READABLE, not hidden-scrolled
+   (a truncated "git clone https://…" looks broken). Wrap on the && boundaries instead. */
+.cta-lane .install-cmd__code { white-space: normal; overflow-x: visible; word-break: break-word; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
 .cta-lane .install-cmd__code::-webkit-scrollbar { display: none; }
 .cta-lane .install-cmd__copy { align-self: center; }
 .cta-lane .btn { align-self: flex-start; }
@@ -2197,7 +2199,9 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   font-size: 13px; text-decoration: none;
 }
 .hero-trustline__item:hover { color: var(--dark-teal, #1AA39A); }
-.hero-trustline__sep { width: 1px; height: 14px; background: var(--dark-line, #2A3331); }
+/* A real middot (not an empty bar) so the badge strip degrades to "Apache-2.0 · Ed25519 · …"
+   in no-CSS / reader-mode instead of collapsing into word-salad. Styled to look like a divider. */
+.hero-trustline__sep { color: var(--dark-line, #2A3331); font-size: 12px; line-height: 1; user-select: none; }
 
 .contrast-grid { display: flex; flex-direction: column; gap: var(--s3); max-width: 900px; }
 .contrast-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }

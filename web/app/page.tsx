@@ -69,7 +69,14 @@ function GitHubStars() {
   }, []);
   if (stars === null) return null;
   const label = stars >= 1000 ? `${(stars / 1000).toFixed(1)}k` : String(stars);
-  return <span className="gh-stars" aria-label={`${stars} GitHub stars`}>★ {label}</span>;
+  return (
+    <span className="gh-stars" aria-label={`${stars} GitHub stars`}>
+      <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true" style={{ verticalAlign: "-1px", marginRight: 3 }}>
+        <path d="M8 1.5l1.85 3.9 4.15.55-3 2.95.75 4.15L8 11.6l-3.7 1.95.75-4.15-3-2.95 4.15-.55z" fill="currentColor" />
+      </svg>
+      {label}
+    </span>
+  );
 }
 
 // Hero stat strip — surfaces the depth (real registry counts) loudly under the hero
@@ -86,20 +93,22 @@ function HeroStatStrip() {
   // Four parallel count stats in a clean grid; "100% offline-verifiable" is NOT a
   // count — it's the proof claim, so it gets its own distinct highlight chip below
   // the row instead of hanging as an orphaned 5th cell.
+  // Each stat links to the page that PROVES it — on a "don't trust claims, verify them"
+  // product, a number the visitor can't click to is just marketing.
   const stats = [
-    { n: c ? String(c.total) : "—", l: "capabilities" },
-    { n: c ? String(c.agents) : "—", l: "ready-to-run agents" },
-    { n: c ? String(c.mcp) : "—", l: "MCP connectors" },
-    { n: "7", l: "LLM providers" },
+    { n: c ? String(c.total) : "—", l: "capabilities", href: "/capabilities" },
+    { n: c ? String(c.agents) : "—", l: "ready-to-run agents", href: "/capabilities?kind=template" },
+    { n: c ? String(c.mcp) : "—", l: "MCP connectors", href: "/capabilities?kind=mcp" },
+    { n: "7", l: "LLM providers", href: "/faq" },
   ];
   return (
     <div className="hero-statwrap">
       <div className="hero-statstrip" aria-label="what ships with Krelvan">
         {stats.map((s) => (
-          <div key={s.l} className="hero-statstrip__cell">
+          <Link key={s.l} href={s.href} className="hero-statstrip__cell" style={{ textDecoration: "none" }}>
             <span className="hero-statstrip__n mono">{s.n}</span>
             <span className="hero-statstrip__l">{s.l}</span>
-          </div>
+          </Link>
         ))}
       </div>
       <span className="hero-statwrap__claim">
@@ -180,7 +189,9 @@ function InstallCommand() {
         onClick={copy}
         aria-label={copied ? "Command copied to clipboard" : "Copy install command"}
       >
-        {copied ? "✓ Copied" : "Copy"}
+        {copied
+          ? <><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ marginRight: 4, verticalAlign: "-1px" }}><path d={UI.check} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>Copied</>
+          : "Copy"}
       </button>
     </div>
   );
@@ -462,7 +473,12 @@ export default function Landing() {
 
   async function handleBuild(e: React.FormEvent) {
     e.preventDefault();
-    if (!intent.trim() || building) return;
+    if (building) return;
+    // Empty goal: don't error — just guide the eye back to the textarea.
+    if (!intent.trim()) {
+      document.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+      return;
+    }
     setBuilding(true);
     setBuildError(null);
     try {
@@ -543,11 +559,11 @@ export default function Landing() {
               </div>
               <div className="hero-trustline">
                 <span className="hero-trustline__item">Apache-2.0</span>
-                <span className="hero-trustline__sep" aria-hidden="true" />
+                <span className="hero-trustline__sep" aria-hidden="true">·</span>
                 <span className="hero-trustline__item">Ed25519-signed by default</span>
-                <span className="hero-trustline__sep" aria-hidden="true" />
+                <span className="hero-trustline__sep" aria-hidden="true">·</span>
                 <span className="hero-trustline__item">7 LLM providers</span>
-                <span className="hero-trustline__sep" aria-hidden="true" />
+                <span className="hero-trustline__sep" aria-hidden="true">·</span>
                 <span className="hero-trustline__item">runs on your own box</span>
               </div>
               <HeroStatStrip />
@@ -659,10 +675,15 @@ export default function Landing() {
                     ? <span key={buildStage} style={{ animation: "fade-in 150ms ease forwards" }}>{BUILD_STAGES[buildStage]}</span>
                     : <span>You review the plan before anything runs.</span>}
                 </div>
+                {/* Keep the primary CTA visually LIVE at the strongest conversion moment —
+                    a greyed button on an empty textarea reads as broken. Only truly disabled
+                    while a build is in flight; an empty goal is nudged, not blocked. */}
                 <button
                   type="submit"
                   className="btn btn-primary btn-lg"
-                  disabled={!intent.trim() || building}
+                  disabled={building}
+                  aria-disabled={!intent.trim()}
+                  title={!intent.trim() ? "Type a goal above to build your agent" : undefined}
                   style={{ minWidth: 150 }}
                 >
                   {building ? "Building…" : "Build agent →"}

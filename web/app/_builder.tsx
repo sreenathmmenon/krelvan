@@ -523,7 +523,7 @@ export function BuildPreviewModal({ result, onRun, onDiscard }: { result: BuildR
           border: "1px solid var(--line)",
           minHeight: 52, display: "flex", alignItems: "flex-start", gap: "var(--s3)",
         }}>
-          <span aria-hidden="true" style={{ fontSize: 16, flexShrink: 0 }}>✦</span>
+          <span aria-hidden="true" style={{ color: "var(--brand)", flexShrink: 0, marginTop: 2 }}><SparkMark size={16} /></span>
           {rationaleLoading ? (
             <span className="small" style={{ color: "var(--brand)", fontStyle: "italic" }}>Understanding the design…</span>
           ) : rationale ? (
@@ -791,6 +791,24 @@ const HERO_SCENES: HeroScene[] = [
   },
 ];
 
+// Inline teal SVG glyphs for UI chrome — NO emoji / unicode symbols anywhere.
+// Both use currentColor so the surrounding CSS `color` (teal / amber gate) still drives them.
+function CheckMark({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ display: "block", flexShrink: 0 }}>
+      <path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function SparkMark({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ display: "block", flexShrink: 0 }}>
+      <path d="M8 2.5l1.4 4.1L13.5 8l-4.1 1.4L8 13.5l-1.4-4.1L2.5 8l4.1-1.4L8 2.5z"
+        stroke="currentColor" strokeWidth={1.4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function HeroAnimation() {
   const [scene, setScene] = useState(0);
   useEffect(() => {
@@ -842,7 +860,7 @@ export function HeroAnimation() {
             <span className="heroanim__check" aria-hidden="true">
               {r.gate
                 ? <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><rect x="1" y="1" width="2.2" height="6" rx="0.6"/><rect x="4.8" y="1" width="2.2" height="6" rx="0.6"/></svg>
-                : "✓"}
+                : <CheckMark size={10} />}
             </span>
             <span className="heroanim__hash">{r.hash}</span>
             <span className="heroanim__sep">::</span>
@@ -854,7 +872,7 @@ export function HeroAnimation() {
 
       {/* the payoff seal */}
       <div className="heroanim__seal" key={`s${scene}`}>
-        <span className="heroanim__seal-mark" aria-hidden="true">✓</span>
+        <span className="heroanim__seal-mark" aria-hidden="true"><CheckMark size={11} /></span>
         <span className="heroanim__seal-text">VERIFIED</span>
         <span className="heroanim__seal-sub">run signed · replayable</span>
       </div>
@@ -875,7 +893,7 @@ export function HeroArtifact({ run }: { run: RunRecord | null }) {
         <div className="dark-surface-2" style={{ borderRadius: "var(--r)", padding: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
           <div className="dark-ink" style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-0.01em" }}>{run.manifestName}</div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap" }}>
-            <span className="dark-verify-seal__mark" aria-hidden="true">✓</span>
+            <span className="dark-verify-seal__mark" aria-hidden="true"><CheckMark size={12} /></span>
             <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>signed</span>
             <span className="dark-ink-muted" aria-hidden="true">·</span>
             <span className="dark-ink-soft mono" style={{ fontSize: 13 }}>{run.status === "completed" ? "finished" : run.status}</span>
@@ -894,7 +912,7 @@ export function HeroArtifact({ run }: { run: RunRecord | null }) {
           <MiniGraph nodes={EXAMPLE_NODES} edges={EXAMPLE_EDGES} entry="entry" variant="dark" maxHeight={120} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap" }}>
-          <span className="dark-verify-seal__mark" aria-hidden="true">✓</span>
+          <span className="dark-verify-seal__mark" aria-hidden="true"><CheckMark size={12} /></span>
           <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>signed</span>
           <span className="dark-ink-muted" aria-hidden="true">·</span>
           <span className="dark-ink-soft mono" style={{ fontSize: 13 }}>3 steps</span>

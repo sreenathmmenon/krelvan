@@ -122,6 +122,45 @@ export default function NavClient() {
   // Auth pages (login/setup) are standalone — no nav chrome.
   if (pathname === "/login" || pathname === "/setup") return null;
 
+  // Public marketing pages (home, FAQ) get a MARKETING nav — a logged-out visitor must not
+  // see the authenticated app shell (Dashboard/Runs/Secrets/Approvals + sign-out), which
+  // reads as a leaked internal build. Just: logo · FAQ · GitHub · one primary CTA.
+  const isPublic = pathname === "/" || pathname === "/faq";
+  if (isPublic) {
+    const onDark = pathname === "/"; // the home hero is dark
+    return (
+      <header
+        className={onDark ? "nav-header nav-header--dark" : "nav-header"}
+        style={{
+          position: "sticky", top: 0, zIndex: 100,
+          background: onDark ? "transparent" : "rgba(248,247,244,.92)",
+          backdropFilter: onDark ? "none" : "blur(12px)",
+          WebkitBackdropFilter: onDark ? "none" : "blur(12px)",
+          borderBottom: onDark ? "1px solid transparent" : "1px solid var(--line)",
+        }}
+      >
+        <div className="container-wide nav-bar">
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s6)", minWidth: 0 }}>
+            <Link href="/" aria-label="Krelvan — home" style={{ textDecoration: "none", flexShrink: 0 }}>
+              <KrelvanLogo size={20} markColor={onDark ? "var(--dark-brand-bright)" : "var(--brand)"} inkColor={onDark ? "var(--dark-ink)" : "var(--ink)"} />
+            </Link>
+            <nav className="nav-links" aria-label="Main navigation">
+              <Link href="/faq" className="nav-link" data-active={pathname === "/faq"}>FAQ</Link>
+              <a href="https://github.com/sreenathmmenon/krelvan" className="nav-link" target="_blank" rel="noopener noreferrer">GitHub</a>
+            </nav>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexShrink: 0 }}>
+            <Link href="/login" className="nav-link" style={{ opacity: 0.9 }}>Sign in</Link>
+            <a href="https://github.com/sreenathmmenon/krelvan" target="_blank" rel="noopener noreferrer"
+              className={`btn btn-sm nav-cta ${onDark ? "btn-dark-primary" : "btn-primary"}`}>
+              Get started
+            </a>
+          </div>
+        </div>
+      </header>
+    );
+  }
+
   return (
     <header
       className={darkMode ? "nav-header nav-header--dark" : "nav-header"}

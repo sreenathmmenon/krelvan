@@ -224,7 +224,16 @@ type PanAction =
   | { type: "pan_move"; x: number; y: number }
   | { type: "pan_end" }
   | { type: "zoom_step"; factor: number; cx: number; cy: number }
-  | { type: "reset"; containerW: number; containerH: number; graphW: number; graphH: number };
+  | { type: "reset"; containerW: number; containerH: number; contentW: number; contentH: number };
+
+// The graph is drawn at translate(60,60) inside the SVG, so a node's local origin
+// is (60 + p.x, 60 + p.y). Keep this in sync with the <g transform> in the render.
+const GRAPH_OFFSET = 60;
+// Fit padding (px around the graph) and the readable zoom floor. We never open below
+// FIT_MIN_SCALE — a very wide graph (e.g. the 12-node support agent) stays legible and
+// pannable rather than shrinking to an unreadable ~37%. Capped at 1 (never zoom past 100%).
+const FIT_PAD = 56;
+const FIT_MIN_SCALE = 0.5;
 
 interface PanState extends ViewXform { dragging: boolean; lastX: number; lastY: number; }
 
@@ -261,8 +270,18 @@ function panReducer(state: PanState, action: PanAction): PanState {
     case "pan_end":
       return { ...state, dragging: false };
     case "reset": {
-      const s = Math.min(1, (action.containerW - 64) / (action.graphW || 1), (action.containerH - 120) / (action.graphH || 1));
-      return { ...state, scale: s, tx: (action.containerW - action.graphW * s) / 2, ty: (action.containerH - action.graphH * s) / 2 - 40, dragging: false, lastX: 0, lastY: 0 };
+      // Fit-to-view: scale the graph's CONTENT bounds (not the padded canvas) to the
+      // container with FIT_PAD gutters, then floor at FIT_MIN_SCALE and cap at 1 so the
+      // graph opens readable. If the graph is too wide to fully fit at the floor, we keep
+      // the floor and CENTER it — the overflow pans instead of shrinking to illegibility.
+      const cw = action.containerW, ch = action.containerH;
+      const gw = action.contentW || 1, gh = action.contentH || 1;
+      const fitScale = Math.min((cw - 2 * FIT_PAD) / gw, (ch - 2 * FIT_PAD) / gh);
+      const s = Math.min(1, Math.max(FIT_MIN_SCALE, fitScale));
+      // Center the content (drawn at GRAPH_OFFSET inside the SVG) in the viewport.
+      const tx = (cw - gw * s) / 2 - GRAPH_OFFSET * s;
+      const ty = (ch - gh * s) / 2 - GRAPH_OFFSET * s;
+      return { ...state, scale: s, tx, ty, dragging: false, lastX: 0, lastY: 0 };
     }
   }
 }
@@ -485,6 +504,13 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
     [manifest],
   );
   const { w: graphW, h: graphH } = graphBounds(positions);
+  // Content extent (right/bottom edge of the furthest node) — the true graph size
+  // used for fit-to-view, without graphBounds' extra gutter padding.
+  const { contentW, contentH } = useMemo(() => {
+    let mx = 0, my = 0;
+    for (const p of positions.values()) { mx = Math.max(mx, p.x + p.w); my = Math.max(my, p.y + p.h); }
+    return { contentW: mx, contentH: my };
+  }, [positions]);
   const allBoxes: Box[] = useMemo(() => [...positions.values()], [positions]);
 
   useEffect(() => {
@@ -493,7 +519,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
     const fit = () => {
       const { width, height } = el.getBoundingClientRect();
       if (width > 0 && height > 0) {
-        dispatchPan({ type: "reset", containerW: width, containerH: height, graphW, graphH });
+        dispatchPan({ type: "reset", containerW: width, containerH: height, contentW, contentH });
       }
     };
     fit();
@@ -502,7 +528,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [manifest?.name, graphW, graphH]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [manifest?.name, contentW, contentH]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Projection: normalize live projection to ReplayState shape ───────────
 
@@ -566,7 +592,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
       if (e.key === "0" && !e.metaKey && !e.ctrlKey) {
         const c = containerRef.current;
         if (!c || !manifest) return;
-        dispatchPan({ type: "reset", containerW: c.clientWidth, containerH: c.clientHeight, graphW, graphH });
+        dispatchPan({ type: "reset", containerW: c.clientWidth, containerH: c.clientHeight, contentW, contentH });
       }
       if ((e.key === "=" || e.key === "+") && !e.metaKey) {
         const c = containerRef.current;
@@ -601,7 +627,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedRunId, manifest, graphW, graphH, mode, isScrubbing, events.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedRunId, manifest, contentW, contentH, mode, isScrubbing, events.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Pointer handlers for pan ──────────────────────────────────────────────
 
@@ -849,7 +875,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
             onClick={() => {
               if (!containerRef.current) return;
               const { width, height } = containerRef.current.getBoundingClientRect();
-              dispatchPan({ type: "reset", containerW: width, containerH: height, graphW, graphH });
+              dispatchPan({ type: "reset", containerW: width, containerH: height, contentW, contentH });
             }}
             title="Fit graph to viewport (0)" aria-label="Fit graph to viewport"
             style={{ width: 30, padding: 0 }}
@@ -1235,8 +1261,16 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showH
   }
   if (extra > 0) pills.push({ name: null, text: `+${extra}`, px: pillX, pw: 26 });
 
+  // Clean, short node title — the node id humanized (snake_case → "Snake case"),
+  // NOT a truncated slice of the long role/prompt. The full role stays available on
+  // hover (the <title> below) and in the detail drawer.
+  const displayLabel = node.id.replace(/[_-]+/g, " ").replace(/^\w/, c => c.toUpperCase());
+  const shownLabel = displayLabel.length > 22 ? displayLabel.slice(0, 20) + "…" : displayLabel;
+
   return (
-    <g onClick={onClick} style={{ cursor: "pointer" }} role="button" aria-label={`Node ${node.id}`}>
+    <g onClick={onClick} style={{ cursor: "pointer" }} role="button" aria-label={`Node ${node.id}: ${node.role}`}>
+      {/* full role on hover — the node face shows a clean label, details on demand */}
+      <title>{node.id} — {node.role}</title>
       {/* selection ring */}
       {isSelected && (
         <rect x={x - 5} y={y - 5} width={w + 10} height={h + 10} rx={r + 4}
@@ -1271,16 +1305,19 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showH
         />
       )}
 
-      {/* role — primary label, bold */}
+      {/* primary label — the clean node id (humanized), NEVER a prompt fragment */}
       <text x={x + 14} y={y + 20} fontSize={13} fontWeight={600}
         fill={status === "running" ? "var(--live)" : status === "done" ? "var(--ok)" : "var(--ink)"}
         dominantBaseline="middle">
-        {node.role.length > 22 ? node.role.slice(0, 20) + "…" : node.role}
+        {shownLabel}
       </text>
 
-      {/* node id — secondary, muted mono */}
+      {/* secondary — the node's primary capability (its main action), muted mono */}
       <text x={x + 14} y={y + 38} fontSize={11} fill="var(--ink-muted)" dominantBaseline="middle" fontFamily="var(--font-mono)">
-        {node.id.length > 26 ? node.id.slice(0, 24) + "…" : node.id}
+        {(() => {
+          const primary = node.capabilities[0]?.name ?? node.id;
+          return primary.length > 26 ? primary.slice(0, 24) + "…" : primary;
+        })()}
       </text>
 
       {/* capability pills — clipped to node width */}
@@ -1325,7 +1362,10 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showH
         )}
         {status === "done" && (
           <>
-            <text x={x + 10} y={y + h - 14} fontSize={11} fill="var(--ok)" dominantBaseline="middle" aria-label="done">✓</text>
+            {/* teal SVG check glyph (12×12), never an emoji/unicode symbol */}
+            <g transform={`translate(${x + 8},${y + h - 20}) scale(0.75)`} aria-label="done">
+              <path d="M3.5 8.5l3 3 6-6.5" stroke="var(--ok)" strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            </g>
             <text x={x + 22} y={y + h - 14} fontSize={11} fill="var(--ok)" fontWeight={600} dominantBaseline="middle">
               done{visits > 1 ? ` ×${visits}` : ""}
             </text>
@@ -1364,9 +1404,10 @@ function CloseButton({ onClose }: { onClose: () => void }) {
       className="btn btn-ghost"
       style={{
         width: 28, height: 28, padding: 0, borderRadius: "var(--r)",
-        color: "var(--ink-muted)", fontSize: 16, flexShrink: 0,
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        color: "var(--ink-muted)", flexShrink: 0,
       }}
-    >✕</button>
+    ><IconClose size={14} /></button>
   );
 }
 

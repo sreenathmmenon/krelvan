@@ -9,7 +9,11 @@ export interface LayoutOptions {
   vGap?: number;
 }
 
-const DEFAULTS = { nodeW: 196, nodeH: 108, hGap: 100, vGap: 64 };
+// hGap kept tight (44px) so a deep, near-linear graph (e.g. the 12-node support
+// agent, 10 layers wide) fits inside a ~1200px canvas at the readable ≥0.5 fit
+// scale instead of collapsing to an illegible ~37%. Node internals are unaffected
+// by hGap; only column-to-column spacing changes.
+const DEFAULTS = { nodeW: 196, nodeH: 108, hGap: 44, vGap: 64 };
 
 export function layoutGraph(
   nodes: ManifestNode[],

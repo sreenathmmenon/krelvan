@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -50,7 +51,11 @@ export default function LoginPage() {
       {/* left — branded proof panel (dark), matches the home hero identity */}
       <aside className="auth-split__brand">
         <div className="auth-split__brand-inner">
-          <div className="auth-split__wordmark display">Krelvan</div>
+          {/* back to home — the wordmark links to the landing page */}
+          <Link href="/" className="auth-split__wordmark display" aria-label="Krelvan — back to home"
+            style={{ display: "inline-block", textDecoration: "none", color: "var(--dark-brand-bright)" }}>
+            ← Krelvan
+          </Link>
           <h1 className="auth-split__tagline display">
             AI agents that <span className="dark-teal">prove what they did</span>.
           </h1>
@@ -87,6 +92,9 @@ export default function LoginPage() {
               {busy ? "Signing in…" : "Sign in →"}
             </button>
           </form>
+          <p className="small muted" style={{ marginTop: "var(--s5)", lineHeight: 1.5 }}>
+            First run? Your admin account is created during setup.
+          </p>
         </div>
       </main>
     </div>

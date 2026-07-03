@@ -457,11 +457,14 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               <Glyph kind="seal" size={18} color="#fff" />
             </span>
             <div className="run-seal__headtext">
-              {/* HONESTY: HMAC (default) is tamper-EVIDENT but repudiable; only Ed25519 is non-repudiable. */}
-              <span className="run-seal__title">{verification.nonRepudiable ? "Tamper-proof · non-repudiable" : "Tamper-evident"}</span>
-              <span className="run-seal__sub">{verification.nonRepudiable ? "Ed25519 — anyone can verify this run offline from the public key" : "HMAC-SHA256 — verifiable on this instance"}</span>
+              {/* HONESTY: this seal is about the RECORD's integrity (the signed ledger verifies),
+                  NOT the run's outcome — a halted or failed run still has a fully verifiable
+                  record. HMAC (default) is tamper-EVIDENT but repudiable; only Ed25519 is
+                  non-repudiable. */}
+              <span className="run-seal__title">{verification.nonRepudiable ? "Ledger verified · tamper-proof" : "Ledger verified · tamper-evident"}</span>
+              <span className="run-seal__sub">{verification.nonRepudiable ? "Ed25519 — anyone can verify this record offline from the public key" : "HMAC-SHA256 — this record is verifiable on this instance"}</span>
             </div>
-            <span className="run-seal__verified" aria-live="polite">✓ Verified</span>
+            <span className="run-seal__verified" aria-live="polite"><Glyph kind="check" size={13} color="currentColor" /> Verified</span>
           </div>
           <div className="run-seal__chips">
             <span className="run-seal__chip"><span className="mono">{verification.signedEvents}/{verification.runEvents}</span> events signed</span>
