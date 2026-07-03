@@ -583,17 +583,11 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ════════════ 1b · PROVE IT — the wedge, shown not told ════════════ */}
-      {/* The product's whole claim is "agents that prove what they did." This band lets a
-          skeptic reproduce that claim on their own machine in under a minute: download a real
-          signed run, verify it offline with a zero-dep CLI, then corrupt a byte and watch it
-          get rejected. No account, no install, no trust in us. */}
-      <ProveItBand />
-
-      {/* ════════════ 2 · EMBEDDED LIVE BUILDER ════════════ */}
+      {/* ════════════ 2 · EMBEDDED LIVE BUILDER (the product, first) ════════════ */}
       {/* The exact workspace composer + BuildPreviewModal + stat strip + agents/runs.
           Same data path (buildAgent / startRun / explainRun) as /dashboard.
-          This is the dominant first-interaction zone, right under the hero. */}
+          This is the dominant first-interaction zone, right under the hero — the PRODUCT
+          leads, so the page shows what you can build before it argues about proof. */}
       <section id="builder" className="builder-zone" style={{ scrollMarginTop: "var(--s6)" }}>
         <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s8)", textAlign: "center" }}>
           <h2 className="h1" style={{ marginBottom: "var(--s3)" }}>Build and run an agent in seconds.</h2>
@@ -749,8 +743,14 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ════════════ 3.5 · EXAMPLE-AGENT GALLERY (the proof of breadth) ════════════ */}
+      {/* ════════════ 3.5 · EXAMPLE-AGENT GALLERY (the marketplace — breadth) ════════════ */}
       <ExampleGallery />
+
+      {/* ════════════ 3.6 · ONE quiet proof beat (moved down from #2) ════════════ */}
+      {/* After a visitor has seen what they can BUILD and the marketplace they can EXTEND,
+          this is where the reproduce-it-yourself band earns its place — as one supporting
+          beat, not the second thing on the page. */}
+      <ProveItBand />
 
       {/* ════════════ 3.7 · WHY NOT A RAW FRAMEWORK (the contrast) ════════════ */}
       <section style={{ background: "var(--canvas)", borderTop: "1px solid var(--line)" }}>
@@ -854,19 +854,25 @@ export default function Landing() {
       {/* ════════════ 6 · FINAL CTA — three time-boxed lanes (verify / clone / star) ════════════ */}
       <section className="hero-dark" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
         <div className="container" style={{ position: "relative", zIndex: 1, textAlign: "center" }}>
-          <p className="micro" style={{ marginBottom: "var(--s4)" }}>You&apos;ve read the claims</p>
+          <p className="micro" style={{ marginBottom: "var(--s4)" }}>Ready when you are</p>
           <h2 className="dark-ink display" style={{ marginBottom: "var(--s4)" }}>
-            Now <span className="dark-teal">verify</span> them.
+            Start <span className="dark-teal">building</span>.
           </h2>
           <p className="dark-ink-soft body-lg" style={{ maxWidth: "52ch", margin: "0 auto var(--s7)" }}>
-            Self-hosted. Open source. Apache-2.0. Infrastructure you own. Pick a lane —
-            each sized to how much you want to commit.
+            Open source, self-hosted, yours to keep. Pick a lane — each sized to how much
+            you want to commit right now.
           </p>
           <div className="cta-lanes">
             <div className="cta-lane">
+              <div className="cta-lane__time mono">~60 sec</div>
+              <div className="cta-lane__title">Clone &amp; run</div>
+              <p className="cta-lane__desc">One command boots the API + web UI on <span className="mono">localhost:3100</span>, or <span className="mono">docker compose up</span>. Describe a goal and get a real agent.</p>
+              <InstallCommand />
+            </div>
+            <div className="cta-lane">
               <div className="cta-lane__time mono">~3 sec</div>
               <div className="cta-lane__title">Read the source</div>
-              <p className="cta-lane__desc">It&apos;s all there — the ledger, the verifier, the sandbox. Star it if it&apos;s your kind of thing.</p>
+              <p className="cta-lane__desc">It&apos;s all open — the builder, the marketplace, the capabilities. Star it if it&apos;s your kind of thing.</p>
               <a href="https://github.com/sreenathmmenon/krelvan" className="btn btn-dark-ghost btn-sm" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)" }}>
                 <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 1.6a6.4 6.4 0 0 0-2 12.5c.3.06.43-.14.43-.3v-1.1c-1.8.4-2.2-.85-2.2-.85-.3-.75-.72-.95-.72-.95-.6-.4.04-.4.04-.4.65.05 1 .67 1 .67.58 1 1.5.7 1.9.55.06-.43.23-.7.42-.87-1.45-.16-2.97-.72-2.97-3.2 0-.7.25-1.3.66-1.74-.07-.16-.29-.82.06-1.7 0 0 .54-.18 1.78.66a6.1 6.1 0 0 1 3.24 0c1.24-.84 1.78-.66 1.78-.66.35.88.13 1.54.06 1.7.41.44.66 1.04.66 1.74 0 2.49-1.52 3.04-2.97 3.2.23.2.44.6.44 1.2v1.78c0 .17.12.37.44.3A6.4 6.4 0 0 0 8 1.6z"/></svg>
                 Star on GitHub
@@ -874,15 +880,9 @@ export default function Landing() {
             </div>
             <div className="cta-lane">
               <div className="cta-lane__time mono">~15 sec</div>
-              <div className="cta-lane__title">Verify a run</div>
-              <p className="cta-lane__desc">Download the sample and re-check it offline — no account, nothing to set up. The verifier is one zero-dep file.</p>
-              <button type="button" className="btn btn-dark-primary btn-sm" onClick={scrollToProveIt}>Verify now →</button>
-            </div>
-            <div className="cta-lane">
-              <div className="cta-lane__time mono">~60 sec</div>
-              <div className="cta-lane__title">Clone &amp; run</div>
-              <p className="cta-lane__desc">One command boots the API + web UI on <span className="mono">localhost:3100</span>, or <span className="mono">docker compose up</span>.</p>
-              <InstallCommand />
+              <div className="cta-lane__title">See a real run</div>
+              <p className="cta-lane__desc">Download a sample run and re-check it offline — no account, nothing to set up.</p>
+              <button type="button" className="btn btn-dark-ghost btn-sm" onClick={scrollToProveIt}>See it →</button>
             </div>
           </div>
         </div>
