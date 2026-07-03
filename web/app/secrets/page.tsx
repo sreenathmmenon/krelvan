@@ -13,6 +13,46 @@ import {
   type ModelStatus,
 } from "../../lib/api";
 
+// Per-secret "how to get this" guidance so a builder never has to guess where a hook/key
+// lives. `steps` is the exact click-path; `href` deep-links to the provider's own docs.
+// Most deploy connectors use a Deploy Hook URL — the URL itself IS the secret (no token).
+const SECRET_HELP: Record<string, { steps: string; href: string }> = {
+  "vercel-deploy-hook": {
+    steps: "Vercel → your project → Settings → Git → Deploy Hooks → Create Hook → copy the URL and paste it here.",
+    href: "https://vercel.com/docs/deployments/deploy-hooks",
+  },
+  "netlify-build-hook": {
+    steps: "Netlify → your site → Site configuration → Build & deploy → Build hooks → Add build hook → copy the URL.",
+    href: "https://docs.netlify.com/configure-builds/build-hooks/",
+  },
+  "cloudflare-pages-hook": {
+    steps: "Cloudflare → Workers & Pages → your Pages project → Settings → Builds → Deploy hooks → Create → copy the URL.",
+    href: "https://developers.cloudflare.com/pages/configuration/deploy-hooks/",
+  },
+  "render-deploy-hook": {
+    steps: "Render → your service → Settings → Deploy Hook → copy the URL.",
+    href: "https://render.com/docs/deploy-hooks",
+  },
+  "railway-token": {
+    steps: "Railway → Account Settings → Tokens → Create Token → copy it here (or use a project token).",
+    href: "https://docs.railway.com/guides/public-api#authentication",
+  },
+};
+
+/** A small "How to get this →" helper rendered under a required-secret card. */
+function SecretHelp({ name }: { name: string }) {
+  const h = SECRET_HELP[name];
+  if (!h) return null;
+  return (
+    <div className="small muted" style={{ marginTop: "var(--s2)", lineHeight: 1.5 }}>
+      {h.steps}{" "}
+      <a href={h.href} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", fontWeight: 500, whiteSpace: "nowrap" }}>
+        How to get this →
+      </a>
+    </div>
+  );
+}
+
 export default function SecretsPage() {
   const [secrets, setSecrets] = useState<SecretMeta[]>([]);
   const [required, setRequired] = useState<RequiredSecret[]>([]);
@@ -145,6 +185,7 @@ export default function SecretsPage() {
                         Required by <span className="mono">{m.capability}</span>
                         {m.others.length > 0 && <span> +{m.others.length} more</span>}
                       </div>
+                      <SecretHelp name={m.name} />
                     </div>
                     <button className="btn btn-sm btn-secondary" onClick={() => setSecretFor(m.name)}>
                       Set this secret
@@ -444,6 +485,8 @@ function SecretForm({ prefillName, lockName, onSave, onError, onClearPrefill }: 
               ? <>Setting the exact key this capability expects. <button type="button" className="btn-link" onClick={onClearPrefill} style={{ background: "none", border: "none", padding: 0, color: "var(--brand)", cursor: "pointer", font: "inherit" }}>Change key</button></>
               : <>Must match the <code className="mono">{"{{secret:name}}"}</code> a capability expects.</>}
           </span>
+          {/* When filling a known deploy hook / token, show exactly where to get it. */}
+          <SecretHelp name={name.trim()} />
         </label>
         <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
           <span className="label" style={{ marginBottom: 0 }}>Value</span>
