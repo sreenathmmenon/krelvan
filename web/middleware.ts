@@ -8,7 +8,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { readSessionCookie } from "./lib/cookie";
 
-const PUBLIC_PATHS = new Set(["/", "/login", "/setup"]);
+const PUBLIC_PATHS = new Set(["/", "/login", "/setup", "/faq"]);
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
