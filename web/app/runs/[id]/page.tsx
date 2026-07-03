@@ -20,7 +20,7 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   completed: "badge-done",
   failed:    "badge-failed",
   running:   "badge-running",
-  halted:    "badge-running",
+  halted:    "badge-paused",
   pending:   "badge-neutral",
   paused:    "badge-paused",
   // node statuses
@@ -510,7 +510,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "var(--s3)" }}>
             <span className={`badge ${STATUS_BADGE_CLASS[run.status] ?? "badge-neutral"}`}>
-              {(run.status === "running" || run.status === "halted") && <span className="dot" />}
+              {run.status === "running" && <span className="dot" />}
               {run.status === "halted" ? "Awaiting approval" : run.status}
             </span>
             {isTerminalStatus && (

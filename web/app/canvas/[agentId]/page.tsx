@@ -1433,7 +1433,9 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showH
   const r = 12;
 
   const baseBg    = status === "running" ? "var(--live-tint)" : status === "done" ? "var(--ok-tint)" : "var(--surface)";
-  const heatRgba  = heatFraction > 0 ? `rgba(217,119,6,${Math.min(0.78, heatFraction * 0.85)})` : "transparent";
+  // Heat = share of run cost at this node. Painted in BRAND teal, not amber — amber is the
+  // reserved LIVE signal, and heat lands on idle/done nodes too, so amber read as "on fire".
+  const heatRgba  = heatFraction > 0 ? `color-mix(in srgb, var(--brand) ${Math.round(Math.min(78, heatFraction * 85))}%, transparent)` : "transparent";
   const border    = status === "running" ? "var(--live)" : status === "done" ? "var(--ok)" : (isSelected || isEntry) ? "var(--brand)" : "var(--line)";
   const bw        = status !== "idle" || isSelected || isEntry ? 2 : 1;
 
@@ -1575,9 +1577,9 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showH
       {showHeat && nodeActivity > 0 && (
         <g>
           <rect x={x + w - 52} y={y + 8} width={44} height={16} rx={8}
-            fill="rgba(217,119,6,0.14)" stroke="rgba(217,119,6,0.55)" strokeWidth={1} />
+            fill="color-mix(in srgb, var(--brand) 12%, transparent)" stroke="var(--brand)" strokeOpacity={0.5} strokeWidth={1} />
           <text x={x + w - 30} y={y + 16} fontSize={10} fontWeight={600}
-            fill="rgb(180,83,9)" textAnchor="middle" dominantBaseline="middle">
+            fill="var(--brand)" textAnchor="middle" dominantBaseline="middle">
             {nodeActivity === 1 ? "1 step" : `${nodeActivity} steps`}
           </text>
         </g>

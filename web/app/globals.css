@@ -251,6 +251,7 @@ a:hover { color: var(--brand-hover); }
 .status-dot.done    { background: var(--ok); }
 .status-dot.failed  { background: var(--danger); }
 .status-dot.paused  { background: var(--paused); }
+.status-dot.halted  { background: var(--paused); }
 
 /* chip (clickable example) */
 .chip {

@@ -844,6 +844,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
     : null;
 
   const statusBadge = liveRunCount > 0 ? "running"
+    : lastRun?.status === "halted" ? "paused"
     : lastRun?.status === "completed" ? "done"
     : lastRun?.status === "failed" ? "failed"
     : "neutral";
