@@ -64,15 +64,20 @@ test("research-analyst uses only real built-in capabilities", () => {
   }
 });
 
-test("research-analyst has a confidence gate that branches to deepen vs compose", () => {
-  const toCompose = manifest.edges.find(e => e.from === "synthesize" && e.to === "compose");
-  const toDeepen = manifest.edges.find(e => e.from === "synthesize" && e.to === "deepen");
-  assert.ok(toCompose?.when, "synthesize → compose must be conditional on confidence");
-  assert.ok(toDeepen?.when, "synthesize → deepen must be conditional on confidence");
-  const json = JSON.stringify([toCompose!.when, toDeepen!.when]);
-  assert.match(json, /"key":"synthesize\.confidence"/, "the gate must read the analyst's confidence");
-  // the deepen path loops back so the agent can do a bounded second research pass
-  assert.ok(manifest.edges.some(e => e.from === "deepen" && e.to === "synthesize"), "deepen must loop back to synthesize");
+test("research-analyst runs a reliable linear flow: search → synthesize → compose → remember", () => {
+  // The agent was intentionally simplified from a synthesize↔deepen revise loop (which never
+  // converged on weaker models — synthesize honestly returns low confidence every pass, so it
+  // looped until maxNodeVisits killed the run) to a bounded linear flow that always completes.
+  const chain = ["search", "synthesize", "compose", "remember"];
+  for (let i = 0; i < chain.length - 1; i++) {
+    assert.ok(
+      manifest.edges.some(e => e.from === chain[i] && e.to === chain[i + 1]),
+      `expected edge ${chain[i]} → ${chain[i + 1]}`,
+    );
+  }
+  // no unbounded revise loop remains
+  assert.ok(!manifest.nodes.some(n => n.id === "deepen"), "the fragile deepen revise loop must be gone");
+  assert.ok(!manifest.edges.some(e => e.to === e.from), "no self-loop edges");
 });
 
 test("research-analyst persists the brief deterministically (remember_map in seed)", () => {
