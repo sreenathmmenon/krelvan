@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   listAgents, listRuns, buildAgent, startRun, autoSummarizeRuns, getStatus, timeAgo,
-  type AgentRecord, type RunRecord, type BuildResult,
+  type AgentRecord, type RunRecord, type BuildResult, type ManifestNode, type ManifestEdge,
 } from "../lib/api";
 import {
   BuildPreviewModal, MiniGraph, HeroAnimation, EXAMPLES, BUILD_STAGES,
@@ -34,6 +34,83 @@ const EXAMPLE_EDGES = [
   { from: "entry", to: "reason" },
   { from: "reason", to: "compose" },
 ];
+
+// The build-magic panels the hero rotates through — a plain-English sentence, then the
+// real agent SYSTEM it compiles into. This IS the headline made visible.
+const HERO_BUILDS: { prompt: string; nodes: ManifestNode[]; edges: ManifestEdge[] }[] = [
+  {
+    prompt: "Search the web for the latest AI news and summarise the top developments.",
+    nodes: [
+      { id: "search", role: "search the web", autonomy: "auto", capabilities: [{ name: "web_search", sideEffect: "read", budgetCents: 1 }] },
+      { id: "reason", role: "reason over findings", autonomy: "auto", capabilities: [{ name: "think", sideEffect: "none", budgetCents: 3 }] },
+      { id: "digest", role: "write the digest", autonomy: "auto", capabilities: [{ name: "compose", sideEffect: "none", budgetCents: 2 }] },
+    ] as ManifestNode[],
+    edges: [{ from: "search", to: "reason" }, { from: "reason", to: "digest" }] as ManifestEdge[],
+  },
+  {
+    prompt: "Answer customer questions from my docs, and escalate the hard ones to a human.",
+    nodes: [
+      { id: "retrieve", role: "retrieve from docs", autonomy: "auto", capabilities: [{ name: "rag.search", sideEffect: "read", budgetCents: 1 }] },
+      { id: "answer", role: "draft the answer", autonomy: "auto", capabilities: [{ name: "compose", sideEffect: "none", budgetCents: 2 }] },
+      { id: "escalate", role: "escalate to a human", autonomy: "suggest", capabilities: [{ name: "slack_send", sideEffect: "message-human", budgetCents: 1 }] },
+    ] as ManifestNode[],
+    edges: [{ from: "retrieve", to: "answer" }, { from: "answer", to: "escalate" }] as ManifestEdge[],
+  },
+  {
+    prompt: "Watch this page daily and alert me the moment the price changes.",
+    nodes: [
+      { id: "fetch", role: "fetch the page", autonomy: "auto", capabilities: [{ name: "http_get", sideEffect: "read", budgetCents: 1 }] },
+      { id: "detect", role: "detect a change", autonomy: "auto", capabilities: [{ name: "think", sideEffect: "none", budgetCents: 2 }] },
+      { id: "alert", role: "alert me", autonomy: "auto", capabilities: [{ name: "notify_webhook", sideEffect: "message-human", budgetCents: 1 }] },
+    ] as ManifestNode[],
+    edges: [{ from: "fetch", to: "detect" }, { from: "detect", to: "alert" }] as ManifestEdge[],
+  },
+];
+
+function HeroBuildPanel() {
+  const [scene, setScene] = useState(0);
+  const [typed, setTyped] = useState("");
+  const [compiled, setCompiled] = useState(false);
+  const build = HERO_BUILDS[scene]!;
+
+  useEffect(() => {
+    // reduced-motion: show the finished state, no typing loop.
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setTyped(build.prompt); setCompiled(true); return;
+    }
+    setTyped(""); setCompiled(false);
+    let i = 0; const full = build.prompt;
+    const typer = setInterval(() => {
+      i += 2; setTyped(full.slice(0, i));
+      if (i >= full.length) { clearInterval(typer); setTimeout(() => setCompiled(true), 450); }
+    }, 34);
+    const rotate = setTimeout(() => setScene(s => (s + 1) % HERO_BUILDS.length), 6800);
+    return () => { clearInterval(typer); clearTimeout(rotate); };
+  }, [scene, build.prompt]);
+
+  return (
+    <div className="hero-build" aria-hidden="true">
+      <div className="hero-build__bar">
+        <span className="hero-build__dots" aria-hidden="true"><i /><i /><i /></span>
+        <span className="hero-build__title mono">describe your agent</span>
+      </div>
+      <div className="hero-build__body">
+        <div className="hero-build__prompt">
+          <span className="hero-build__caret-line">{typed}<span className="hero-build__caret" /></span>
+        </div>
+        <div className={`hero-build__result${compiled ? " is-in" : ""}`}>
+          <div className="hero-build__resulthead mono">
+            <span className="hero-build__ok" aria-hidden="true">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </span>
+            compiled · {build.nodes.length} nodes, {build.edges.length} edges
+          </div>
+          <MiniGraph nodes={build.nodes} edges={build.edges} entry={build.nodes[0]!.id} variant="dark" maxHeight={150} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Example-agent gallery — the shipped templates, the proof of breadth ──────
 // Loads the real registry (live, else bundled seed) and shows the flagship example
@@ -564,11 +641,11 @@ export default function Landing() {
               <HeroStatStrip />
             </div>
 
-            {/* right — the LIVE verifier, above the fold. The hook is the proof, not a
-                promise: a real signed run checked in your browser, with a tamper toggle that
-                flips it to REJECTED. A real completed run (when one exists) beats even that. */}
+            {/* right — the BUILD MAGIC, above the fold: a plain-English sentence typing in,
+                then the real agent SYSTEM it compiles into. This makes the headline
+                ("write a sentence, get a working agent system") visible, not just claimed. */}
             <div style={{ animation: "fade-in 400ms var(--ease) forwards" }}>
-              {latestCompleted ? <HeroArtifact run={latestCompleted} /> : <HeroVerifyPanel />}
+              <HeroBuildPanel />
             </div>
           </div>
         </div>
