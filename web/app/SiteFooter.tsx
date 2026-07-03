@@ -22,7 +22,7 @@ export default function SiteFooter() {
     : [link("/dashboard", "Dashboard"), link("/capabilities", "Marketplace"), link("/runs", "Runs"), link("/schedules", "Schedules"), link("/faq", "FAQ")];
   const workspaceLinks = isPublic
     ? [link("https://github.com/sreenathmmenon/krelvan#readme", "How it works", true), link("https://github.com/sreenathmmenon/krelvan", "Self-host guide", true), link("/login", "Sign in")]
-    : [link("/capabilities#connectors", "Connectors"), link("/secrets", "Secrets"), link("/approvals", "Approvals"), link("/capabilities", "Marketplace"), link("https://github.com/sreenathmmenon/krelvan", "Download", true)];
+    : [link("/capabilities#connectors", "Connectors"), link("/secrets", "Secrets"), link("/approvals", "Approvals"), link("https://github.com/sreenathmmenon/krelvan", "Download", true)];
   return (
     <footer style={{ background: "var(--canvas)", borderTop: "1px solid var(--line)" }}>
       <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s7)" }}>
