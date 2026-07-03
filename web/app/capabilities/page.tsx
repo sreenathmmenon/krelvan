@@ -58,6 +58,14 @@ function kindLabel(kind: string): string {
   return kind === "mcp" ? "Connector" : kind === "template" ? "Agent" : kind === "pack" ? "Pack" : "Capability";
 }
 
+// Section order + copy for the grouped Discover grid (breaks the "wall of 60 cards").
+const KIND_SECTIONS: { kind: string; label: string; blurb: string }[] = [
+  { kind: "template", label: "Agents",       blurb: "whole agents you customize & install" },
+  { kind: "mcp",      label: "Connectors",   blurb: "MCP servers you connect" },
+  { kind: "yaml",     label: "Capabilities", blurb: "single tools you install" },
+  { kind: "pack",     label: "Packs",        blurb: "curated bundles you open" },
+];
+
 export default function CapabilitiesPage() {
   const [tab, setTab] = useState<"discover" | "installed">("discover");
   const [caps, setCaps] = useState<CapabilityRecord[]>([]);
@@ -313,6 +321,10 @@ function DiscoverTab({ catalog, q, query, setQuery, installedNames, autonomy, on
   const featured = useMemo(() => catalog.filter(e => e.kind === "template").slice(0, 3), [catalog]);
   const showFeatured = !q && kind === "all" && !cat;
 
+  // Group the grid by kind whenever the list spans multiple kinds and the user hasn't
+  // pinned one kind or asked for a flat A-Z list — this is what dissolves the "wall".
+  const grouped = kind === "all" && sort !== "az" && new Set(items.map(e => e.kind)).size > 1;
+
   return (
     <div className="cap-discover">
       <SearchBar query={query} setQuery={setQuery} placeholder={`Search ${catalog.length} connectors, agents & tools…`} onAdd={onAdd} />
@@ -359,12 +371,45 @@ function DiscoverTab({ catalog, q, query, setQuery, installedNames, autonomy, on
         </div>
       )}
 
+      {/* legend — makes the per-kind CTA verbs read as intentional, not random */}
+      {items.length > 0 && (
+        <p className="cap-legend small muted">
+          Cards are labelled by type: <b style={{ color: "var(--ink-soft)" }}>Agents</b> install,{" "}
+          <b style={{ color: "var(--ink-soft)" }}>Connectors</b> connect,{" "}
+          <b style={{ color: "var(--ink-soft)" }}>Capabilities</b> install,{" "}
+          <b style={{ color: "var(--ink-soft)" }}>Packs</b> open a bundle.
+        </p>
+      )}
+
       {/* the grid */}
       {items.length === 0 ? (
         <div className="state-empty" style={{ padding: "var(--s8) var(--s6)" }}>
           <span className="glyph-chip" style={{ width: 36, height: 36, color: "var(--brand)" }}><Icon d={UI.search} size={18} /></span>
           <p className="h3" style={{ color: "var(--ink)", margin: "var(--s2) 0 0" }}>Nothing matches</p>
           <p className="small soft" style={{ maxWidth: "40ch", margin: "0 auto" }}>Try a different search or clear the filters. Can&apos;t find it? <button className="btn-link" onClick={onAdd}>Add your own</button>.</p>
+        </div>
+      ) : grouped ? (
+        // Grouped view — the wall of ~60 cards breaks into scannable, headed sections by
+        // kind. Only when no single kind is pinned and sort isn't A-Z (which is meant flat).
+        <div className="cap-groups">
+          {KIND_SECTIONS.map(sec => {
+            const rows = items.filter(e => e.kind === sec.kind);
+            if (rows.length === 0) return null;
+            return (
+              <section key={sec.kind} className="cap-group">
+                <div className="cap-group__head">
+                  <span className="micro" style={{ color: "var(--ink)" }}>{sec.label}</span>
+                  <span className="cap-group__n mono">{rows.length}</span>
+                  <span className="small muted cap-group__blurb">{sec.blurb}</span>
+                </div>
+                <div className="cap-grid">
+                  {rows.map(e => (
+                    <CatalogCard key={e.name} e={e} installed={installedNames.has(e.name)} autonomy={autonomy} onInstalled={onInstalled} flash={flash} onDetail={onDetail} onCustomize={onCustomize} />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
       ) : (
         <div className="cap-grid">
@@ -426,8 +471,9 @@ function CatalogCard({ e, installed, autonomy, onInstalled, flash, onDetail, onC
         <IconTile name={e.name} category={e.category} kind={e.kind} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="cap-card__title">{e.title}</div>
-          <div className="cap-card__meta small muted">
-            {kindLabel(e.kind)}{e.author && e.author !== "Krelvan" ? <> · {e.author}</> : null}
+          <div className="cap-card__meta small muted" style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap" }}>
+            <span className="cap-kind">{kindLabel(e.kind)}</span>
+            {e.author && e.author !== "Krelvan" ? <span>· {e.author}</span> : null}
           </div>
         </div>
         {e.tier === "official"

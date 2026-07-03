@@ -1729,9 +1729,25 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .cap-card {
   padding: var(--s5);
   display: flex; flex-direction: column; gap: var(--s3);
+  min-height: 232px;                 /* even rhythm — ragged one-vs-many-chip cards align */
   transition: transform 140ms var(--ease,ease), box-shadow 140ms var(--ease,ease);
 }
 .cap-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+/* Discover grid — grouped sections (breaks the wall of ~60 near-identical cards) */
+.cap-groups { display: flex; flex-direction: column; gap: var(--s7); }
+.cap-group__head {
+  display: flex; align-items: baseline; gap: var(--s3); flex-wrap: wrap;
+  margin-bottom: var(--s4); padding-bottom: var(--s3);
+  border-bottom: 1px solid var(--line);
+}
+.cap-group__n {
+  font-size: 11px; padding: 1px var(--s2); border-radius: var(--r-pill);
+  background: var(--surface-sunken); color: var(--ink-muted);
+}
+.cap-group__blurb { margin-left: auto; }
+.cap-legend { margin: 0 0 var(--s5); }
+@media (max-width: 560px) { .cap-group__blurb { margin-left: 0; flex-basis: 100%; } }
 
 /* spectrum + simulator */
 .cap-spectrum {
@@ -1878,6 +1894,12 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .cap-installed { color: var(--ok); display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 500; }
 
 /* small tag pills */
+.cap-kind {
+  font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: var(--r-sm);
+  background: var(--brand-tint); color: var(--brand);
+  border: 1px solid var(--brand-ring);
+}
 .cap-tag { font-size: 11px; padding: 2px var(--s2); border-radius: var(--r-pill); background: var(--surface-sunken); color: var(--ink-muted); white-space: nowrap; }
 .cap-tag--free { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .cap-se { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 var(--s2); border-radius: var(--r-pill); font-size: 11px; font-weight: 600; white-space: nowrap; }

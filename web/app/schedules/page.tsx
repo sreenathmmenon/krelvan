@@ -542,9 +542,9 @@ function Empty({ hasAgents, onNew }: { hasAgents: boolean; onNew: () => void }) 
       </div>
       <div className="h2" style={{ color: "var(--ink)" }}>No schedules yet</div>
       <div className="body-lg soft" style={{ maxWidth: "46ch" }}>
-        Schedules make Krelvan autonomous. Point an agent at a cron expression or a fixed
-        interval and it runs on its own — every run recorded and replayable, just like one
-        you start by hand.
+        {hasAgents
+          ? "Create your first schedule and an agent will start running on its own."
+          : "Build an agent first, then schedule it to run on its own."}
       </div>
       {hasAgents ? (
         <button className="btn btn-primary" style={{ marginTop: "var(--s2)" }} onClick={onNew}>

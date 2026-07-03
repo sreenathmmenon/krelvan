@@ -64,10 +64,10 @@ export default function SecretsPage() {
     <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s9)" }}>
       {/* header */}
       <div style={{ marginBottom: "var(--s6)" }}>
-        <p className="micro" style={{ marginBottom: "var(--s2)" }}>Connections</p>
-        <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Model &amp; secrets</h1>
+        <p className="micro" style={{ marginBottom: "var(--s2)" }}>Secrets</p>
+        <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Secrets &amp; model</h1>
         <p className="soft body-lg" style={{ margin: 0, maxWidth: "62ch" }}>
-          The language model that powers your agents, and the API keys &amp; deploy hooks they use —
+          The API keys &amp; deploy hooks your agents use, and the language model that powers them —
           all stored encrypted on <em>your</em> instance so agents act only in <em>your</em> accounts.
           Values are never shown in full again.
         </p>
@@ -101,11 +101,16 @@ export default function SecretsPage() {
           {/* Needed-but-not-set: the actionable to-do list */}
           {stillMissing.length > 0 && (
             <section style={{ marginBottom: "var(--s7)" }}>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "var(--s3)", marginBottom: "var(--s3)", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "var(--s3)", marginBottom: "var(--s2)", flexWrap: "wrap" }}>
                 <p className="micro" style={{ margin: 0 }}>Needed by your installed capabilities</p>
                 <span className="small muted">{dedupeByName(required).length - stillMissing.length} of {dedupeByName(required).length} configured</span>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "var(--s3)" }}>
+              <p className="small muted" style={{ margin: "0 0 var(--s4)", maxWidth: "70ch" }}>
+                Only these are needed now — each is required by a capability you&apos;ve already installed.
+                A key you haven&apos;t installed anything for won&apos;t appear here, so &ldquo;not set&rdquo; is
+                expected until you set it or first run that capability.
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "var(--s3)" }}>
                 {stillMissing.map(m => (
                   <div
                     key={m.name}
