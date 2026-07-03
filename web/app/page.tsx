@@ -412,6 +412,7 @@ export default function Landing() {
   const [intent, setIntent] = useState("");
   const [building, setBuilding] = useState(false);
   const [buildStage, setBuildStage] = useState(0);
+  const [heroCopied, setHeroCopied] = useState(false);
   const [buildError, setBuildError] = useState<string | null>(null);
   const [buildResult, setBuildResult] = useState<BuildResult | null>(null);
   const [agents, setAgents] = useState<AgentRecord[]>([]);
@@ -540,13 +541,16 @@ export default function Landing() {
                 and re-check the math yourself, offline — no server, no trust in us.
               </p>
               {/* the falsifiable hero gesture — a runnable command, not a promise */}
-              <div className="hero-verify-cmd" aria-label="Run npx krelvan verify to re-check a signed run offline">
+              <button type="button" className="hero-verify-cmd" onClick={() => void navigator.clipboard.writeText(VERIFY_CMD).then(() => { setHeroCopied(true); setTimeout(() => setHeroCopied(false), 1600); })}
+                aria-label={heroCopied ? "Command copied" : "Copy: npx krelvan verify a signed run offline"} title="Click to copy">
                 <span className="hero-verify-cmd__prompt" aria-hidden="true">$</span>
                 <code>npx krelvan verify sample-run.krproof.json</code>
                 <span className="hero-verify-cmd__ok" aria-hidden="true">
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d={UI.check} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  {heroCopied
+                    ? <span style={{ fontSize: 11, fontWeight: 600 }}>Copied</span>
+                    : <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M4 4h6v6M10 4L3 11" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                 </span>
-              </div>
+              </button>
               <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap", marginTop: "var(--s5)" }}>
                 <button className="btn btn-dark-primary btn-lg" onClick={scrollToProveIt}>
                   Verify a real run →

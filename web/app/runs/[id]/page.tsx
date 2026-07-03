@@ -319,12 +319,15 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   return (
     <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
 
-      {/* HITL approval banner */}
+      {/* HITL approval banner — STICKY so the decision the operator must make stays in view
+          even on a long run-detail page (it must never scroll out of reach below the fold). */}
       {approvals.length > 0 && (
         <div style={{
+          position: "sticky", top: "var(--s3)", zIndex: 40,
           marginBottom: "var(--s5)", padding: "var(--s4) var(--s5)",
           background: "var(--live-tint)", border: "1px solid var(--live)",
           borderRadius: "var(--r)", display: "flex", flexDirection: "column", gap: "var(--s3)",
+          boxShadow: "var(--shadow-md, 0 8px 24px -8px rgba(0,0,0,.18))",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
             <span className="badge badge-running"><span className="dot" />paused</span>
@@ -826,6 +829,12 @@ function OutputPanel({ projection, manifest, run }: {
     const dot = k.indexOf(".");
     const nodeId = dot >= 0 ? k.slice(0, dot) : k;
     const shortKey = dot >= 0 ? k.slice(dot + 1) : k;
+    // Robustness: a genuine output key is a short identifier (snake_case / a single word).
+    // When a weak model leaks prose into extra keys, the key becomes a sentence fragment
+    // ("one real", "not echoing", "this instruction") — do NOT render those as if they were
+    // signed decisions. Keep only key-shaped keys; the reasoning still shows as primary text.
+    const keyShaped = /^[a-z][a-z0-9_]*$/i.test(shortKey) && shortKey.length <= 40;
+    if (!keyShaped) continue;
     if (!scalarsByNode[nodeId]) scalarsByNode[nodeId] = [];
     scalarsByNode[nodeId].push({ key: shortKey, value: val });
   }

@@ -2032,7 +2032,9 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   border: 1px solid var(--dark-line-teal);
   font-family: var(--font-mono); font-size: 13.5px;
   box-shadow: inset 0 0 24px rgba(26,163,154,.06);
+  cursor: pointer; text-align: left; transition: background var(--t-standard) var(--ease), border-color var(--t-standard) var(--ease);
 }
+.hero-verify-cmd:hover { background: color-mix(in srgb, var(--dark-brand-bright) 14%, var(--dark-surface)); border-color: var(--dark-brand-bright); }
 .hero-verify-cmd__prompt { color: var(--dark-brand-bright); font-weight: 700; }
 .hero-verify-cmd code { color: var(--dark-ink-soft); }
 .hero-verify-cmd__ok {
@@ -2192,7 +2194,12 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .hero-statstrip__cell { display: flex; flex-direction: column; align-items: flex-start; }
 .hero-statstrip__n { font-size: 24px; font-weight: 700; color: var(--dark-ink, #F4F2EC); line-height: 1.05; }
 .hero-statstrip__l { font-size: 11.5px; color: var(--dark-ink-soft, #C8C4BC); letter-spacing: .01em; margin-top: 3px; }
-@media (max-width: 560px) { .hero-statstrip__n { font-size: 20px; } }
+/* On mobile the 4 stats form an even 2x2 grid instead of wrapping 3+1 (which orphans the
+   4th stat and looks broken). */
+@media (max-width: 560px) {
+  .hero-statstrip { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s4) var(--s5); }
+  .hero-statstrip__n { font-size: 20px; }
+}
 .hero-trustline { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; margin-top: var(--s6); }
 .hero-trustline__item {
   display: inline-flex; align-items: center; gap: 6px; color: var(--dark-ink-soft, #C8C4BC);
