@@ -1525,31 +1525,62 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--s4);
 }
-/* Flat nav with a single sliding active-indicator (positioned in JS). */
-.nav-links { position: relative; display: flex; align-items: center; gap: var(--s5); }
+/* Primary product nav — icon + label pills with a clear pill active state. */
+.nav-links { position: relative; display: flex; align-items: center; gap: var(--s1); }
 .nav-link {
   position: relative;
   font-size: 14px; font-weight: 500;
-  color: var(--ink); text-decoration: none;
+  color: var(--ink-soft); text-decoration: none;
   padding: var(--s2) 0; white-space: nowrap;
   transition: color var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease);
 }
 .nav-link:hover { color: var(--brand); }
 .nav-link[data-active="true"] { color: var(--brand); font-weight: 600; }
-/* Secondary (utility) links — lighter, slightly smaller, set off by a divider. */
-.nav-link--util { color: var(--ink-soft); font-size: 13.5px; }
-.nav-link--util:hover { color: var(--brand); }
-.nav-divider {
-  width: 1px; height: 18px; background: var(--line-strong);
-  margin: 0 var(--s1); flex-shrink: 0;
+/* icon variant — the four primary product links */
+.nav-ico { display: block; flex-shrink: 0; }
+.nav-link--icon {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px var(--s3); border-radius: var(--r);
+  transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
 }
-/* The sliding underline. left/width set inline via JS; transition makes it glide. */
-.nav-indicator {
-  position: absolute; bottom: -1px; height: 2px;
-  background: var(--brand); border-radius: 2px;
-  transition: left 220ms var(--ease, cubic-bezier(.4,0,.2,1)), width 220ms var(--ease, cubic-bezier(.4,0,.2,1)), opacity 160ms var(--ease);
-  pointer-events: none;
+.nav-link--icon .nav-ico { color: var(--brand); transition: color var(--t-fast) var(--ease); }
+.nav-link--icon:hover { color: var(--ink); background: var(--surface-sunken); }
+.nav-link--icon[data-active="true"] {
+  color: var(--brand); background: var(--brand-tint); font-weight: 600;
 }
+.nav-link--icon[data-active="true"] .nav-ico { color: var(--brand); }
+
+/* "More" dropdown */
+.nav-more { position: relative; }
+.nav-more__btn { gap: 4px; }
+.nav-more__btn[data-active] { border-color: var(--brand); color: var(--brand); }
+.nav-more__chev { transition: transform var(--t-fast) var(--ease); }
+.nav-more__menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 120;
+  min-width: 200px; padding: var(--s1);
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r); box-shadow: var(--shadow-md);
+  display: flex; flex-direction: column;
+  animation: nav-drop 140ms var(--ease, ease) both;
+}
+.nav-more__item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px var(--s3); border-radius: var(--r-sm);
+  font-size: 13.5px; font-weight: 500; color: var(--ink-soft);
+  text-decoration: none; background: none; border: none; cursor: pointer;
+  width: 100%; text-align: left;
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.nav-more__item .nav-ico { color: var(--brand); }
+.nav-more__item:hover, .nav-more__item:focus-visible {
+  background: var(--surface-sunken); color: var(--ink); outline: none;
+}
+.nav-more__item[data-active="true"] { color: var(--brand); background: var(--brand-tint); font-weight: 600; }
+.nav-more__item--danger { color: var(--ink-soft); }
+.nav-more__item--danger .nav-ico { color: var(--ink-muted); }
+.nav-more__item--danger:hover, .nav-more__item--danger:focus-visible { color: var(--ink); }
+.nav-more__sep { height: 1px; background: var(--line); margin: var(--s1) 6px; }
+
 /* ⌘K nav button */
 .nav-cmdk {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1597,22 +1628,30 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   text-decoration: none;
   border-bottom: 1px solid var(--line);
 }
-.nav-mobile__link:last-of-type { border-bottom: none; }
 .nav-mobile__link[data-active="true"] { color: var(--brand); font-weight: 600; }
+.nav-mobile__label { display: inline-flex; align-items: center; gap: 12px; }
+.nav-mobile__label .nav-ico { color: var(--brand); }
 .nav-mobile__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); }
 .nav-mobile__cta { margin-top: var(--s4); width: 100%; height: 44px; }
+.nav-mobile__signout {
+  margin-top: var(--s3); width: 100%; padding: var(--s3);
+  background: none; border: none; cursor: pointer;
+  font-size: 14px; font-weight: 500; color: var(--ink-muted);
+  text-align: center; border-top: 1px solid var(--line);
+}
+.nav-mobile__signout:hover { color: var(--ink); }
 
 /* Breakpoint: collapse to hamburger before the (now longer) row gets tight. */
 @media (max-width: 1024px) {
   .nav-links { display: none; }
   .nav-cta { display: none; }
   .nav-cmdk { display: none; }
+  .nav-more { display: none; }
   .nav-running { display: none; }
   .nav-burger { display: inline-flex; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .nav-scrim, .nav-mobile { animation: none; }
-  .nav-indicator { transition: none; }
+  .nav-scrim, .nav-mobile, .nav-more__menu { animation: none; }
 }
 
 /* ───────────────────────── ⌘K command palette ───────────────────────── */

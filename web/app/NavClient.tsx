@@ -7,58 +7,77 @@ import { listRuns, logout } from "../lib/api";
 import CommandPalette from "./CommandPalette";
 import { KrelvanLogo } from "./KrelvanLogo";
 
-// Flat nav: 4 primary links, a divider, then 3 utility links — all visible, one
-// click each (no dropdown). A sliding indicator tracks the active item, and ⌘K
-// opens a command palette to jump anywhere.
-const NAV_LINKS = [
-  { label: "Dashboard",    href: "/dashboard" },
-  { label: "Runs",         href: "/runs" },
-  { label: "Capabilities", href: "/capabilities" },
-  { label: "Schedules",    href: "/schedules" },
+// ── Product nav ──────────────────────────────────────────────────────────────
+// The authenticated header is a real product surface, not an admin panel:
+//   [ logo · Dashboard · Agents · Marketplace · Runs ]     [ N running · ⌘K · Build agent · More ▾ ]
+// The four primary links each carry a small teal glyph. Utility routes
+// (Schedules / Connectors / Secrets / Approvals + Sign out) live in an
+// accessible "More" dropdown so the top row stays clean.
+
+// 16×16 stroke glyphs, house style (matches lib/glyphs.ts). key → path.
+const G = {
+  dashboard:  "M2.5 2.5h4v4h-4zM9.5 2.5h4v4h-4zM2.5 9.5h4v4h-4zM9.5 9.5h4v4h-4z",              // grid
+  agents:     "M8 1.6a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM3.5 14v-1a2.5 2.5 0 0 1 2.5-2.5h4A2.5 2.5 0 0 1 12.5 13v1M8 5.6v2M4.5 8.5A3.5 3.5 0 0 1 8 7.5a3.5 3.5 0 0 1 3.5 1", // node/agent
+  marketplace:"M2.5 6h11l-.8-3H3.3L2.5 6zM3 6v7.5h10V6M2.5 6a1.6 1.6 0 0 0 3 0 1.6 1.6 0 0 0 3 0 1.6 1.6 0 0 0 3 0M6.5 13.5v-3h3v3", // storefront
+  runs:       "M5 4h8M5 8h8M5 12h5M2.4 4h.01M2.4 8h.01M2.4 12h.01",                             // list/pulse
+  schedules:  "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zM8 5v3l2 1.5",                                  // clock
+  connectors: "M6 2v3M10 2v3M4.5 5h7v3a3.5 3.5 0 0 1-7 0V5zM8 11.5v2.5",                         // plug
+  secrets:    "M10 6.5a2.5 2.5 0 1 0-3.4 2.3L4 11.4v1.6h1.6l.6-.6h1.2v-1.2h1.2l.6-.6A2.5 2.5 0 0 0 10 6.5zM10.4 5.6h.01", // key
+  approvals:  "M8 1.6l5 1.8v3.4c0 3.2-2.1 5.4-5 6.2-2.9-.8-5-3-5-6.2V3.4L8 1.6zM5.6 7.8l1.7 1.7 3-3.4", // check-shield
+} as const;
+
+type GlyphKey = keyof typeof G;
+
+function NavIcon({ glyph, size = 16 }: { glyph: GlyphKey; size?: number }) {
+  return (
+    <svg
+      className="nav-ico"
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path d={G[glyph]} stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+type NavItem = { label: string; href: string; glyph: GlyphKey };
+
+// Two links intentionally point at /dashboard: it IS the agents home today (there
+// is no /agents index route, only /agents/[id] detail pages). "Dashboard" is the
+// workspace overview; "Agents" is the same surface framed for the agent list.
+const PRIMARY: NavItem[] = [
+  { label: "Dashboard",   href: "/dashboard",    glyph: "dashboard" },
+  { label: "Agents",      href: "/dashboard",    glyph: "agents" },
+  { label: "Marketplace", href: "/capabilities", glyph: "marketplace" }, // route stays /capabilities
+  { label: "Runs",        href: "/runs",         glyph: "runs" },
 ];
-const MORE_LINKS = [
-  { label: "Connectors",   href: "/capabilities#connectors" },
-  { label: "Secrets",      href: "/secrets" },
-  { label: "Approvals",    href: "/approvals" },
+
+const MORE: NavItem[] = [
+  { label: "Schedules",  href: "/schedules",             glyph: "schedules" },
+  { label: "Connectors", href: "/capabilities#connectors", glyph: "connectors" },
+  { label: "Secrets",    href: "/secrets",               glyph: "secrets" },
+  { label: "Approvals",  href: "/approvals",             glyph: "approvals" },
 ];
-const ALL_LINKS = [...NAV_LINKS, ...MORE_LINKS];
 
 export default function NavClient() {
   const pathname = usePathname();
   const [runningCount, setRunningCount] = useState(0);
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [isMac, setIsMac] = useState(true);
-  const navLinksRef = useRef<HTMLElement>(null);
-  const [indicator, setIndicator] = useState<{ left: number; width: number; show: boolean }>({ left: 0, width: 0, show: false });
+  const moreRef = useRef<HTMLDivElement>(null);
+  const moreBtnRef = useRef<HTMLButtonElement>(null);
+  const moreItemsRef = useRef<HTMLAnchorElement[]>([]);
 
   // Detect platform for the ⌘ vs Ctrl hint (purely cosmetic; the shortcut listens
   // for both meta and ctrl regardless).
   useEffect(() => {
     setIsMac(/mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent));
   }, []);
-
-  // Position the sliding indicator under the active link. Recomputed on route
-  // change and on resize (so it stays correct at every screen width).
-  const positionIndicator = useCallback(() => {
-    const root = navLinksRef.current;
-    if (!root) return;
-    const el = root.querySelector<HTMLElement>('[data-active="true"]');
-    if (!el) { setIndicator(i => ({ ...i, show: false })); return; }
-    const rootBox = root.getBoundingClientRect();
-    const box = el.getBoundingClientRect();
-    setIndicator({ left: box.left - rootBox.left, width: box.width, show: true });
-  }, []);
-
-  useEffect(() => {
-    positionIndicator();
-    const ro = new ResizeObserver(() => positionIndicator());
-    if (navLinksRef.current) ro.observe(navLinksRef.current);
-    window.addEventListener("resize", positionIndicator);
-    // re-measure after fonts settle
-    const t = setTimeout(positionIndicator, 120);
-    return () => { ro.disconnect(); window.removeEventListener("resize", positionIndicator); clearTimeout(t); };
-  }, [pathname, positionIndicator]);
 
   function openCommand() { window.dispatchEvent(new Event("krelvan:open-command")); }
 
@@ -83,8 +102,8 @@ export default function NavClient() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Close the mobile menu on route change.
-  useEffect(() => { setMenuOpen(false); }, [pathname]);
+  // Close menus on route change.
+  useEffect(() => { setMenuOpen(false); setMoreOpen(false); }, [pathname]);
 
   // Lock body scroll while the mobile menu is open.
   useEffect(() => {
@@ -92,10 +111,42 @@ export default function NavClient() {
     return () => { document.body.style.overflow = ""; };
   }, [menuOpen]);
 
-  // The landing (/) opens on the dark hero. While unscrolled there, the header is
-  // transparent with light-on-dark type; everywhere else (and once scrolled) it is
-  // the solid warm-paper bar. The mobile menu, when open, forces the solid bar so
-  // the hamburger/X stays legible.
+  // "More" dropdown: close on outside-click and Escape; keyboard-navigable.
+  useEffect(() => {
+    if (!moreOpen) return;
+    function onDown(e: MouseEvent) {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") { setMoreOpen(false); moreBtnRef.current?.focus(); }
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [moreOpen]);
+
+  // Focus the first item when the dropdown opens (keyboard entry).
+  const openMore = useCallback((focusFirst: boolean) => {
+    setMoreOpen(true);
+    if (focusFirst) requestAnimationFrame(() => moreItemsRef.current[0]?.focus());
+  }, []);
+
+  function onMoreBtnKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openMore(true);
+    }
+  }
+
+  function onMoreItemKeyDown(e: React.KeyboardEvent<HTMLAnchorElement>, idx: number) {
+    const items = moreItemsRef.current;
+    if (e.key === "ArrowDown") { e.preventDefault(); items[(idx + 1) % items.length]?.focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); items[(idx - 1 + items.length) % items.length]?.focus(); }
+    else if (e.key === "Home") { e.preventDefault(); items[0]?.focus(); }
+    else if (e.key === "End") { e.preventDefault(); items[items.length - 1]?.focus(); }
+    else if (e.key === "Tab") { setMoreOpen(false); }
+  }
+
   // The header is ALWAYS the solid light bar with dark, readable links — on every
   // page including the landing. (A transparent dark-over-hero variant caused
   // white-on-near-white invisible links, so it is removed.)
@@ -103,9 +154,11 @@ export default function NavClient() {
   void scrolled;
 
   function isActive(href: string) {
-    if (href === "/dashboard") return pathname === "/dashboard";
-    return pathname.startsWith(href);
+    const base = href.split("#")[0]!;
+    if (base === "/dashboard") return pathname === "/dashboard";
+    return pathname.startsWith(base);
   }
+  const moreActive = MORE.some(l => isActive(l.href));
 
   function focusCompose(e: React.MouseEvent) {
     if (pathname === "/" || pathname === "/dashboard") {
@@ -127,22 +180,23 @@ export default function NavClient() {
   // reads as a leaked internal build. Just: logo · FAQ · GitHub · one primary CTA.
   const isPublic = pathname === "/" || pathname === "/faq";
   if (isPublic) {
-    const onDark = pathname === "/"; // the home hero is dark
+    // The public header renders as a LIGHT (cream) bar on both / and /faq — so the logo and
+    // links must use DARK ink, never dark-mode white (which was invisible on the light bar).
     return (
       <header
-        className={onDark ? "nav-header nav-header--dark" : "nav-header"}
+        className="nav-header"
         style={{
           position: "sticky", top: 0, zIndex: 100,
-          background: onDark ? "transparent" : "rgba(248,247,244,.92)",
-          backdropFilter: onDark ? "none" : "blur(12px)",
-          WebkitBackdropFilter: onDark ? "none" : "blur(12px)",
-          borderBottom: onDark ? "1px solid transparent" : "1px solid var(--line)",
+          background: "rgba(248,247,244,.92)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          borderBottom: "1px solid var(--line)",
         }}
       >
         <div className="container-wide nav-bar">
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s6)", minWidth: 0 }}>
             <Link href="/" aria-label="Krelvan — home" style={{ textDecoration: "none", flexShrink: 0 }}>
-              <KrelvanLogo size={20} markColor={onDark ? "var(--dark-brand-bright)" : "var(--brand)"} inkColor={onDark ? "var(--dark-ink)" : "var(--ink)"} />
+              <KrelvanLogo size={20} markColor="var(--brand)" inkColor="var(--ink)" />
             </Link>
             <nav className="nav-links" aria-label="Main navigation">
               <Link href="/faq" className="nav-link" data-active={pathname === "/faq"}>FAQ</Link>
@@ -152,7 +206,7 @@ export default function NavClient() {
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexShrink: 0 }}>
             <Link href="/login" className="nav-link" style={{ opacity: 0.9 }}>Sign in</Link>
             <a href="https://github.com/sreenathmmenon/krelvan" target="_blank" rel="noopener noreferrer"
-              className={`btn btn-sm nav-cta ${onDark ? "btn-dark-primary" : "btn-primary"}`}>
+              className="btn btn-sm nav-cta btn-primary">
               Get started
             </a>
           </div>
@@ -174,54 +228,34 @@ export default function NavClient() {
       }}
     >
       <div className="container-wide nav-bar">
-        {/* left — wordmark + desktop links */}
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--s7)", minWidth: 0 }}>
+        {/* left — wordmark + primary product links */}
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s6)", minWidth: 0 }}>
           <Link href="/" aria-label="Krelvan — home" style={{
-            textDecoration: "none", flexShrink: 0, marginRight: "var(--s3)",
+            textDecoration: "none", flexShrink: 0,
             transition: "color var(--t-standard) var(--ease)",
           }}>
             <KrelvanLogo size={20} markColor={wordmarkColor} inkColor={iconColor} />
           </Link>
-          <nav className="nav-links" aria-label="Main navigation" ref={navLinksRef}>
-            {NAV_LINKS.map(link => {
+          <nav className="nav-links" aria-label="Main navigation">
+            {PRIMARY.map(link => {
               const active = isActive(link.href);
               return (
                 <Link
-                  key={link.href}
+                  key={link.label}
                   href={link.href}
-                  className="nav-link"
+                  className="nav-link nav-link--icon"
                   data-active={active}
                   aria-current={active ? "page" : undefined}
                 >
-                  {link.label}
+                  <NavIcon glyph={link.glyph} />
+                  <span>{link.label}</span>
                 </Link>
               );
             })}
-            <span className="nav-divider" aria-hidden="true" />
-            {MORE_LINKS.map(link => {
-              const active = isActive(link.href);
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="nav-link nav-link--util"
-                  data-active={active}
-                  aria-current={active ? "page" : undefined}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-            {/* sliding active-indicator — position set in JS, glides via CSS transition */}
-            <span
-              className="nav-indicator"
-              aria-hidden="true"
-              style={{ left: indicator.left, width: indicator.width, opacity: indicator.show ? 1 : 0 }}
-            />
           </nav>
         </div>
 
-        {/* right — running badge + CTA (desktop) + hamburger (mobile) */}
+        {/* right — running badge + ⌘K + Build agent + More dropdown */}
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexShrink: 0 }}>
           {runningCount > 0 && (
             <span className="badge badge-running nav-running">
@@ -248,17 +282,68 @@ export default function NavClient() {
           >
             Build agent
           </a>
-          <button
-            type="button"
-            className="nav-cmdk"
-            onClick={() => { void logout(); }}
-            aria-label="Sign out"
-            title="Sign out"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M6 14H3.5A1.5 1.5 0 0 1 2 12.5v-9A1.5 1.5 0 0 1 3.5 2H6M10.5 11l3-3-3-3M13 8H6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
+
+          {/* More dropdown — utility routes + sign out */}
+          <div className="nav-more" ref={moreRef}>
+            <button
+              type="button"
+              ref={moreBtnRef}
+              className="nav-cmdk nav-more__btn"
+              data-active={moreActive || undefined}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              onClick={() => (moreOpen ? setMoreOpen(false) : openMore(false))}
+              onKeyDown={onMoreBtnKeyDown}
+            >
+              <span>More</span>
+              <svg className="nav-more__chev" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"
+                style={{ transform: moreOpen ? "rotate(180deg)" : "none" }}>
+                <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            {moreOpen && (
+              <div className="nav-more__menu" role="menu" aria-label="More">
+                {MORE.map((link, idx) => {
+                  const active = isActive(link.href);
+                  return (
+                    <Link
+                      key={link.label}
+                      href={link.href}
+                      role="menuitem"
+                      ref={el => { if (el) moreItemsRef.current[idx] = el; }}
+                      className="nav-more__item"
+                      data-active={active}
+                      aria-current={active ? "page" : undefined}
+                      tabIndex={-1}
+                      onClick={() => setMoreOpen(false)}
+                      onKeyDown={e => onMoreItemKeyDown(e, idx)}
+                    >
+                      <NavIcon glyph={link.glyph} />
+                      <span>{link.label}</span>
+                    </Link>
+                  );
+                })}
+                <span className="nav-more__sep" aria-hidden="true" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="nav-more__item nav-more__item--danger"
+                  tabIndex={-1}
+                  onClick={() => { setMoreOpen(false); void logout(); }}
+                  onKeyDown={e => {
+                    // keep arrow-nav working from the last item (sign out sits after MORE items)
+                    if (e.key === "ArrowUp") { e.preventDefault(); moreItemsRef.current[MORE.length - 1]?.focus(); }
+                  }}
+                >
+                  <svg className="nav-ico" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M6 14H3.5A1.5 1.5 0 0 1 2 12.5v-9A1.5 1.5 0 0 1 3.5 2H6M10.5 11l3-3-3-3M13 8H6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span>Sign out</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             className="nav-burger"
@@ -289,34 +374,21 @@ export default function NavClient() {
             onClick={() => setMenuOpen(false)}
           />
           <nav className="nav-mobile" aria-label="Mobile navigation">
-            {NAV_LINKS.map(link => {
+            {[...PRIMARY, ...MORE].map(link => {
               const active = isActive(link.href);
               return (
                 <a
-                  key={link.href}
+                  key={link.label}
                   href={link.href}
                   aria-current={active ? "page" : undefined}
                   className="nav-mobile__link"
                   data-active={active}
                   onClick={() => setMenuOpen(false)}
                 >
-                  {link.label}
-                  {active && <span className="nav-mobile__dot" aria-hidden="true" />}
-                </a>
-              );
-            })}
-            {MORE_LINKS.map(link => {
-              const active = isActive(link.href);
-              return (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  aria-current={active ? "page" : undefined}
-                  className="nav-mobile__link"
-                  data-active={active}
-                  onClick={() => setMenuOpen(false)}
-                >
-                  {link.label}
+                  <span className="nav-mobile__label">
+                    <NavIcon glyph={link.glyph} />
+                    {link.label}
+                  </span>
                   {active && <span className="nav-mobile__dot" aria-hidden="true" />}
                 </a>
               );
@@ -327,6 +399,9 @@ export default function NavClient() {
             <a href="/dashboard" className="btn btn-primary nav-mobile__cta" onClick={focusCompose}>
               Build agent →
             </a>
+            <button type="button" className="nav-mobile__signout" onClick={() => { setMenuOpen(false); void logout(); }}>
+              Sign out
+            </button>
           </nav>
         </>
       )}

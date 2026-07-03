@@ -7,6 +7,9 @@ import { KrelvanLogo } from "./KrelvanLogo";
 export default function SiteFooter() {
   const pathname = usePathname();
   if (pathname === "/login" || pathname === "/setup") return null;
+  // The canvas is a full-viewport interactive tool (its own 100vh workspace + in-app status
+  // chip). The marketing footer must not render beneath it and create a dead scroll region.
+  if (pathname?.startsWith("/canvas/")) return null;
   // On public pages, a logged-out visitor must not be handed app-gated links (Dashboard,
   // Secrets, Approvals…) that bounce to the login wall — show public-safe destinations instead.
   const isPublic = pathname === "/" || pathname === "/faq";
@@ -16,7 +19,7 @@ export default function SiteFooter() {
       : <li key={href}><Link href={href} className="small" style={{ color: "var(--ink-soft)" }}>{label}</Link></li>;
   const productLinks = isPublic
     ? [link("/faq", "FAQ"), link("https://github.com/sreenathmmenon/krelvan#readme", "Docs", true), link("https://github.com/sreenathmmenon/krelvan/blob/main/LICENSE", "License", true), link("https://github.com/sreenathmmenon/krelvan", "Download", true)]
-    : [link("/dashboard", "Dashboard"), link("/capabilities", "Capabilities"), link("/runs", "Runs"), link("/schedules", "Schedules"), link("/faq", "FAQ")];
+    : [link("/dashboard", "Dashboard"), link("/capabilities", "Marketplace"), link("/runs", "Runs"), link("/schedules", "Schedules"), link("/faq", "FAQ")];
   const workspaceLinks = isPublic
     ? [link("https://github.com/sreenathmmenon/krelvan#readme", "How it works", true), link("https://github.com/sreenathmmenon/krelvan", "Self-host guide", true), link("/login", "Sign in")]
     : [link("/capabilities#connectors", "Connectors"), link("/secrets", "Secrets"), link("/approvals", "Approvals"), link("/capabilities", "Marketplace"), link("https://github.com/sreenathmmenon/krelvan", "Download", true)];

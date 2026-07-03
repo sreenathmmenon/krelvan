@@ -145,6 +145,14 @@ const RISK_BADGE_CLASS: Record<"low" | "medium" | "high", string> = {
   high:   "badge badge-failed",
 };
 
+// Plain-language definition of each risk level — surfaced as a hover tooltip on the
+// badge so a reviewer knows what the label actually means before deciding.
+const RISK_DEFINITION: Record<"low" | "medium" | "high", string> = {
+  low:    "Low risk — reads or reversible local writes only. Nothing leaves your accounts.",
+  medium: "Medium risk — sends a message or makes an external write (email, Slack, webhook). Reversible, but it acts in your accounts.",
+  high:   "High risk — an irreversible action: spending, an identity change, or a write you can't take back.",
+};
+
 // Left accent + accent ink per risk level — gives each card a calm, legible
 // severity read at a glance without ever borrowing amber (live-only).
 const RISK_ACCENT: Record<"low" | "medium" | "high", string> = {
@@ -155,6 +163,36 @@ const RISK_ACCENT: Record<"low" | "medium" | "high", string> = {
 
 function riskFor(capability: string): { level: "low" | "medium" | "high"; label: string } {
   return CAP_RISK[capability] ?? { level: "medium", label: "External action" };
+}
+
+// Pull an explicit destination out of the proposed-action preview (e.g. the Slack
+// channel, the recipient email, the URL) so "Approve lets it send" can name WHERE.
+// Matches the common preview labels the runtime emits; returns null when unknown.
+function targetFromPreview(preview?: { label: string; value: string }[]): string | null {
+  if (!preview) return null;
+  const wanted = ["to", "channel", "recipient", "url", "endpoint", "chat", "destination"];
+  for (const p of preview) {
+    if (wanted.includes(p.label.trim().toLowerCase()) && p.value.trim()) {
+      const v = p.value.trim();
+      return v.length > 48 ? v.slice(0, 46) + "…" : v;
+    }
+  }
+  return null;
+}
+
+// A short, plain "if you approve, this happens" line — names the destination when known.
+function approveConsequence(capability: string, preview?: { label: string; value: string }[]): string {
+  const target = targetFromPreview(preview);
+  const byCap: Record<string, string> = {
+    telegram_send: "sends this Telegram message",
+    email_send:    "sends this email",
+    slack_send:    "posts this to Slack",
+    notify_webhook:"sends this webhook",
+    http_post:     "makes this external request",
+    remember:      "writes this to the agent's memory",
+  };
+  const verb = byCap[capability] ?? "lets the agent do this";
+  return target ? `Approve ${verb} to ${target}` : `Approve ${verb}`;
 }
 
 function ApprovalCard({
@@ -194,7 +232,7 @@ function ApprovalCard({
           <div style={{ minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap", marginBottom: "var(--s1)" }}>
               <span className="h3" style={{ color: "var(--ink)" }}>{label}</span>
-              <span className={RISK_BADGE_CLASS[risk.level]}>
+              <span className={RISK_BADGE_CLASS[risk.level]} title={RISK_DEFINITION[risk.level]} style={{ cursor: "help" }}>
                 <span className="dot" aria-hidden="true" />
                 {risk.level.toUpperCase()} RISK
               </span>
@@ -208,9 +246,9 @@ function ApprovalCard({
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "var(--s1)", flexShrink: 0 }}>
-          <span className="approval-waiting" title="This run is paused, waiting on your decision">
+          <span className="approval-waiting" title="This run is awaiting your approval before it can continue">
             <span className="approval-waiting__dot" aria-hidden="true" />
-            waiting
+            Awaiting approval
           </span>
           <div className="small muted">{timeAgo(approval.requestedAt)}</div>
           <div className="mono micro" style={{ textTransform: "none", letterSpacing: 0, color: "var(--ink-muted)" }}>{approval.capability}</div>
@@ -246,42 +284,53 @@ function ApprovalCard({
         <a href={`/runs/${approval.runId}`} className="btn btn-ghost btn-sm approval-view" style={{ marginRight: "auto" }}>
           View run →
         </a>
-        <button
-          className={confirmDeny ? "btn btn-sm btn-danger approval-resolve" : "btn btn-sm btn-ghost approval-resolve"}
-          title="Stop the run here — nothing is sent"
-          disabled={resolving !== null}
-          onClick={() => {
-            if (!confirmDeny) {
-              setConfirmDeny(true);
-              setTimeout(() => setConfirmDeny(false), 3000);
-              return;
-            }
-            void handle("deny");
-          }}
-        >
-          {resolving === "deny" ? "Denying…" : confirmDeny ? "Deny — this stops the run" : (
-            <>
-              <svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none">
-                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-              </svg>
-              Deny
-            </>
-          )}
-        </button>
-        <button
-          className="btn btn-sm btn-primary"
-          disabled={resolving !== null}
-          onClick={() => void handle("approve")}
-        >
-          {resolving === "approve" ? "Approving…" : (
-            <>
-              <svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none">
-                <path d="M3.5 8.5l3 3 6-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              Approve
-            </>
-          )}
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "var(--s1)" }}>
+          <button
+            className={confirmDeny ? "btn btn-sm btn-danger approval-resolve" : "btn btn-sm btn-ghost approval-resolve"}
+            title="Stop the run here — nothing is sent"
+            disabled={resolving !== null}
+            onClick={() => {
+              if (!confirmDeny) {
+                setConfirmDeny(true);
+                setTimeout(() => setConfirmDeny(false), 3000);
+                return;
+              }
+              void handle("deny");
+            }}
+          >
+            {resolving === "deny" ? "Denying…" : confirmDeny ? "Deny — this stops the run" : (
+              <>
+                <svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none">
+                  <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+                Deny
+              </>
+            )}
+          </button>
+          {/* one-line consequence — a reviewer should never have to guess what a click does */}
+          <span className="micro" style={{ textTransform: "none", letterSpacing: 0, color: "var(--ink-muted)" }}>
+            Deny stops the whole run
+          </span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "var(--s1)" }}>
+          <button
+            className="btn btn-sm btn-primary"
+            disabled={resolving !== null}
+            onClick={() => void handle("approve")}
+          >
+            {resolving === "approve" ? "Approving…" : (
+              <>
+                <svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none">
+                  <path d="M3.5 8.5l3 3 6-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Approve
+              </>
+            )}
+          </button>
+          <span className="micro" style={{ textTransform: "none", letterSpacing: 0, color: "var(--ink-muted)", maxWidth: "34ch", textAlign: "right" }}>
+            {approveConsequence(approval.capability, approval.preview)}
+          </span>
+        </div>
       </div>
     </div>
   );

@@ -416,6 +416,12 @@ function CreateForm({
         </div>
       )}
 
+      {/* How a scheduled run interacts with approvals — set the expectation before they create one. */}
+      <p className="small muted" style={{ margin: "0 0 var(--s5)", maxWidth: "68ch", lineHeight: 1.55 }}>
+        A scheduled run that hits a step needing approval pauses and waits for you in{" "}
+        <Link href="/approvals" style={{ color: "var(--brand)", fontWeight: 500 }}>Approvals</Link> — it won&apos;t act unattended until you decide.
+      </p>
+
       {/* quick presets */}
       <div style={{ marginBottom: "var(--s5)" }}>
         <p className="micro" style={{ marginBottom: "var(--s3)" }}>Quick presets</p>
@@ -546,6 +552,9 @@ function Empty({ hasAgents, onNew }: { hasAgents: boolean; onNew: () => void }) 
           ? "Create your first schedule and an agent will start running on its own."
           : "Build an agent first, then schedule it to run on its own."}
       </div>
+      <p className="small muted" style={{ maxWidth: "46ch", margin: 0 }}>
+        A scheduled run that needs approval pauses and waits for you — it never acts unattended.
+      </p>
       {hasAgents ? (
         <button className="btn btn-primary" style={{ marginTop: "var(--s2)" }} onClick={onNew}>
           + New schedule

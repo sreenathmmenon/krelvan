@@ -4,9 +4,9 @@ import { useState, useEffect, use, useCallback } from "react";
 import Link from "next/link";
 import {
   getAgent, getAgentRuns, startRun, deleteAgent, listSchedules, createSchedule, toggleSchedule, deleteSchedule,
-  getTrigger, mintTrigger, revokeTrigger,
+  getTrigger, mintTrigger, revokeTrigger, listApprovals,
   timeAgo,
-  type AgentRecord, type RunRecord, type ScheduleRecord, type ManifestNode, type ManifestEdge,
+  type AgentRecord, type RunRecord, type ScheduleRecord, type ManifestNode, type ManifestEdge, type PendingApproval,
 } from "../../../lib/api";
 import MemoryTab from "./MemoryTab";
 import { edgeGeometry, edgeConditionLabel, type Box } from "../../../lib/graph-edges";
@@ -707,6 +707,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
 
   const [agent, setAgent] = useState<AgentRecord | null>(null);
   const [runs, setRuns] = useState<RunRecord[]>([]);
+  const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [intentOpen, setIntentOpen] = useState(false);
   const [schedules, setSchedules] = useState<ScheduleRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -725,14 +726,16 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
 
   const load = useCallback(async () => {
     try {
-      const [a, r, s] = await Promise.all([
+      const [a, r, s, ap] = await Promise.all([
         getAgent(id),
         getAgentRuns(id),
         listSchedules(),
+        listApprovals().catch(() => [] as PendingApproval[]),
       ]);
       setAgent(a);
       setRuns(r);
       setSchedules(s);
+      setApprovals(ap.filter(x => x.agentId === id));
       setLoadErr(null);
     } catch (e) {
       const msg = (e as Error).message || "";
@@ -749,9 +752,10 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
     // — one transient error must not freeze live updates until the page is reloaded.
     const t = setInterval(async () => {
       try {
-        const [a, r] = await Promise.all([getAgent(id), getAgentRuns(id)]);
+        const [a, r, ap] = await Promise.all([getAgent(id), getAgentRuns(id), listApprovals().catch(() => [] as PendingApproval[])]);
         setAgent(a);
         setRuns(r);
+        setApprovals(ap.filter(x => x.agentId === id));
       } catch { /* transient — skip this tick, keep polling */ }
     }, 3000);
     return () => clearInterval(t);
@@ -833,6 +837,11 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
 
   const lastRun = runs[0];
   const liveRunCount = runs.filter(r => r.status === "running").length;
+  // If the last run is awaiting approval, find its pending gate so we can name the step
+  // it's paused at and link straight to the decision.
+  const haltedApproval = lastRun?.status === "halted"
+    ? approvals.find(a => a.runId === lastRun.runId) ?? null
+    : null;
 
   const statusBadge = liveRunCount > 0 ? "running"
     : lastRun?.status === "completed" ? "done"
@@ -866,15 +875,16 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                     ? `${liveRunCount} running`
                     : lastRun?.status === "completed" ? "last run finished"
                     : lastRun?.status === "failed" ? "last run failed"
-                    : lastRun?.status === "halted" ? "last run paused for approval"
+                    : lastRun?.status === "halted"
+                      ? (haltedApproval?.nodeId ? `Awaiting approval at ${haltedApproval.nodeId}` : "Awaiting approval")
                     : lastRun ? lastRun.status
                     : "never run"}
                 </span>
-                {/* A "paused" agent is not stuck — its last run is waiting for a person.
+                {/* A "paused" agent is not stuck — its last run is awaiting a person's decision.
                     Say so and link straight to the approval, so there's an obvious next step. */}
                 {lastRun?.status === "halted" && (
                   <Link href={`/runs/${lastRun.runId}`} className="small" style={{ color: "var(--brand)", fontWeight: 600 }}>
-                    Review &amp; approve →
+                    Review &amp; resume →
                   </Link>
                 )}
               </div>
@@ -920,13 +930,24 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               >
                 {deleting ? "Deleting…" : confirmDelete ? "Sure? Click again" : "Delete agent"}
               </button>
-              <button
-                className="btn btn-primary"
-                onClick={handleRunNow}
-                disabled={running}
-              >
-                {running ? "Starting…" : "Run now"}
-              </button>
+              {lastRun?.status === "halted" ? (
+                <Link
+                  href={`/runs/${lastRun.runId}`}
+                  className="btn btn-primary"
+                  style={{ textDecoration: "none" }}
+                  title={haltedApproval?.nodeId ? `This run is awaiting approval at ${haltedApproval.nodeId}` : "This run is awaiting your approval"}
+                >
+                  Review &amp; resume run →
+                </Link>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  onClick={handleRunNow}
+                  disabled={running}
+                >
+                  {running ? "Starting…" : "Run now"}
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -19,6 +19,16 @@ export default function SecretsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [prefillName, setPrefillName] = useState<string>("");
+  // When the name was chosen from a required-secret / "Set this secret" card (not typed
+  // free-hand), lock the name field so it's set for the exact key a capability expects.
+  const [lockName, setLockName] = useState(false);
+
+  // Scroll to + prefill the Add-secret form with a specific secret name, locking the field.
+  const setSecretFor = useCallback((name: string) => {
+    setPrefillName(name);
+    setLockName(true);
+    setTimeout(() => document.getElementById("secret-form")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -41,6 +51,7 @@ export default function SecretsPage() {
     const name = new URLSearchParams(window.location.search).get("name");
     if (name) {
       setPrefillName(name);
+      setLockName(true);
       setTimeout(() => document.getElementById("secret-form")?.scrollIntoView({ behavior: "smooth", block: "center" }), 200);
     }
   }, []);
@@ -110,7 +121,11 @@ export default function SecretsPage() {
                 A key you haven&apos;t installed anything for won&apos;t appear here, so &ldquo;not set&rdquo; is
                 expected until you set it or first run that capability.
               </p>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "var(--s3)" }}>
+              {/* auto-FIT (not auto-fill) collapses empty column tracks, so a lone last card
+                  stretches to fill its row instead of floating beside an empty slot — no orphan.
+                  Capped at 2 columns so wide screens stay balanced and readable, and it still
+                  collapses to one column below the 340px card minimum on narrow screens. */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "var(--s3)", maxWidth: stillMissing.length === 1 ? 520 : undefined }}>
                 {stillMissing.map(m => (
                   <div
                     key={m.name}
@@ -131,7 +146,7 @@ export default function SecretsPage() {
                         {m.others.length > 0 && <span> +{m.others.length} more</span>}
                       </div>
                     </div>
-                    <button className="btn btn-sm btn-secondary" onClick={() => setPrefillName(m.name)}>
+                    <button className="btn btn-sm btn-secondary" onClick={() => setSecretFor(m.name)}>
                       Set this secret
                     </button>
                   </div>
@@ -141,7 +156,7 @@ export default function SecretsPage() {
           )}
 
           {/* Add / update form */}
-          <SecretForm prefillName={prefillName} onSave={handleSave} onError={setError} onClearPrefill={() => setPrefillName("")} />
+          <SecretForm prefillName={prefillName} lockName={lockName} onSave={handleSave} onError={setError} onClearPrefill={() => { setPrefillName(""); setLockName(false); }} />
 
           {/* Set secrets */}
           <section style={{ marginTop: "var(--s7)" }}>
@@ -170,7 +185,7 @@ export default function SecretsPage() {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--s3)" }}>
                 {secrets.map(s => (
-                  <SecretRow key={s.name} secret={s} onDelete={handleDelete} onUpdate={() => setPrefillName(s.name)} />
+                  <SecretRow key={s.name} secret={s} onDelete={handleDelete} onUpdate={() => setSecretFor(s.name)} />
                 ))}
               </div>
             )}
@@ -354,8 +369,9 @@ function SecretRow({ secret: s, onDelete, onUpdate }: {
   );
 }
 
-function SecretForm({ prefillName, onSave, onError, onClearPrefill }: {
+function SecretForm({ prefillName, lockName, onSave, onError, onClearPrefill }: {
   prefillName: string;
+  lockName: boolean;
   onSave: (name: string, value: string) => Promise<void>;
   onError: (e: string) => void;
   onClearPrefill: () => void;
@@ -363,11 +379,16 @@ function SecretForm({ prefillName, onSave, onError, onClearPrefill }: {
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
 
   // When a "Set this secret" / "Update" button supplies a name, fill it in.
   useEffect(() => {
-    if (prefillName) { setName(prefillName); setValue(""); }
+    if (prefillName) { setName(prefillName); setValue(""); setSaved(null); }
   }, [prefillName]);
+
+  // The name is locked (read-only) only when it came from a required-secret / saved-secret
+  // card, so a key a capability expects can't be mistyped. Free-hand adds stay editable.
+  const locked = lockName && !!name.trim();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -375,7 +396,9 @@ function SecretForm({ prefillName, onSave, onError, onClearPrefill }: {
     if (!value.trim()) { onError("Secret value is required."); return; }
     setSaving(true);
     try {
-      await onSave(name.trim(), value);
+      const savedName = name.trim();
+      await onSave(savedName, value);
+      setSaved(savedName);
       setName(""); setValue(""); onClearPrefill();
     } catch (e) {
       onError((e as Error).message);
@@ -390,16 +413,37 @@ function SecretForm({ prefillName, onSave, onError, onClearPrefill }: {
         <h2 className="h2">Add or update a secret</h2>
         <span className="small muted">Stored encrypted on this instance.</span>
       </div>
+      {/* Visual confirm once a secret is set from a card — reassures you the exact key landed. */}
+      {saved && (
+        <div role="status" style={{ margin: "0 0 var(--s5)", padding: "var(--s3) var(--s4)", borderRadius: "var(--r)", display: "flex", alignItems: "center", gap: "var(--s2)", background: "var(--ok-tint)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", color: "var(--ok)", fontSize: 13, fontWeight: 500 }}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <span><code className="mono">{saved}</code> is set — stored encrypted on this instance.</span>
+        </div>
+      )}
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--s5)" }}>
         <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
-          <span className="micro">Name</span>
+          <span className="micro" style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
+            Name
+            {locked && (
+              <span className="micro" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--brand)", textTransform: "none", letterSpacing: 0 }} title="Locked to the exact key this capability expects">
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6" rx="1.2" stroke="currentColor" strokeWidth="1.3" /><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7" stroke="currentColor" strokeWidth="1.3" fill="none" /></svg>
+                locked to this key
+              </span>
+            )}
+          </span>
           <input
             className="input input-mono"
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="vercel-deploy-hook"
+            readOnly={locked}
+            style={locked ? { background: "var(--surface-sunken)", cursor: "not-allowed" } : undefined}
           />
-          <span className="small muted">Must match the <code className="mono">{"{{secret:name}}"}</code> a capability expects.</span>
+          <span className="small muted">
+            {locked
+              ? <>Setting the exact key this capability expects. <button type="button" className="btn-link" onClick={onClearPrefill} style={{ background: "none", border: "none", padding: 0, color: "var(--brand)", cursor: "pointer", font: "inherit" }}>Change key</button></>
+              : <>Must match the <code className="mono">{"{{secret:name}}"}</code> a capability expects.</>}
+          </span>
         </label>
         <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
           <span className="micro">Value</span>

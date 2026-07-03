@@ -58,6 +58,18 @@ function kindLabel(kind: string): string {
   return kind === "mcp" ? "Connector" : kind === "template" ? "Agent" : kind === "pack" ? "Pack" : "Capability";
 }
 
+// Normalize a provider / author / label for display (e.g. "community" → "Community",
+// "marketplace" → "Marketplace", "ollama" → "Ollama"). Prose labels only — NEVER apply
+// to the intentional mono data-pills (capability names / tool ids stay verbatim).
+function displayLabel(s: string): string {
+  if (!s) return s;
+  const known: Record<string, string> = { ollama: "Ollama", openai: "OpenAI", anthropic: "Anthropic", mcp: "MCP" };
+  const lower = s.toLowerCase();
+  if (known[lower]) return known[lower]!;
+  // Title-case a single lowercase word (community, marketplace); leave already-cased/multi-word alone.
+  return /^[a-z][a-z0-9]*$/.test(s) ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
 // Section order + copy for the grouped Discover grid (breaks the "wall of 60 cards").
 const KIND_SECTIONS: { kind: string; label: string; blurb: string }[] = [
   { kind: "template", label: "Agents",       blurb: "whole agents you customize & install" },
@@ -119,10 +131,10 @@ export default function CapabilitiesPage() {
       <p className="micro" style={{ marginBottom: "var(--s3)" }}>What your agents can do</p>
       <div className="cap-head">
         <div style={{ minWidth: 0 }}>
-          <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Capabilities</h1>
-          <p className="body-lg soft" style={{ margin: 0, maxWidth: "56ch" }}>
-            Browse connectors, agents and tools — each one labelled with exactly what it can
-            touch and when it pauses to ask you. Install in a click. Nothing hidden.
+          <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Marketplace</h1>
+          <p className="body-lg soft" style={{ margin: 0, maxWidth: "60ch" }}>
+            Whole agents, connectors, capabilities, and packs — install one in a click, clone
+            and customize it for your own use, or publish your own for others to build on.
           </p>
         </div>
         {/* Two clear, non-overlapping figures that match the tab counters exactly
@@ -464,6 +476,22 @@ function CatalogCard({ e, installed, autonomy, onInstalled, flash, onDetail, onC
     } catch (err) { flash((err as Error).message); } finally { setBusy(false); }
   }
 
+  // Install a customizable template with its defaults, skipping the customize form — the
+  // secondary "plain Install" path beside the prominent "Customize & install" CTA.
+  async function installAsIs(ev: React.MouseEvent) {
+    ev.stopPropagation();
+    if (e.tier === "community" || (e.secretRefs && e.secretRefs.length > 0)) { onDetail(e); return; }
+    setBusy(true);
+    try {
+      if (e.kind === "template" && e.manifest) {
+        const res = await installTemplate({ manifest: e.manifest, capabilities: e.capabilities ?? [], secretRefs: e.secretRefs ?? [] });
+        await onInstalled();
+        if (res.missingSecrets.length > 0) { onDetail(e); }
+        else { flash(`${e.title} installed`); window.location.href = `/canvas/${encodeURIComponent(res.agent.id)}`; }
+      }
+    } catch (err) { flash((err as Error).message); } finally { setBusy(false); }
+  }
+
   return (
     <div className="card cap-card cap-card--clk" onClick={() => onDetail(e)} role="button" tabIndex={0}
       onKeyDown={ev => { if (ev.key === "Enter") onDetail(e); }}>
@@ -473,7 +501,7 @@ function CatalogCard({ e, installed, autonomy, onInstalled, flash, onDetail, onC
           <div className="cap-card__title">{e.title}</div>
           <div className="cap-card__meta small muted" style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap" }}>
             <span className="cap-kind">{kindLabel(e.kind)}</span>
-            {e.author && e.author !== "Krelvan" ? <span>· {e.author}</span> : null}
+            {e.author && e.author !== "Krelvan" ? <span>· {displayLabel(e.author)}</span> : null}
           </div>
         </div>
         {e.tier === "official"
@@ -490,9 +518,20 @@ function CatalogCard({ e, installed, autonomy, onInstalled, flash, onDetail, onC
       <div className="cap-card__foot">
         {installed ? (
           <span className="cap-installed"><Icon d={UI.check} size={13} />Installed</span>
+        ) : customizable ? (
+          // Agent template: "Customize & install" is the prominent, default CTA; plain
+          // "Install" (defaults, skip the form) sits beside it as the secondary path.
+          <span style={{ display: "inline-flex", gap: "var(--s2)", alignItems: "center", flexWrap: "wrap" }}>
+            <button className="btn btn-primary btn-sm" disabled={busy} onClick={quickInstall}>
+              {busy ? "Installing…" : "Customize & install"}
+            </button>
+            <button className="btn btn-secondary btn-sm" disabled={busy} onClick={installAsIs} title="Install with the template's defaults — customize later on the canvas">
+              Install
+            </button>
+          </span>
         ) : (
           <button className="btn btn-primary btn-sm" disabled={busy} onClick={quickInstall}>
-            {busy ? "Installing…" : customizable ? "Customize & install" : e.kind === "mcp" ? "Connect" : e.kind === "template" ? "Install agent" : e.kind === "pack" ? "View pack" : "Install"}
+            {busy ? "Installing…" : e.kind === "mcp" ? "Connect" : e.kind === "template" ? "Install agent" : e.kind === "pack" ? "View pack" : "Install"}
           </button>
         )}
         <span className="cap-card__more small muted">Details <Icon d={UI.chevron} size={11} /></span>
@@ -575,7 +614,7 @@ function DetailDrawer({ e, installed, catalog, onClose, onInstalled, flash }: {
             <IconTile name={e.name} category={e.category} kind={e.kind} size={44} />
             <div style={{ minWidth: 0 }}>
               <div className="h3 text-truncate" style={{ color: "var(--ink)" }}>{e.title}</div>
-              <div className="small muted">{kindLabel(e.kind)} · {e.category}{e.author ? <> · {e.author}</> : null}</div>
+              <div className="small muted">{kindLabel(e.kind)} · {e.category}{e.author ? <> · {displayLabel(e.author)}</> : null}</div>
             </div>
           </div>
           <button className="btn btn-ghost btn-sm cap-drawer__x" onClick={onClose} aria-label="Close"><Icon d={UI.close} size={14} /></button>

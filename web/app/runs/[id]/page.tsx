@@ -32,6 +32,52 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
 // The model sometimes returns its explanation wrapped in JSON (e.g.
 // {"agent":"…","explanation":"…"}) or fenced in ```json. Unwrap it to the prose
 // so the flagship "Agent reasoning" surface never shows raw JSON or a dangling brace.
+// Capability → risk level, kept identical to the Approvals list (app/approvals/page.tsx)
+// so the SAME effect reads the SAME risk here in the run-detail banner and there.
+const CAP_RISK: Record<string, "low" | "medium" | "high"> = {
+  think: "low", recall: "low", remember: "low", llm_route: "low", web_search: "low",
+  compose: "low", http_get: "low",
+  telegram_send: "medium", email_send: "medium", slack_send: "medium",
+  http_post: "medium", notify_webhook: "medium",
+};
+function riskLevelFor(capability: string): "low" | "medium" | "high" {
+  return CAP_RISK[capability] ?? "medium";
+}
+const RISK_BADGE_CLASS: Record<"low" | "medium" | "high", string> = {
+  low: "badge badge-done", medium: "badge badge-info", high: "badge badge-failed",
+};
+const RISK_DEFINITION: Record<"low" | "medium" | "high", string> = {
+  low:    "Low risk — reads or reversible local writes only. Nothing leaves your accounts.",
+  medium: "Medium risk — sends a message or makes an external write (email, Slack, webhook). Reversible, but it acts in your accounts.",
+  high:   "High risk — an irreversible action: spending, an identity change, or a write you can't take back.",
+};
+// Pull an explicit destination out of the proposed-action preview so "Approve lets it
+// send" can name WHERE. Matches the common preview labels the runtime emits.
+function targetFromPreview(preview?: { label: string; value: string }[]): string | null {
+  if (!preview) return null;
+  const wanted = ["to", "channel", "recipient", "url", "endpoint", "chat", "destination"];
+  for (const p of preview) {
+    if (wanted.includes(p.label.trim().toLowerCase()) && p.value.trim()) {
+      const v = p.value.trim();
+      return v.length > 48 ? v.slice(0, 46) + "…" : v;
+    }
+  }
+  return null;
+}
+function approveConsequence(capability: string, preview?: { label: string; value: string }[]): string {
+  const target = targetFromPreview(preview);
+  const byCap: Record<string, string> = {
+    telegram_send: "sends this Telegram message",
+    email_send:    "sends this email",
+    slack_send:    "posts this to Slack",
+    notify_webhook:"sends this webhook",
+    http_post:     "makes this external request",
+    remember:      "writes this to the agent's memory",
+  };
+  const verb = byCap[capability] ?? "lets the agent do this";
+  return target ? `Approve ${verb} to ${target}` : `Approve ${verb}`;
+}
+
 /** Turn a capability + node role into a plain-language "what will happen" line for the
  *  approval banner, so an operator approves the ACTION, not the internal capability name. */
 function actionSummary(capability: string, nodeRole?: string): string {
@@ -367,16 +413,27 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           boxShadow: "var(--shadow-md, 0 8px 24px -8px rgba(0,0,0,.18))",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
-            <span className="badge badge-running"><span className="dot" />paused</span>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--live)" }}>Run paused — waiting for your approval</span>
+            <span className="badge badge-running"><span className="dot" />Awaiting approval</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--live)" }}>Awaiting approval — waiting on your decision</span>
           </div>
           {approvals.map(a => (
             <div key={a.correlationId} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "var(--s3)", background: "var(--surface)", padding: "var(--s3) var(--s4)", borderRadius: "var(--r)" }}>
               <div style={{ minWidth: 0, flex: 1 }}>
                 {/* Say what will actually happen in plain terms, not the plumbing — an operator
                     must approve WHAT is sent, not "call slack_send". */}
-                <div style={{ fontSize: 13, fontWeight: 600 }}>
-                  {actionSummary(a.capability, a.nodeRole)}
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>
+                    {actionSummary(a.capability, a.nodeRole)}
+                  </span>
+                  {(() => {
+                    const lvl = riskLevelFor(a.capability);
+                    return (
+                      <span className={RISK_BADGE_CLASS[lvl]} title={RISK_DEFINITION[lvl]} style={{ cursor: "help" }}>
+                        <span className="dot" aria-hidden="true" />
+                        {lvl.toUpperCase()} RISK
+                      </span>
+                    );
+                  })()}
                 </div>
                 {a.preview && a.preview.length > 0 && (
                   <div style={{ marginTop: "var(--s2)", display: "grid", gap: "var(--s1)", padding: "var(--s2) var(--s3)", background: "var(--canvas)", borderRadius: "var(--r-sm)", border: "1px solid var(--line)" }}>
@@ -392,29 +449,39 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                   via <span className="mono">{a.capability}</span> at node <span className="mono">{a.nodeId}</span> · approve to proceed, deny to stop the run.
                 </div>
               </div>
-              <div style={{ display: "flex", gap: "var(--s2)", flexShrink: 0 }}>
-                <button
-                  className={confirmDeny === a.correlationId ? "btn btn-sm btn-danger" : "btn btn-sm btn-ghost"}
-                  title="Stop the run here — nothing is sent"
-                  disabled={resolving !== null}
-                  onClick={() => {
-                    if (confirmDeny !== a.correlationId) {
-                      setConfirmDeny(a.correlationId);
-                      setTimeout(() => setConfirmDeny(prev => prev === a.correlationId ? null : prev), 3000);
-                      return;
-                    }
-                    void handleResolveApproval(a.correlationId, "deny");
-                  }}
-                >
-                  {resolving === a.correlationId ? "…" : confirmDeny === a.correlationId ? <>Deny — this stops the run</> : <><Glyph kind="cross" size={14} /> Deny</>}
-                </button>
-                <button
-                  className="btn btn-primary btn-sm"
-                  disabled={resolving !== null}
-                  onClick={() => void handleResolveApproval(a.correlationId, "approve")}
-                >
-                  {resolving === a.correlationId ? "…" : <><Glyph kind="check" size={14} /> Approve</>}
-                </button>
+              <div style={{ display: "flex", gap: "var(--s2)", flexShrink: 0, alignItems: "flex-start" }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "var(--s1)" }}>
+                  <button
+                    className={confirmDeny === a.correlationId ? "btn btn-sm btn-danger" : "btn btn-sm btn-ghost"}
+                    title="Stop the run here — nothing is sent"
+                    disabled={resolving !== null}
+                    onClick={() => {
+                      if (confirmDeny !== a.correlationId) {
+                        setConfirmDeny(a.correlationId);
+                        setTimeout(() => setConfirmDeny(prev => prev === a.correlationId ? null : prev), 3000);
+                        return;
+                      }
+                      void handleResolveApproval(a.correlationId, "deny");
+                    }}
+                  >
+                    {resolving === a.correlationId ? "…" : confirmDeny === a.correlationId ? <>Deny — this stops the run</> : <><Glyph kind="cross" size={14} /> Deny</>}
+                  </button>
+                  <span className="micro" style={{ textTransform: "none", letterSpacing: 0, color: "var(--ink-muted)" }}>
+                    Deny stops the whole run
+                  </span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "var(--s1)" }}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={resolving !== null}
+                    onClick={() => void handleResolveApproval(a.correlationId, "approve")}
+                  >
+                    {resolving === a.correlationId ? "…" : <><Glyph kind="check" size={14} /> Approve</>}
+                  </button>
+                  <span className="micro" style={{ textTransform: "none", letterSpacing: 0, color: "var(--ink-muted)", maxWidth: "30ch", textAlign: "right" }}>
+                    {approveConsequence(a.capability, a.preview)}
+                  </span>
+                </div>
               </div>
             </div>
           ))}
@@ -444,7 +511,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "var(--s3)" }}>
             <span className={`badge ${STATUS_BADGE_CLASS[run.status] ?? "badge-neutral"}`}>
               {(run.status === "running" || run.status === "halted") && <span className="dot" />}
-              {run.status === "halted" ? "awaiting approval" : run.status}
+              {run.status === "halted" ? "Awaiting approval" : run.status}
             </span>
             {isTerminalStatus && (
               <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center" }}>

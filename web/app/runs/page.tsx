@@ -9,7 +9,7 @@ type Filter = "all" | "running" | "halted" | "completed" | "failed";
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "running", label: "Running" },
-  { key: "halted", label: "Paused" },
+  { key: "halted", label: "Awaiting approval" },
   { key: "completed", label: "Completed" },
   { key: "failed", label: "Failed" },
 ];
@@ -33,7 +33,7 @@ const STATUS_LABEL: Record<RunRecord["status"], string> = {
   completed: "completed",
   running: "running",
   failed: "failed",
-  halted: "paused",
+  halted: "awaiting approval",
   pending: "pending",
 };
 

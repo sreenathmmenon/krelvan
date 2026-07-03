@@ -750,14 +750,14 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   }
 
   if (loading) return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "var(--s4)", background: "var(--graph-bg)" }}>
+    <div style={{ height: "calc(100vh - 56px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "var(--s4)", background: "var(--graph-bg)" }}>
       <span className="spinner" aria-hidden="true" style={{ width: 22, height: 22 }} />
       <span className="small soft">Loading canvas…</span>
     </div>
   );
 
   if (!agent) return (
-    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--graph-bg)", padding: "var(--s6)" }}>
+    <div style={{ height: "calc(100vh - 56px)", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--graph-bg)", padding: "var(--s6)" }}>
       <div className="state-empty" style={{ maxWidth: 380, boxShadow: "var(--shadow-md)" }}>
         <div style={{ marginBottom: "var(--s2)" }}><GlyphGraphEmpty /></div>
         <p className="h3" style={{ color: "var(--ink)" }}>Agent not found</p>
@@ -770,7 +770,9 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   );
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--canvas)", opacity: mounted ? 1 : 0, transition: "opacity 200ms ease" }}>
+    // Fill the viewport BELOW the 56px sticky site nav — not a full 100vh, which would push a
+    // dead scroll region past the nav. The interactive canvas owns exactly the space beneath it.
+    <div style={{ height: "calc(100vh - 56px)", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--canvas)", opacity: mounted ? 1 : 0, transition: "opacity 200ms ease" }}>
       {actionErr && <div role="alert" className="toast toast-error">{actionErr}</div>}
       {/* Mobile: the interactive canvas is a desktop-class tool. On phones we show a
           clean notice + quick actions instead of a cramped, unusable graph. */}
