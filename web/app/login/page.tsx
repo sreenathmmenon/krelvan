@@ -57,11 +57,12 @@ export default function LoginPage() {
             ← Krelvan
           </Link>
           <h1 className="auth-split__tagline display">
-            AI agents that <span className="dark-teal">prove what they did</span>.
+            Write a sentence. <span className="dark-teal">Get a working agent system.</span>
           </h1>
           <p className="auth-split__sub">
-            Every step an agent takes is signed into a tamper-evident ledger. Export any run
-            and re-check the math yourself, offline — no server, no trust in us.
+            Krelvan turns plain English into real agents that act across your tools and run on
+            your schedule — extend them from an open marketplace, publish what you make, and
+            sell what works.
           </p>
           <div className="auth-split__trust">
             <span>Open source</span><span aria-hidden="true">·</span>
