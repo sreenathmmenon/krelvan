@@ -243,6 +243,13 @@ const FIT_MIN_SCALE = 0.62;
 const INITIAL_SCALE = 0.8;
 // Gutter from the top-left corner to the entry node on initial open.
 const INITIAL_MARGIN = 72;
+// A "short" graph (few rows — like the deep-but-flat 12-node support agent, contentH
+// ~280px) wastes the viewport if opened at the modest INITIAL_SCALE: it floats as a
+// thin band in the vertical center with a big empty top. When the content is short
+// enough to comfortably fit the viewport height at a higher zoom, we scale UP toward
+// 1.0 so it fills the canvas, then vertically center it. This never over-zooms a tall
+// graph (its own fit-to-height keeps the scale down) and never exceeds 1.0.
+const INITIAL_HEIGHT_FILL = 0.82; // target fraction of viewport height the content should span
 
 interface PanState extends ViewXform { dragging: boolean; lastX: number; lastY: number; }
 
@@ -293,19 +300,27 @@ function panReducer(state: PanState, action: PanAction): PanState {
       return { ...state, scale: s, tx, ty, dragging: false, lastX: 0, lastY: 0 };
     }
     case "initial": {
-      // First-open view: readable zoom, anchored on the entry (top-left of the graph)
-      // with the first steps visible. If the whole graph is small enough to fit at the
-      // readable scale, we center it; otherwise we pin the entry near the top-left and
-      // let the user pan/Fit to reveal the rest.
+      // First-open view: a readable zoom that fills the canvas instead of floating in
+      // a thin band. Two shapes to serve well:
+      //   • Deep-but-SHORT graphs (few rows, e.g. the 12-node support agent, contentH
+      //     ~280px) — the height is what wastes the viewport. We scale UP toward 1.0 so
+      //     the content spans ~INITIAL_HEIGHT_FILL of the viewport height, then center it
+      //     vertically AND horizontally. It reads as filling the canvas, not lost in it.
+      //   • Tall graphs — their own fit-to-height keeps the scale modest; we anchor the
+      //     entry near the top-left and let the user pan/Fit to reveal the rest.
       const cw = action.containerW, ch = action.containerH;
       const gw = action.contentW || 1, gh = action.contentH || 1;
-      // The scale that WOULD fit everything; if the graph already fits comfortably at the
-      // readable zoom, don't zoom in past it either.
-      const fitScale = Math.min((cw - 2 * FIT_PAD) / gw, (ch - 2 * FIT_PAD) / gh);
-      const s = Math.min(1, INITIAL_SCALE, Math.max(FIT_MIN_SCALE, fitScale));
+      // Scale that fits the graph's HEIGHT to a comfortable fraction of the viewport —
+      // this is what lifts a short graph out of the thin-band problem.
+      const heightFillScale = (ch * INITIAL_HEIGHT_FILL) / gh;
+      // Prefer the larger of the readable-baseline and the height-fill scale, but never
+      // over-zoom past 1.0, and never below the readable floor.
+      const s = Math.min(1, Math.max(FIT_MIN_SCALE, INITIAL_SCALE, heightFillScale));
       const fitsWide = gw * s <= cw - 2 * FIT_PAD;
       const fitsTall = gh * s <= ch - 2 * FIT_PAD;
       // Content origin (node local 0,0) lives at GRAPH_OFFSET inside the SVG.
+      // Always vertically center when it fits — a short graph sits in the middle of the
+      // canvas, not floating above a large empty band.
       const tx = fitsWide
         ? (cw - gw * s) / 2 - GRAPH_OFFSET * s
         : INITIAL_MARGIN - GRAPH_OFFSET * s;
@@ -329,6 +344,49 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
 
 function statusBadgeClass(status: string): string {
   return STATUS_BADGE_CLASS[status] ?? "badge badge-neutral";
+}
+
+// ── Conditional-edge label summariser ─────────────────────────────────────────
+// The full edge condition (edgeConditionLabel) can be long, e.g.
+//   "retrieve.ok = true & customer.distress = true"
+// Slicing it at a fixed character count produces mid-word garbage like
+//   "retrieve.ok = true & ...distress = tr…"
+// which the UX review flagged. Instead we build a SHORT summary that never cuts
+// mid-token: we split the condition into its top-level clauses (on & / |) and drop
+// WHOLE clauses when it's too long, appending an honest "+N more" so nothing is
+// ever chopped through a word. A single clause that is itself too long is trimmed
+// on a safe boundary (space / operator / dot), never in the middle of a token.
+const COND_MAX_CHARS = 30;
+
+function trimAtBoundary(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const slice = s.slice(0, max);
+  // Back up to the last safe boundary so we never end mid-token.
+  const cut = Math.max(
+    slice.lastIndexOf(" "),
+    slice.lastIndexOf("."),
+    slice.lastIndexOf("="),
+    slice.lastIndexOf("_"),
+  );
+  const kept = cut > max * 0.5 ? slice.slice(0, cut) : slice;
+  return kept.replace(/[\s.=_]+$/, "") + "…";
+}
+
+/** Short, token-safe summary of a full condition label. Never cuts mid-word. */
+function edgeConditionSummary(full: string, max = COND_MAX_CHARS): string {
+  if (full.length <= max) return full;
+  // Split on the top-level boolean joiners the label uses (" & " / " | ").
+  const parts = full.split(/\s+[&|]\s+/).filter(Boolean);
+  if (parts.length > 1) {
+    const first = parts[0]!;
+    const more = parts.length - 1;
+    const suffix = ` +${more} more`;
+    // Keep the first clause whole if it fits alongside the "+N more" tag.
+    if (first.length + suffix.length <= max) return `${first}${suffix}`;
+    return `${trimAtBoundary(first, Math.max(8, max - suffix.length))}${suffix}`;
+  }
+  // Single (long) clause — trim on a safe boundary.
+  return trimAtBoundary(full, max);
 }
 
 // ── Run selector dropdown ──────────────────────────────────────────────────────
@@ -742,8 +800,6 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
         @media (max-width: 640px) {
           .canvas-mobile-note { display: flex !important; }
         }
-        .canvas-ledger-badge { transition: background var(--t-fast) var(--ease); }
-        .canvas-ledger-badge:hover { background: var(--ok); color: #fff; }
         .canvas-scrubber {
           flex: 1; height: 4px; -webkit-appearance: none; appearance: none;
           background: var(--surface-sunken); border-radius: var(--r-pill);
@@ -761,182 +817,247 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
           box-shadow: var(--shadow-sm); cursor: pointer;
         }
         .canvas-scrubber:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; }
-        /* Keyboard-shortcut hints are the lowest-priority toolbar item: drop them
-           before anything meaningful can clip at the right edge on a tight toolbar. */
-        @media (max-width: 1180px) { .canvas-kbd-hints { display: none !important; } }
+
+        /* ── Toolbar layout — two anchored groups so nothing clips at the right ──
+           Left group carries the trust chain (title · verified · Blueprint/Live ·
+           Run). Right group carries the view controls. A flex spacer holds them
+           apart; each group can shrink, and low-priority items drop by breakpoint
+           BEFORE the trust items (verified badge + mode toggle) are ever squeezed. */
+        .canvas-toolbar__left,
+        .canvas-toolbar__right { display: flex; align-items: center; min-width: 0; }
+        .canvas-toolbar__left { gap: var(--s4); flex: 1 1 auto; }
+        .canvas-toolbar__right { gap: var(--s3); flex: 0 0 auto; }
+
+        /* Prominent, unmissable verified pill — the canvas's core trust claim. */
+        .canvas-verify-pill {
+          display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+          height: 30px; padding: 0 12px; border-radius: var(--r-pill);
+          font-size: 12px; font-weight: 700; letter-spacing: .01em;
+          text-decoration: none; white-space: nowrap;
+          border: 1px solid transparent;
+          transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+        }
+        .canvas-verify-pill[data-state="ok"] {
+          color: #0a6b52; background: var(--ok-tint);
+          border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+        }
+        .canvas-verify-pill[data-state="ok"]:hover {
+          background: var(--ok); color: #fff;
+          box-shadow: 0 1px 6px color-mix(in srgb, var(--ok) 40%, transparent);
+        }
+        .canvas-verify-pill[data-state="fail"] {
+          color: var(--danger, #b42318); background: var(--danger-tint, rgba(180,35,24,.10));
+          border-color: color-mix(in srgb, var(--danger, #b42318) 45%, transparent);
+        }
+        .canvas-verify-pill[data-state="pending"] {
+          color: var(--brand); background: var(--brand-tint);
+          border-color: color-mix(in srgb, var(--brand) 35%, transparent);
+        }
+        .canvas-verify-pill .canvas-verify-check { flex-shrink: 0; }
+
+        /* Blueprint / Live toggle — clear, tactile affordance (not a faint tab strip). */
+        .canvas-mode-toggle {
+          display: inline-flex; align-items: center; flex-shrink: 0;
+          padding: 2px; gap: 2px; border-radius: var(--r-pill);
+          background: var(--surface-sunken, rgba(0,0,0,.05));
+          border: 1px solid var(--line);
+        }
+        .canvas-mode-toggle button {
+          appearance: none; border: 0; cursor: pointer;
+          height: 26px; padding: 0 14px; border-radius: var(--r-pill);
+          font-size: 12px; font-weight: 600; line-height: 1;
+          color: var(--ink-muted); background: transparent;
+          transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+        }
+        .canvas-mode-toggle button:hover { color: var(--ink); }
+        .canvas-mode-toggle button[aria-pressed="true"] {
+          color: var(--brand-ink, #fff); background: var(--brand);
+          box-shadow: var(--shadow-sm);
+        }
+
+        /* Progressive collapse — low-priority items shed first, trust items last.
+           The kbd hints and intent subtitle go before anything meaningful can clip. */
+        @media (max-width: 1320px) { .canvas-kbd-hints { display: none !important; } }
+        @media (max-width: 1120px) { .canvas-intent-line { display: none !important; } }
+        @media (max-width: 1000px) { .canvas-title-block { max-width: 150px !important; } }
       `}</style>
 
-      {/* ── Toolbar (scrolls horizontally if it can't fit, e.g. on phones) ──── */}
+      {/* ── Toolbar — two anchored groups (trust chain left, view controls right)
+            so nothing clips at the right edge, even ≤1440px. No horizontal scroll:
+            low-priority items collapse by breakpoint before the trust items shrink. */}
       <div className="canvas-toolbar" style={{
         height: 52, flexShrink: 0,
         borderBottom: "1px solid var(--line)",
         background: "rgba(248,247,244,.96)", backdropFilter: "blur(10px)",
         display: "flex", alignItems: "center", gap: "var(--s4)", padding: "0 var(--s5)",
-        zIndex: 20, overflowX: "auto", overflowY: "hidden",
+        zIndex: 20, overflow: "hidden",
       }}>
-        {/* back */}
-        <Link href={`/agents/${agentId}`} className="small" style={{ color: "var(--ink-muted)", flexShrink: 0 }}>← Agent</Link>
+        {/* ── LEFT GROUP: back · title · verified · Blueprint/Live · Run ─────── */}
+        <div className="canvas-toolbar__left">
+          {/* back */}
+          <Link href={`/agents/${agentId}`} className="small" style={{ color: "var(--ink-muted)", flexShrink: 0 }}>← Agent</Link>
 
-        <div style={{ width: 1, height: 20, background: "var(--line)" }} />
+          <div style={{ width: 1, height: 20, background: "var(--line)", flexShrink: 0 }} />
 
-        {/* agent name + intent */}
-        <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: "var(--s1)", maxWidth: 220 }}>
-          <span className="h3 text-truncate" style={{ color: "var(--ink)" }}>
-            {agent.signed.manifest.name}
-          </span>
-          {agent.signed.provenance.intent && (
-            <span className="micro text-truncate" style={{ textTransform: "none", letterSpacing: 0 }}>
-              {agent.signed.provenance.intent.length > 60 ? agent.signed.provenance.intent.slice(0, 57) + "…" : agent.signed.provenance.intent}
+          {/* agent name + intent */}
+          <div className="canvas-title-block" style={{ flexShrink: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--s1)", maxWidth: 220 }}>
+            <span className="h3 text-truncate" style={{ color: "var(--ink)" }}>
+              {agent.signed.manifest.name}
             </span>
+            {agent.signed.provenance.intent && (
+              <span className="micro text-truncate canvas-intent-line" style={{ textTransform: "none", letterSpacing: 0 }}>
+                {agent.signed.provenance.intent.length > 60 ? agent.signed.provenance.intent.slice(0, 57) + "…" : agent.signed.provenance.intent}
+              </span>
+            )}
+          </div>
+
+          {/* tamper-evident ledger badge — the canvas's core trust claim, made
+              PROMINENT: a clear teal/green pill with the check glyph. DEMONSTRATED
+              via auto-verify when a finished run is selected. */}
+          <Link
+            href={selectedRunId ? `/runs/${selectedRunId}#timeline` : `/agents/${agentId}`}
+            title={verification?.ok
+              ? `Verified: ${verification.signedEvents}/${verification.runEvents} events signed, full ${verification.ledgerEvents}-event chain intact (${verification.algorithm})`
+              : "Every event is hash-chained and signed — any tampering is detectable on verify"}
+            className="canvas-verify-pill"
+            data-state={verification?.ok ? "ok" : verification && !verification.ok ? "fail" : "pending"}
+          >
+            <span className="canvas-verify-check"><IconCheck size={13} /></span>
+            <span className="sr-only">Ledger status:</span>
+            {verification?.ok
+              ? <>{verification.signedEvents}/{verification.runEvents} verified</>
+              : verification && !verification.ok ? "Verify failed"
+              : selectedRunId ? "Verifying…" : "Signed ledger"}
+          </Link>
+
+          {/* run selector */}
+          <RunSelectorDropdown
+            runs={runs}
+            selectedRunId={selectedRunId}
+            onSelect={(id) => { setSelectedRunId(id); setMode(id ? "live" : "blueprint"); }}
+          />
+
+          {/* blueprint / live toggle — clear, tactile affordance */}
+          {selectedRunId && (
+            <div className="canvas-mode-toggle" role="tablist" aria-label="View mode">
+              {(["blueprint", "live"] as const).map(m => (
+                <button key={m} onClick={() => setMode(m)} aria-pressed={mode === m} role="tab">
+                  {m === "blueprint" ? "Blueprint" : "Live"}
+                </button>
+              ))}
+            </div>
           )}
-        </div>
 
-        {/* tamper-evident ledger badge — DEMONSTRATED via auto-verify when a finished run is selected */}
-        <Link
-          href={selectedRunId ? `/runs/${selectedRunId}#timeline` : `/agents/${agentId}`}
-          title={verification?.ok
-            ? `Verified: ${verification.signedEvents}/${verification.runEvents} events signed, full ${verification.ledgerEvents}-event chain intact (${verification.algorithm})`
-            : "Every event is hash-chained and signed — any tampering is detectable on verify"}
-          className={`badge ${verification?.ok ? "badge-done" : verification && !verification.ok ? "badge-failed" : "badge-neutral"} canvas-ledger-badge`}
-          style={{ flexShrink: 0, textDecoration: "none" }}
-        >
-          <IconCheck />
-          <span className="sr-only">Ledger status:</span>
-          {verification?.ok
-            ? <>{verification.signedEvents}/{verification.runEvents} verified</>
-            : verification && !verification.ok ? "Verify failed"
-            : selectedRunId ? "Verifying…" : "Hash-chained · signed"}
-        </Link>
+          {/* live indicator */}
+          {detail?.run.status === "running" && mode === "live" && (
+            <div className="micro" style={{ display: "flex", alignItems: "center", gap: "var(--s1)", color: "var(--live)", fontWeight: 600, flexShrink: 0 }}>
+              <span className="status-dot running" style={{ width: 6, height: 6 }} aria-hidden="true" />
+              live
+            </div>
+          )}
 
-        {/* run selector */}
-        <RunSelectorDropdown
-          runs={runs}
-          selectedRunId={selectedRunId}
-          onSelect={(id) => { setSelectedRunId(id); setMode(id ? "live" : "blueprint"); }}
-        />
+          {/* activity heat-map toggle — colors nodes by how active they were (more
+              effects = hotter). No cost is ever shown. */}
+          {mode === "live" && (
+            <label
+              className="micro canvas-kbd-hints"
+              title="Shade nodes by activity — the more effects a node ran, the warmer it glows."
+              style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexShrink: 0, cursor: "pointer", textTransform: "none", letterSpacing: 0 }}
+            >
+              <input
+                type="checkbox"
+                checked={showHeat}
+                onChange={e => setShowHeat(e.target.checked)}
+                style={{ accentColor: "var(--brand)", cursor: "pointer" }}
+              />
+              Activity heat
+            </label>
+          )}
 
-        {/* blueprint / live toggle */}
-        {selectedRunId && (
-          <div className="segmented" style={{ flexShrink: 0 }}>
-            {(["blueprint", "live"] as const).map(m => (
-              <button key={m} onClick={() => setMode(m)} aria-pressed={mode === m}>
-                {m === "blueprint" ? "Blueprint" : "Live"}
-              </button>
-            ))}
-          </div>
-        )}
-
-
-        {/* live indicator */}
-        {detail?.run.status === "running" && mode === "live" && (
-          <div className="micro" style={{ display: "flex", alignItems: "center", gap: "var(--s1)", color: "var(--live)", fontWeight: 600, flexShrink: 0 }}>
-            <span className="status-dot running" style={{ width: 6, height: 6 }} aria-hidden="true" />
-            live
-          </div>
-        )}
-
-        {/* activity heat-map toggle — colors nodes by how active they were (more
-            effects = hotter). No cost is ever shown. */}
-        {mode === "live" && (
-          <label
-            className="micro"
-            title="Shade nodes by activity — the more effects a node ran, the warmer it glows."
-            style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexShrink: 0, cursor: "pointer", textTransform: "none", letterSpacing: 0 }}
-          >
-            <input
-              type="checkbox"
-              checked={showHeat}
-              onChange={e => setShowHeat(e.target.checked)}
-              style={{ accentColor: "var(--brand)", cursor: "pointer" }}
-            />
-            Activity heat
-          </label>
-        )}
-
-        {/* run again */}
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={() => {
-            if (startingRun) return;
-            setStartingRun(true);
-            startRun(agentId)
-              .then(async r => {
-                const [updatedRuns] = await Promise.all([getAgentRuns(agentId)]);
-                setRuns(updatedRuns);
-                setSelectedRunId(r.runId);
-                setMode("live");
-              })
-              .finally(() => setStartingRun(false));
-          }}
-          disabled={startingRun || detail?.run.status === "running"}
-          style={{ flexShrink: 0 }}
-        >
-          {startingRun ? <><span className="spinner" aria-hidden="true" style={{ width: 13, height: 13, borderTopColor: "var(--brand-ink)", borderColor: "rgba(255,255,255,.4)" }} /> Starting…</> : <><IconPlay /> Run again</>}
-        </button>
-
-        <div style={{ flex: 1 }} />
-
-        {/* run stats */}
-        {detail && mode === "live" && (
-          <div className="small" style={{ display: "flex", alignItems: "center", gap: "var(--s4)", flexShrink: 0 }}>
-            <span className="muted">
-              <span className="mono">{Object.values(detail.projection.nodes).filter(n => n.concluded).length}</span>
-              {" / "}
-              <span className="mono">{manifest?.nodes.length ?? 0}</span>
-              {" nodes"}
-            </span>
-            <span className={statusBadgeClass(detail.run.status)}>
-              {detail.run.status === "running" && <span className="dot" aria-hidden="true" />}
-              {detail.run.status}
-            </span>
-          </div>
-        )}
-
-        {/* zoom + fit controls */}
-        <div style={{ display: "flex", gap: "var(--s1)", alignItems: "center", flexShrink: 0 }}>
+          {/* run again */}
           <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => { const c = containerRef.current; if (!c) return; dispatchPan({ type: "zoom_step", factor: 1 / 1.2, cx: c.clientWidth / 2, cy: c.clientHeight / 2 }); }}
-            title="Zoom out (−)" aria-label="Zoom out"
-            style={{ width: 30, padding: 0 }}
-          >−</button>
-          <span className="mono micro" style={{ color: "var(--ink-muted)", minWidth: 36, textAlign: "center", textTransform: "none", letterSpacing: 0 }}>
-            {Math.round(pan.scale * 100)}%
-          </span>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => { const c = containerRef.current; if (!c) return; dispatchPan({ type: "zoom_step", factor: 1.2, cx: c.clientWidth / 2, cy: c.clientHeight / 2 }); }}
-            title="Zoom in (+)" aria-label="Zoom in"
-            style={{ width: 30, padding: 0 }}
-          >+</button>
-          <button
-            className="btn btn-secondary btn-sm"
+            className="btn btn-primary btn-sm"
             onClick={() => {
-              if (!containerRef.current) return;
-              const { width, height } = containerRef.current.getBoundingClientRect();
-              dispatchPan({ type: "reset", containerW: width, containerH: height, contentW, contentH });
+              if (startingRun) return;
+              setStartingRun(true);
+              startRun(agentId)
+                .then(async r => {
+                  const [updatedRuns] = await Promise.all([getAgentRuns(agentId)]);
+                  setRuns(updatedRuns);
+                  setSelectedRunId(r.runId);
+                  setMode("live");
+                })
+                .finally(() => setStartingRun(false));
             }}
-            title="Fit graph to viewport (0)" aria-label="Fit graph to viewport"
-            style={{ width: 30, padding: 0 }}
+            disabled={startingRun || detail?.run.status === "running"}
+            style={{ flexShrink: 0 }}
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-              <path d="M2 5V3a1 1 0 0 1 1-1h2M12 5V3a1 1 0 0 0-1-1H9M2 9v2a1 1 0 0 0 1 1h2M12 9v2a1 1 0 0 1-1 1H9" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-            </svg>
+            {startingRun ? <><span className="spinner" aria-hidden="true" style={{ width: 13, height: 13, borderTopColor: "var(--brand-ink)", borderColor: "rgba(255,255,255,.4)" }} /> Starting…</> : <><IconPlay /> Run again</>}
           </button>
         </div>
 
-        {/* Keyboard-shortcut hints — informational only, so they are the first thing
-            to drop when the toolbar gets tight. This guarantees the zoom %, +/−, and
-            Fit controls (to their left) are never the item pushed off / clipped at
-            the right edge. Hidden below a width where they'd otherwise cut mid-word. */}
-        <span className="micro canvas-kbd-hints" style={{ flexShrink: 0, display: "flex", gap: "var(--s2)", textTransform: "none", letterSpacing: 0 }}>
-          {[["0","fit"],["+/−","zoom"],["Tab","mode"],["Esc","deselect"]].map(([k, l]) => (
-            <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: "var(--s1)", whiteSpace: "nowrap" }}>
-              <kbd>{k}</kbd>
-              {l}
+        {/* ── RIGHT GROUP: run stats · zoom · fit · kbd hints ───────────────── */}
+        <div className="canvas-toolbar__right">
+          {/* run stats */}
+          {detail && mode === "live" && (
+            <div className="small canvas-kbd-hints" style={{ display: "flex", alignItems: "center", gap: "var(--s4)", flexShrink: 0 }}>
+              <span className="muted">
+                <span className="mono">{Object.values(detail.projection.nodes).filter(n => n.concluded).length}</span>
+                {" / "}
+                <span className="mono">{manifest?.nodes.length ?? 0}</span>
+                {" nodes"}
+              </span>
+              <span className={statusBadgeClass(detail.run.status)}>
+                {detail.run.status === "running" && <span className="dot" aria-hidden="true" />}
+                {detail.run.status}
+              </span>
+            </div>
+          )}
+
+          {/* zoom + fit controls */}
+          <div style={{ display: "flex", gap: "var(--s1)", alignItems: "center", flexShrink: 0 }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => { const c = containerRef.current; if (!c) return; dispatchPan({ type: "zoom_step", factor: 1 / 1.2, cx: c.clientWidth / 2, cy: c.clientHeight / 2 }); }}
+              title="Zoom out (−)" aria-label="Zoom out"
+              style={{ width: 30, padding: 0 }}
+            >−</button>
+            <span className="mono micro" style={{ color: "var(--ink-muted)", minWidth: 36, textAlign: "center", textTransform: "none", letterSpacing: 0 }}>
+              {Math.round(pan.scale * 100)}%
             </span>
-          ))}
-        </span>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => { const c = containerRef.current; if (!c) return; dispatchPan({ type: "zoom_step", factor: 1.2, cx: c.clientWidth / 2, cy: c.clientHeight / 2 }); }}
+              title="Zoom in (+)" aria-label="Zoom in"
+              style={{ width: 30, padding: 0 }}
+            >+</button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                if (!containerRef.current) return;
+                const { width, height } = containerRef.current.getBoundingClientRect();
+                dispatchPan({ type: "reset", containerW: width, containerH: height, contentW, contentH });
+              }}
+              title="Fit graph to viewport (0)" aria-label="Fit graph to viewport"
+              style={{ width: 30, padding: 0 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <path d="M2 5V3a1 1 0 0 1 1-1h2M12 5V3a1 1 0 0 0-1-1H9M2 9v2a1 1 0 0 0 1 1h2M12 9v2a1 1 0 0 1-1 1H9" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Keyboard-shortcut hints — lowest priority; hidden below a breakpoint so
+              they can never cut mid-word or push the view controls off the edge. */}
+          <span className="micro canvas-kbd-hints" style={{ flexShrink: 0, display: "flex", gap: "var(--s2)", textTransform: "none", letterSpacing: 0 }}>
+            {[["0","fit"],["+/−","zoom"],["Tab","mode"],["Esc","deselect"]].map(([k, l]) => (
+              <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: "var(--s1)", whiteSpace: "nowrap" }}>
+                <kbd>{k}</kbd>
+                {l}
+              </span>
+            ))}
+          </span>
+        </div>
       </div>
 
       {/* ── Canvas area ──────────────────────────────────────────────────────── */}
@@ -1034,13 +1155,14 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
                     ? (isActive ? "url(#c-arrow-active)" : "url(#c-arrow-done)")
                     : geom.back ? "url(#c-arrow-loop)" : "url(#c-arrow-idle)";
 
-                  // Conditional edge label — show full on hover, truncate otherwise
+                  // Conditional edge label — full on hover, a token-SAFE short summary
+                  // otherwise (never a mid-word slice like "…distress = tr…").
                   const edgeKey = `${edge.from}-${edge.to}`;
                   const when = edge.when;
                   const condLabel = when ? edgeConditionLabel(when) : null;
                   const isHovered = hoveredEdge === edgeKey;
                   const condText = condLabel
-                    ? (isHovered || condLabel.length <= 22 ? condLabel : condLabel.slice(0, 20) + "…")
+                    ? (isHovered ? condLabel : edgeConditionSummary(condLabel))
                     : null;
 
                   // Label anchor: curve midpoint. Loop arcs get the label on the
