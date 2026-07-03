@@ -847,6 +847,10 @@ function OutputPanel({ projection, manifest, run }: {
       // keep only if the key looks like a known decision field
       if (!/^(id|status|state|verdict|category|sentiment|language|urgency|score|reason|result|action|mode|kind|type|level|priority|intent|route|node|answer|model|words|ok|error|count|episode_count)$/i.test(shortKey)) continue;
     }
+    // Even a legit key (e.g. "reason") can carry a value that literally echoes the prompt
+    // meta-instruction on a weak model ("...not echoing this instruction", "output object
+    // keys", "do NOT output this"). Suppress those specific leaked values, not the key class.
+    if (/\b(echoing this instruction|do not output|output object keys?|this instruction verbatim|one real sentence about this)\b/i.test(val)) continue;
     if (!scalarsByNode[nodeId]) scalarsByNode[nodeId] = [];
     scalarsByNode[nodeId].push({ key: shortKey, value: val });
   }
