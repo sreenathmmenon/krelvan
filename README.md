@@ -15,6 +15,10 @@ signed, replayable record of every step it took — self-hosted, on your machine
 
 <div align="center">
 
+_Watch an agent run live — each step lights up as it executes and signs into the ledger._
+
+![A Krelvan agent running live on the canvas](docs/images/demo-agent-run.gif)
+
 _A real Research Analyst run — every step signed into a tamper-evident ledger you can verify offline._
 
 ![A completed run with a signed, verifiable ledger](docs/images/run-signed-ledger.png)
