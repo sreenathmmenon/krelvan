@@ -55,13 +55,17 @@ test("investment-research uses only real built-in capabilities", () => {
   }
 });
 
-test("investment-research has the evaluator-optimizer judge loop: judge->analyst on revise, judge->deliver on pass", () => {
-  const revise = manifest.edges.find((e) => e.from === "judge" && e.to === "analyst");
-  const pass = manifest.edges.find((e) => e.from === "judge" && e.to === "deliver");
-  assert.ok(revise?.when, "judge must route back to analyst on a 'revise' verdict (the reflection retry loop)");
-  assert.ok(pass?.when, "judge must route to deliver on a 'pass' verdict");
-  assert.match(JSON.stringify(revise!.when), /"key":"judge\.verdict"/);
-  assert.match(JSON.stringify(pass!.when), /"key":"judge\.verdict"/);
+test("investment-research: the judge evaluates and always delivers (bounded, no revise loop)", () => {
+  // The judge still runs (its verdict + score are signed into the ledger as a quality
+  // attestation), but the synthesize↔judge revise back-edge was removed: it never converged
+  // on weaker models (the judge kept saying 'revise' until maxNodeVisits failed the run).
+  const toDeliver = manifest.edges.find((e) => e.from === "judge" && e.to === "deliver");
+  const backToAnalyst = manifest.edges.find((e) => e.from === "judge" && e.to === "analyst");
+  assert.ok(toDeliver, "judge must route to deliver");
+  assert.ok(!toDeliver!.when, "judge -> deliver must be unconditional so the run always terminates");
+  assert.ok(!backToAnalyst, "the fragile judge -> analyst revise loop must be gone");
+  // the judge node itself is still present and does its evaluation
+  assert.ok(manifest.nodes.some((n) => n.id === "judge"), "judge node must remain (it scores the answer)");
 });
 
 test("investment-research delivers under human approval (deliver node is 'suggest')", () => {
@@ -88,17 +92,16 @@ test("investment-research runs E2E when the judge PASSES first time; ledger veri
   assert.equal(analystVisits, 1, "on a first-time pass, analyst runs exactly once");
 });
 
-test("investment-research judge loop FIRES: a 'revise' then 'pass' makes the analyst run twice", async () => {
+test("investment-research runs once through analyst→judge→deliver and the ledger verifies", async () => {
   const { ring, owner, supervisorSigner, store, now } = rig();
-  // A judge plugin that says 'revise' the first time, 'pass' the second — exercising the retry loop.
-  let judgeCalls = 0;
+  // Even if the judge returns a low score / 'revise' verdict, the bounded (loop-free) flow
+  // still terminates at deliver in a single pass — a weak model can no longer trap the run.
   const thinkPlugin: CapabilityPlugin = {
     name: "think", sideEffect: "read", estimateCents: () => 60,
     async invoke(call: EffectCall) {
-      // The judge node is the only one whose role mentions verdict; detect by nodeId.
       if (call.nodeId === "judge") {
-        judgeCalls++;
-        return { output: { verdict: judgeCalls === 1 ? "revise" : "pass", critique: "x", score: judgeCalls === 1 ? 40 : 92 }, claimedCostCents: 60 };
+        // deliberately 'revise' — the run must STILL complete (no back-edge to loop on).
+        return { output: { verdict: "revise", critique: "x", score: 40 }, claimedCostCents: 60 };
       }
       return { output: { plan: "p", facts: "f", context: "c", answer: "a", needs_data: true, needs_context: true, data_quality: "complete", cited: true, used_evidence: true, bottom_line: "bl" }, claimedCostCents: 60 };
     },
@@ -111,11 +114,11 @@ test("investment-research judge loop FIRES: a 'revise' then 'pass' makes the ana
   const initialState = { ...(manifest.seed ?? {}) } as Record<string, string | number | boolean | null>;
   const engine = new Engine(manifest, "t1", "r1", { store, owner, supervisor, supervisorSigner, now });
   const res = await engine.run({ maxSteps: 60, approve: () => true, initialState });
-  assert.equal(res.status, "completed", `expected completed, got ${res.status}`);
+  assert.equal(res.status, "completed", `expected completed even on a 'revise' verdict, got ${res.status}`);
   assert.ok(verify(await store.read("t1"), ring).ok, "ledger must verify");
   const events = await store.read("t1");
   const analystVisits = events.filter((e) => e.type === "NodeEntered" && (e.scope as { nodeId?: string }).nodeId === "analyst").length;
-  assert.equal(analystVisits, 2, "judge said 'revise' once, so the analyst must have re-run (reflection loop fired)");
+  assert.equal(analystVisits, 1, "no revise loop — the analyst runs exactly once");
   const proj = project(events);
   void proj;
 });
