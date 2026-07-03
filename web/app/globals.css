@@ -1869,7 +1869,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .cap-card__top { display: flex; gap: var(--s3); align-items: flex-start; }
 .cap-card__title { font-weight: 700; color: var(--ink); line-height: 1.2; }
 .cap-card__meta { margin-top: 1px; }
-.cap-card__desc { color: var(--ink-soft); margin: 0; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cap-card__desc { color: var(--ink-soft); margin: 0; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: break-word; }
 .cap-card__tags { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
 .cap-card__foot { margin-top: auto; padding-top: var(--s3); border-top: 1px solid var(--line); display: flex; gap: var(--s2); align-items: center; justify-content: space-between; }
 .cap-card--clk { cursor: pointer; }

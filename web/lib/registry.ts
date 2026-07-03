@@ -79,7 +79,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "support-agent",
     "title": "Support Resolution Agent",
-    "oneLiner": "Resolve support tickets the trustworthy way: grounded answers, a judge that catches weak ones, human approval on anything consequential, clean escalation — every resolution signed and provable.",
+    "oneLiner": "Triage, ground the answer in your KB, judge it, and escalate what needs a human.",
     "category": "Templates",
     "sideEffect": "message-human",
     "tier": "official",
@@ -526,7 +526,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "research-analyst",
     "title": "Research Analyst",
-    "oneLiner": "Researches a topic on the open web, reasons to a confidence-scored synthesis, deepens the search when confidence is low, writes a one-page brief, and remembers it — with a signed record of every step.",
+    "oneLiner": "Research a topic on the open web and return a confidence-scored synthesis.",
     "category": "Templates",
     "sideEffect": "write-reversible",
     "tier": "official",
@@ -660,7 +660,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "competitive-intel",
     "title": "Competitive Intel Monitor",
-    "oneLiner": "Watch a competitor's page daily, decide with an LLM router whether a change is material, pull external context when it is, and post a digest — with a signed record of every check.",
+    "oneLiner": "Watch a competitor page daily and alert you only when something material changes.",
     "category": "Templates",
     "sideEffect": "write-reversible",
     "tier": "official",
@@ -815,7 +815,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "inbox-triage",
     "title": "Inbox Triage & Reply",
-    "oneLiner": "Recalls the sender, classifies intent + urgency, drafts a reply, and sends it only after you approve — archiving the rest, with a signed record of every call.",
+    "oneLiner": "Classify each email's intent and urgency, then draft a reply for your approval.",
     "category": "Templates",
     "sideEffect": "message-human",
     "tier": "official",
@@ -1021,7 +1021,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "rag-knowledge",
     "title": "Self-Improving RAG Agent",
-    "oneLiner": "Answers strictly from your knowledge base — and when it can't, it researches the gap on the web, ingests the answer back into the KB, and re-answers. It fills its own knowledge gaps, with a signed record of what it learned.",
+    "oneLiner": "Answer strictly from your knowledge base, and learn what it couldn't cover.",
     "category": "Templates",
     "sideEffect": "write-reversible",
     "tier": "official",
@@ -1193,7 +1193,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "daily-digest",
     "title": "Daily Digest",
-    "oneLiner": "Reads a couple of sources every morning, ranks and dedupes against yesterday, and posts a tight digest to Slack — with a signed record of every run.",
+    "oneLiner": "Read your sources each morning and post a ranked, deduped digest.",
     "category": "Templates",
     "sideEffect": "message-human",
     "tier": "official",
@@ -1369,7 +1369,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "lead-qualifier",
     "title": "Lead Qualifier & Outreach",
-    "oneLiner": "Enrich an inbound lead, score it against your ICP, and — only for strong fits — draft a personalized outreach email you approve before it sends. Every verdict is a signed record.",
+    "oneLiner": "Enrich an inbound lead, score it against your ICP, and draft outreach to the best.",
     "category": "Templates",
     "sideEffect": "message-human",
     "tier": "official",
@@ -1521,7 +1521,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "incident-responder",
     "title": "Incident Responder",
-    "oneLiner": "Triage a webhook alert's severity with an LLM, page the on-call engineer or log it quietly, post to your status channel, and keep a signed record of every decision.",
+    "oneLiner": "Triage an alert's severity and page the on-call engineer when it matters.",
     "category": "Templates",
     "sideEffect": "message-human",
     "tier": "official",
@@ -1677,7 +1677,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "content-repurposer",
     "title": "Content Repurposer",
-    "oneLiner": "Turn one piece of content into a short-form post AND a thread — recalls your brand voice, extracts the core message, drafts both formats, and queues them for your OK.",
+    "oneLiner": "Turn one piece of content into a short post and a thread, in your brand voice.",
     "category": "Templates",
     "sideEffect": "write-reversible",
     "tier": "official",
@@ -1813,7 +1813,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "supervisor-delegation",
     "title": "Supervisor (Multi-Agent Delegation)",
-    "oneLiner": "A supervisor agent that plans, then delegates research and writing to two sub-agents under one authority ceiling, assembles the brief, and signs a record. Needs the 'sub-research' and 'sub-writer' sub-agents installed.",
+    "oneLiner": "A supervisor that plans, then delegates research and writing to sub-agents.",
     "category": "Templates",
     "sideEffect": "write-reversible",
     "tier": "official",
@@ -1960,7 +1960,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "kb-wiki-builder",
     "title": "Knowledge-Base Builder (Wiki)",
-    "oneLiner": "Reads your wiki, reasons about what's missing or stale, and — only when warranted — applies LLM-proposed, cross-linked page edits and pings you, with a signed record of every change.",
+    "oneLiner": "Read your wiki, find what's missing or stale, and update it with citations.",
     "category": "Templates",
     "sideEffect": "message-human",
     "tier": "official",
@@ -2096,7 +2096,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "price-monitor",
     "title": "Price Monitor",
-    "oneLiner": "Watch a page on a schedule, detect price changes vs last run, and alert you — with a signed record of every check.",
+    "oneLiner": "Watch a page on a schedule and alert you when the price changes — signed each check.",
     "category": "Templates",
     "sideEffect": "message-human",
     "tier": "official",
@@ -2272,7 +2272,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "kb-ingest",
     "title": "Knowledge Base Ingest",
-    "oneLiner": "Load a document into a named knowledge base so a RAG agent can answer from it.",
+    "oneLiner": "Add a document to a named knowledge base for grounded retrieval.",
     "category": "Templates",
     "sideEffect": "write-reversible",
     "tier": "official",
@@ -2311,7 +2311,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   {
     "name": "support-bot",
     "title": "RAG Support Bot",
-    "oneLiner": "Answer questions grounded ONLY in your ingested docs, cite the source, refuse when it doesn't know — with a signed record.",
+    "oneLiner": "Answer from your ingested docs, grounded in the retrieved passages, with a source.",
     "category": "Templates",
     "sideEffect": "read",
     "tier": "official",

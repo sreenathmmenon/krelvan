@@ -262,13 +262,12 @@ function AgentGraphCanvas({
       className="card"
       style={{
         background: "var(--graph-bg)",
-        overflow: "auto",
+        overflow: "hidden",
         position: "relative",
         display: "flex",
         alignItems: "center",
-        // flex-start + auto margins on the svg = "safe" centering: a wide 12-node
-        // graph scrolls from its left edge instead of clipping both ends.
-        justifyContent: "flex-start",
+        // The SVG now scales to fit (viewBox + max-width), so center it — no scroll needed.
+        justifyContent: "center",
         minHeight: nodes.length <= 2 ? 200 : 280,
         padding: "var(--s5)",
       }}
@@ -287,12 +286,17 @@ function AgentGraphCanvas({
         <rect width="100%" height="100%" fill="url(#ag-dots)" />
       </svg>
 
+      {/* A viewBox + max-width:100% makes the graph SCALE TO FIT the card width, so all
+          nodes are visible on load (a wide 12-node graph used to overflow-scroll, showing
+          only the first few). It never upscales past its natural size on a small graph. */}
       <svg
         role="img"
         aria-label={`Agent graph with ${nodes.length} nodes and ${edges.length} edges`}
+        viewBox={`0 0 ${w + PAD_X * 2} ${Math.max(h + PAD_TOP + PAD_BOTTOM, 200)}`}
         width={w + PAD_X * 2}
         height={Math.max(h + PAD_TOP + PAD_BOTTOM, 200)}
-        style={{ display: "block", margin: "auto" }}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ display: "block", margin: "auto", maxWidth: "100%", height: "auto" }}
       >
         <defs>
           <marker id="ag-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">

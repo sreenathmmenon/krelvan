@@ -202,10 +202,14 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       .finally(() => setExplaining(false));
   }, [detail?.run.status, explanation, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-diagnose failed / halted runs — failure-reasoning grounded in the ledger.
+  // Auto-diagnose ONLY genuinely FAILED runs. A halted run is NOT a failure — it is paused
+  // waiting for human approval (working as designed), and must show the approval UI, never a
+  // "this failed, retry with a fix" panel. Conflating the two makes the run state contradict
+  // itself ("awaiting approval" + "retry the failure") on a product whose whole pitch is
+  // proving exactly what happened.
   useEffect(() => {
     if (!detail) return;
-    if (detail.run.status !== "failed" && detail.run.status !== "halted") return;
+    if (detail.run.status !== "failed") return;
     if (diagnosis || diagnosing) return;
     setDiagnosing(true);
     setDiagnoseError(null);
@@ -376,8 +380,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       </div>
 
 
-      {/* failure diagnosis — failure-reasoning over the signed ledger (failed/halted only) */}
-      {(diagnosing || diagnosis || diagnoseError) && (run.status === "failed" || run.status === "halted") && (
+      {/* failure diagnosis — failure-reasoning over the signed ledger. FAILED runs only: a
+          halted run is awaiting approval, not a failure, and must not show a red retry panel. */}
+      {(diagnosing || diagnosis || diagnoseError) && run.status === "failed" && (
         <div style={{
           marginTop: "var(--s5)",
           border: "1px solid var(--danger-ring)", borderLeft: "3px solid var(--danger)",

@@ -113,7 +113,7 @@ function HeroStatStrip() {
       </div>
       <span className="hero-statwrap__claim">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d={UI.check} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-        100% offline-verifiable
+        proofs verify offline
       </span>
     </div>
   );
@@ -537,7 +537,7 @@ export default function Landing() {
               </h1>
               <p className="dark-ink-soft body-lg" style={{ maxWidth: "48ch", marginBottom: "var(--s5)" }}>
                 Every step an agent takes is signed into a tamper-evident ledger. Export any run
-                and re-check the math yourself, offline — no server, no trust in us:
+                and re-check the math yourself, offline — no server, no trust in us.
               </p>
               {/* the falsifiable hero gesture — a runnable command, not a promise */}
               <div className="hero-verify-cmd" aria-label="Run npx krelvan verify to re-check a signed run offline">
