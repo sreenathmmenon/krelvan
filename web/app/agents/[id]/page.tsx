@@ -830,9 +830,17 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                     ? `${liveRunCount} running`
                     : lastRun?.status === "completed" ? "last run finished"
                     : lastRun?.status === "failed" ? "last run failed"
+                    : lastRun?.status === "halted" ? "last run paused for approval"
                     : lastRun ? lastRun.status
                     : "never run"}
                 </span>
+                {/* A "paused" agent is not stuck — its last run is waiting for a person.
+                    Say so and link straight to the approval, so there's an obvious next step. */}
+                {lastRun?.status === "halted" && (
+                  <Link href={`/runs/${lastRun.runId}`} className="small" style={{ color: "var(--brand)", fontWeight: 600 }}>
+                    Review &amp; approve →
+                  </Link>
+                )}
               </div>
               {/* Clamp the long intent to 2 lines so it doesn't dominate the hero as a wall of
                   text; the full text is one click away and always in the manifest below. */}

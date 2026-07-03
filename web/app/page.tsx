@@ -568,7 +568,7 @@ export default function Landing() {
                 <span className="hero-trustline__sep" aria-hidden="true">·</span>
                 <span className="hero-trustline__item">7 LLM providers</span>
                 <span className="hero-trustline__sep" aria-hidden="true">·</span>
-                <span className="hero-trustline__item">runs on your own box</span>
+                <span className="hero-trustline__item">runs on your own machine</span>
               </div>
               <HeroStatStrip />
             </div>

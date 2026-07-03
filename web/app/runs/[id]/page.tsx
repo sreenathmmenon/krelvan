@@ -924,11 +924,20 @@ function OutputPanel({ projection, manifest, run }: {
             <span className="micro">Decisions &amp; values</span>
           </div>
           <div style={{ padding: "var(--s4)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
-            {nodeOrder.filter(nid => scalarsByNode[nid]?.length).map(nodeId => (
+            {nodeOrder.filter(nid => scalarsByNode[nid]?.length).map(nodeId => {
+              // A node reporting ok=false with an error on an otherwise-completed run is not a
+              // silent failure — it's a step that couldn't do its job, so the graph took its
+              // fail-safe branch (e.g. retrieve failed → escalate to a human). Say so, so the
+              // pair "ok false / error …" doesn't read as a broken-but-completed contradiction.
+              const pairs = scalarsByNode[nodeId];
+              const okFalse = pairs.some(p => p.key === "ok" && /^false$/i.test(p.value));
+              const hasError = pairs.some(p => p.key === "error" && p.value.trim());
+              const failSafed = okFalse && hasError;
+              return (
               <div key={nodeId}>
                 <div className="mono" style={{ fontSize: 11, fontWeight: 600, color: "var(--brand)", marginBottom: "var(--s2)" }}>{nodeId}</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)" }}>
-                  {scalarsByNode[nodeId].map(({ key, value }) => (
+                  {pairs.map(({ key, value }) => (
                     <div key={key} style={{
                       display: "flex", gap: "var(--s2)", alignItems: "baseline",
                       background: "var(--surface-sunken)", borderRadius: "var(--r-sm)", padding: "var(--s1) var(--s3)",
@@ -939,8 +948,13 @@ function OutputPanel({ projection, manifest, run }: {
                     </div>
                   ))}
                 </div>
+                {failSafed && (
+                  <p className="small" style={{ margin: "var(--s2) 0 0", color: "var(--ink-muted)", lineHeight: 1.5 }}>
+                    This step couldn&apos;t complete, so the agent took its fail-safe branch (e.g. escalate to a human) — the run finished safely, not silently.
+                  </p>
+                )}
               </div>
-            ))}
+            );})}
           </div>
         </div>
       )}

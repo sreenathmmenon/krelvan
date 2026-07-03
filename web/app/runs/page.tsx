@@ -315,9 +315,18 @@ export default function RunsPage() {
                         </Link>
                       </td>
                       <td>
-                        <span className={`badge ${badgeCls}`}>
-                          {r.status === "running" && <span className="dot" />}
-                          {STATUS_LABEL[r.status]}
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap" }}>
+                          <span className={`badge ${badgeCls}`}>
+                            {r.status === "running" && <span className="dot" />}
+                            {STATUS_LABEL[r.status]}
+                          </span>
+                          {/* A paused run needs a person — give a direct action from the list,
+                              not just a status label you have to open the run to act on. */}
+                          {r.status === "halted" && (
+                            <Link href={`/runs/${r.runId}`} className="small" style={{ color: "var(--brand)", fontWeight: 600, whiteSpace: "nowrap" }} onClick={e => e.stopPropagation()}>
+                              Review →
+                            </Link>
+                          )}
                         </span>
                       </td>
                       <td>
