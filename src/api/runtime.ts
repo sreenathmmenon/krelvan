@@ -1812,8 +1812,11 @@ export class KrelvanRuntime {
       });
       log.info({ runId, status: result.status, spentCents: result.projection.budget.runSpentCents }, "run finished");
     } catch (err) {
-      log.error({ err, runId }, "run threw unexpectedly");
-      this.runRegistry.update(runId, { status: "failed", finishedAt: Date.now(), reason: (err as Error).message });
+      // An Error object serializes to {} in structured logs — extract message + stack so a
+      // production failure is actually diagnosable (this is what obscured a real run failure).
+      const e = err as Error;
+      log.error({ runId, error: e?.message ?? String(err), stack: e?.stack }, "run threw unexpectedly");
+      this.runRegistry.update(runId, { status: "failed", finishedAt: Date.now(), reason: e?.message ?? "unexpected error" });
     }
   }
 }

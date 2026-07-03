@@ -19,6 +19,7 @@
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
 import { getLogger } from "../observability/logger.js";
 import { assertPublicUrl } from "./ssrf-guard.js";
+import { safeFetch } from "./safe-fetch.js";
 
 const log = getLogger("http-post");
 
@@ -114,7 +115,7 @@ export const httpPostCapability: CapabilityPlugin = {
 
     let resp: Response;
     try {
-      resp = await fetch(rawUrl.trim(), {
+      resp = await safeFetch(rawUrl.trim(), {
         method: "POST",
         headers: { "content-type": contentType, ...extraHeaders },
         body: bodyStr,

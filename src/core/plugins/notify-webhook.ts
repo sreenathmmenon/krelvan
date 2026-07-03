@@ -19,6 +19,7 @@
 import { createHmac } from "node:crypto";
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
 import { assertPublicUrl } from "./ssrf-guard.js";
+import { safeFetch } from "./safe-fetch.js";
 import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("notify-webhook");
@@ -107,7 +108,7 @@ export const notifyWebhookCapability: CapabilityPlugin = {
 
     let resp: Response;
     try {
-      resp = await fetch(rawUrl.trim(), {
+      resp = await safeFetch(rawUrl.trim(), {
         method: "POST",
         headers,
         body,

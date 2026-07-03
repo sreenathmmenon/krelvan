@@ -18,6 +18,7 @@
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
 import { getLogger } from "../observability/logger.js";
 import { assertPublicUrl } from "./ssrf-guard.js";
+import { safeFetch } from "./safe-fetch.js";
 
 const log = getLogger("http-get");
 
@@ -103,7 +104,9 @@ export const httpGetCapability: CapabilityPlugin = {
       };
     }
 
-    // ── SSRF guard (resolves DNS, checks the actual IPs) ──────────────────────
+    // Note: the SSRF check is applied by safeFetch on EVERY hop (including this first url),
+    // so a public host that 302-redirects to a private/metadata IP is blocked mid-chain, not
+    // just on the initial URL. A quick pre-check here keeps the error attribution clean.
     try {
       await assertPublicUrl(parsed.toString());
     } catch (e) {
@@ -140,7 +143,7 @@ export const httpGetCapability: CapabilityPlugin = {
 
     let resp: Response;
     try {
-      resp = await fetch(rawUrl.trim(), {
+      resp = await safeFetch(rawUrl.trim(), {
         method: "GET",
         headers: { ...extraHeaders },
         signal: controller.signal,
