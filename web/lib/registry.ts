@@ -496,6 +496,315 @@ export const REGISTRY_SEED: CatalogEntry[] = [
       }
   },
   {
+    "name": "order-to-refund",
+    "title": "Order to Refund",
+    "oneLiner": "Handle a refund request under your policy — issue the refund and notify the customer only with your explicit approval, since it moves real money.",
+    "category": "Templates",
+    "sideEffect": "message-human",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "slack-bot-token",
+      "resend-api-key"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+              "version": 1,
+              "name": "Order to Refund",
+              "intent": "Handle a refund request: pull the order, decide if it qualifies under policy, and — only with my explicit approval — issue the refund and email the customer. The refund MOVES REAL MONEY, so it is the hardest-gated step in the system. Every decision and the money action are signed, replayable records.",
+              "entry": "lookup",
+              "runBudgetCents": 300,
+              "maxNodeVisits": 2,
+              "seed": {
+                      "order_id": "A-2481",
+                      "order_record": "Order A-2481: $129.00, placed 9 days ago, status DELIVERED 2 days ago. Customer reports item arrived damaged, photo attached.",
+                      "refund_policy": "Full refund within 30 days if item is defective or damaged on arrival. No refund for buyer's remorse after delivery.",
+                      "customer_email": "sam@example.com"
+              },
+              "nodes": [
+                      {
+                              "id": "lookup",
+                              "role": "Read the 'order_record' for order_id. Extract the hard facts a refund decision needs. This is a read. Output object keys: amount_cents (INTEGER), days_since_order (INTEGER), status, issue (one phrase for the reported problem).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "think",
+                                              "sideEffect": "read",
+                                              "budgetCents": 40
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "decide",
+                              "role": "Decide the refund under 'refund_policy' using the lookup facts. Be strict — only approve what the policy allows. Output object keys: verdict (exactly 'refund' or 'deny'), amount_cents (INTEGER to refund, 0 if deny), reason (one sentence citing the policy).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "think",
+                                              "sideEffect": "read",
+                                              "budgetCents": 40
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "refund",
+                              "role": "Issue the refund for decide.amount_cents. This MOVES REAL MONEY and is IRREVERSIBLE, so the run PAUSES here and shows me the exact amount and order to approve, edit, or reject. No money moves without my explicit go-ahead. Output object key: refund_id.",
+                              "autonomy": "suggest",
+                              "capabilities": [
+                                      {
+                                              "name": "http_post",
+                                              "sideEffect": "write-irreversible",
+                                              "budgetCents": 3
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "notify",
+                              "role": "Email the customer (customer_email) that the refund was issued, with the amount and order id. This messages a human. Output object key: sent.",
+                              "autonomy": "suggest",
+                              "capabilities": [
+                                      {
+                                              "name": "email_send",
+                                              "sideEffect": "message-human",
+                                              "budgetCents": 5
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "deny_note",
+                              "role": "The refund does not qualify under policy. Draft a clear, kind explanation for the customer using decide.reason — no money moves. Output object key: message.",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "compose",
+                                              "sideEffect": "read",
+                                              "budgetCents": 40
+                                      }
+                              ]
+                      }
+              ],
+              "edges": [
+                      {
+                              "from": "lookup",
+                              "to": "decide"
+                      },
+                      {
+                              "from": "decide",
+                              "to": "refund",
+                              "when": {
+                                      "op": "eq",
+                                      "left": {
+                                              "op": "var",
+                                              "key": "decide.verdict"
+                                      },
+                                      "right": {
+                                              "op": "const",
+                                              "value": "refund"
+                                      }
+                              }
+                      },
+                      {
+                              "from": "decide",
+                              "to": "deny_note",
+                              "when": {
+                                      "op": "eq",
+                                      "left": {
+                                              "op": "var",
+                                              "key": "decide.verdict"
+                                      },
+                                      "right": {
+                                              "op": "const",
+                                              "value": "deny"
+                                      }
+                              }
+                      },
+                      {
+                              "from": "refund",
+                              "to": "notify"
+                      }
+              ],
+              "customize": {
+                      "agent_name": {
+                              "label": "Agent name",
+                              "type": "text",
+                              "rename": true,
+                              "default": "Order to Refund"
+                      },
+                      "refund_policy": {
+                              "label": "Your refund policy",
+                              "type": "text",
+                              "seedKey": "refund_policy",
+                              "default": "Full refund within 30 days if item is defective or damaged on arrival. No refund for buyer's remorse after delivery."
+                      }
+              }
+      }
+  },
+  {
+    "name": "lead-to-outreach",
+    "title": "Lead to Outreach",
+    "oneLiner": "Enrich an inbound lead, qualify it against your ICP, write it to the CRM, and send outreach — with your approval before the email goes out.",
+    "category": "Templates",
+    "sideEffect": "message-human",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "slack-bot-token",
+      "resend-api-key"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+              "version": 1,
+              "name": "Lead to Outreach",
+              "intent": "Take an inbound lead, enrich it, decide if it fits our ICP, write it into the CRM, and send a personalized outreach email — pausing for my approval before the email actually goes out. A full sales-agent chain across enrichment, CRM, and email. Every step is a signed, replayable record.",
+              "entry": "enrich",
+              "runBudgetCents": 300,
+              "maxNodeVisits": 2,
+              "seed": {
+                      "lead_name": "Dana Rivera",
+                      "lead_company": "Northwind Labs",
+                      "lead_email": "dana@northwind.example",
+                      "icp": "self-hosting technical teams of 10-200 building internal AI tooling",
+                      "crm_url": "https://example.com/crm/contacts"
+              },
+              "nodes": [
+                      {
+                              "id": "enrich",
+                              "role": "Enrich the inbound lead. Read lead_name / lead_company / lead_email and gather public signal about the company (size, sector, tech). This is a read. Output object keys: company_facts (a tight list of the relevant facts), enriched (true if any signal was found).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "http_get",
+                                              "sideEffect": "read",
+                                              "budgetCents": 5
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "qualify",
+                              "role": "Score the lead against our 'icp'. Using the enrich 'company_facts', decide fit. Output object keys: fit (an INTEGER 0-100), reason (one sentence grounded in the facts), qualified (true only if fit >= 60).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "think",
+                                              "sideEffect": "read",
+                                              "budgetCents": 40
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "crm_write",
+                              "role": "Write the qualified lead into the CRM (a POST to crm_url) with the enriched facts and the fit score. This is a reversible write (a CRM record you can edit/delete), so it runs without a gate. Output object key: contact_id.",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "http_post",
+                                              "sideEffect": "write-reversible",
+                                              "budgetCents": 3
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "draft",
+                              "role": "Write a personalized outreach email to the lead grounded ONLY in the enriched facts and the qualify reason — warm, specific, one clear next step, no invented claims. Output object keys: subject, body (plain text, 3-5 sentences).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "compose",
+                                              "sideEffect": "read",
+                                              "budgetCents": 40
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "send",
+                              "role": "Send the drafted email (draft.subject / draft.body) to lead_email. This MESSAGES A HUMAN, so the run PAUSES here and shows me the exact email to approve, edit, or reject before a single message leaves. Nothing is sent without my explicit go-ahead. Output object key: sent.",
+                              "autonomy": "suggest",
+                              "capabilities": [
+                                      {
+                                              "name": "email_send",
+                                              "sideEffect": "message-human",
+                                              "budgetCents": 5
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "done_unqualified",
+                              "role": "The lead did not meet the ICP threshold. Note why (use qualify.reason) — no CRM write, no email sent. One line for the record.",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "compose",
+                                              "sideEffect": "read",
+                                              "budgetCents": 40
+                                      }
+                              ]
+                      }
+              ],
+              "edges": [
+                      {
+                              "from": "enrich",
+                              "to": "qualify"
+                      },
+                      {
+                              "from": "qualify",
+                              "to": "crm_write",
+                              "when": {
+                                      "op": "eq",
+                                      "left": {
+                                              "op": "var",
+                                              "key": "qualify.qualified"
+                                      },
+                                      "right": {
+                                              "op": "const",
+                                              "value": true
+                                      }
+                              }
+                      },
+                      {
+                              "from": "qualify",
+                              "to": "done_unqualified",
+                              "when": {
+                                      "op": "ne",
+                                      "left": {
+                                              "op": "var",
+                                              "key": "qualify.qualified"
+                                      },
+                                      "right": {
+                                              "op": "const",
+                                              "value": true
+                                      }
+                              }
+                      },
+                      {
+                              "from": "crm_write",
+                              "to": "draft"
+                      },
+                      {
+                              "from": "draft",
+                              "to": "send"
+                      }
+              ],
+              "customize": {
+                      "agent_name": {
+                              "label": "Agent name",
+                              "type": "text",
+                              "rename": true,
+                              "default": "Lead to Outreach"
+                      },
+                      "icp": {
+                              "label": "Your ideal-customer profile",
+                              "type": "text",
+                              "seedKey": "icp",
+                              "default": "self-hosting technical teams of 10-200 building internal AI tooling"
+                      }
+              }
+      }
+  },
+  {
     "name": "publish-and-deploy",
     "title": "Publish & Deploy",
     "oneLiner": "Research a topic, write a post, commit it, and ship a production deploy — with your approval before it goes live.",
