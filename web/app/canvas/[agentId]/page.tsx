@@ -224,7 +224,8 @@ type PanAction =
   | { type: "pan_move"; x: number; y: number }
   | { type: "pan_end" }
   | { type: "zoom_step"; factor: number; cx: number; cy: number }
-  | { type: "reset"; containerW: number; containerH: number; contentW: number; contentH: number };
+  | { type: "reset"; containerW: number; containerH: number; contentW: number; contentH: number }
+  | { type: "initial"; containerW: number; containerH: number; contentW: number; contentH: number };
 
 // The graph is drawn at translate(60,60) inside the SVG, so a node's local origin
 // is (60 + p.x, 60 + p.y). Keep this in sync with the <g transform> in the render.
@@ -233,7 +234,15 @@ const GRAPH_OFFSET = 60;
 // FIT_MIN_SCALE — a very wide graph (e.g. the 12-node support agent) stays legible and
 // pannable rather than shrinking to an unreadable ~37%. Capped at 1 (never zoom past 100%).
 const FIT_PAD = 56;
-const FIT_MIN_SCALE = 0.5;
+// "Fit" (the Fit button / key 0) may drop to this legible floor for a wide graph, then
+// pan the overflow — it never shrinks to an illegible ~37% where labels vanish.
+const FIT_MIN_SCALE = 0.62;
+// INITIAL mount view: open at a READABLE zoom that shows the entry node + first steps,
+// NOT a cram-everything fit. A deep graph is meant to be panned (like any node editor);
+// the user presses Fit to see all of it. Capped at 1 so we never over-zoom a tiny graph.
+const INITIAL_SCALE = 0.8;
+// Gutter from the top-left corner to the entry node on initial open.
+const INITIAL_MARGIN = 72;
 
 interface PanState extends ViewXform { dragging: boolean; lastX: number; lastY: number; }
 
@@ -281,6 +290,28 @@ function panReducer(state: PanState, action: PanAction): PanState {
       // Center the content (drawn at GRAPH_OFFSET inside the SVG) in the viewport.
       const tx = (cw - gw * s) / 2 - GRAPH_OFFSET * s;
       const ty = (ch - gh * s) / 2 - GRAPH_OFFSET * s;
+      return { ...state, scale: s, tx, ty, dragging: false, lastX: 0, lastY: 0 };
+    }
+    case "initial": {
+      // First-open view: readable zoom, anchored on the entry (top-left of the graph)
+      // with the first steps visible. If the whole graph is small enough to fit at the
+      // readable scale, we center it; otherwise we pin the entry near the top-left and
+      // let the user pan/Fit to reveal the rest.
+      const cw = action.containerW, ch = action.containerH;
+      const gw = action.contentW || 1, gh = action.contentH || 1;
+      // The scale that WOULD fit everything; if the graph already fits comfortably at the
+      // readable zoom, don't zoom in past it either.
+      const fitScale = Math.min((cw - 2 * FIT_PAD) / gw, (ch - 2 * FIT_PAD) / gh);
+      const s = Math.min(1, INITIAL_SCALE, Math.max(FIT_MIN_SCALE, fitScale));
+      const fitsWide = gw * s <= cw - 2 * FIT_PAD;
+      const fitsTall = gh * s <= ch - 2 * FIT_PAD;
+      // Content origin (node local 0,0) lives at GRAPH_OFFSET inside the SVG.
+      const tx = fitsWide
+        ? (cw - gw * s) / 2 - GRAPH_OFFSET * s
+        : INITIAL_MARGIN - GRAPH_OFFSET * s;
+      const ty = fitsTall
+        ? (ch - gh * s) / 2 - GRAPH_OFFSET * s
+        : INITIAL_MARGIN - GRAPH_OFFSET * s;
       return { ...state, scale: s, tx, ty, dragging: false, lastX: 0, lastY: 0 };
     }
   }
@@ -414,6 +445,8 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   const [startingRun, setStartingRun] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Live container size — drives the minimap's viewport rectangle.
+  const [viewport, setViewport] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
 
   const [pan, dispatchPan] = useReducer(panReducer, {
     tx: 80, ty: 80, scale: 1, dragging: false, lastX: 0, lastY: 0,
@@ -516,15 +549,18 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   useEffect(() => {
     if (!containerRef.current || !manifest) return;
     const el = containerRef.current;
+    // Initial mount opens at a READABLE zoom anchored on the entry + first steps
+    // (not a cram-everything fit). Fit-all is one press of the Fit button / key 0 away.
     const fit = () => {
       const { width, height } = el.getBoundingClientRect();
       if (width > 0 && height > 0) {
-        dispatchPan({ type: "reset", containerW: width, containerH: height, contentW, contentH });
+        setViewport({ w: width, h: height });
+        dispatchPan({ type: "initial", containerW: width, containerH: height, contentW, contentH });
       }
     };
     fit();
-    // Re-fit once the container has its real size (mobile/late layout) and on resize,
-    // so the graph always centers/scales to the viewport instead of sitting tiny in a corner.
+    // Re-run once the container has its real size (mobile/late layout) and on resize,
+    // so the graph always opens legible instead of sitting tiny in a corner.
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
@@ -725,6 +761,9 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
           box-shadow: var(--shadow-sm); cursor: pointer;
         }
         .canvas-scrubber:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; }
+        /* Keyboard-shortcut hints are the lowest-priority toolbar item: drop them
+           before anything meaningful can clip at the right edge on a tight toolbar. */
+        @media (max-width: 1180px) { .canvas-kbd-hints { display: none !important; } }
       `}</style>
 
       {/* ── Toolbar (scrolls horizontally if it can't fit, e.g. on phones) ──── */}
@@ -886,9 +925,13 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
           </button>
         </div>
 
-        <span className="micro" style={{ flexShrink: 0, display: "flex", gap: "var(--s2)", textTransform: "none", letterSpacing: 0 }}>
-          {[["0","fit"],["+/−","zoom"],["Tab","mode"],["Esc","desel"]].map(([k, l]) => (
-            <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: "var(--s1)" }}>
+        {/* Keyboard-shortcut hints — informational only, so they are the first thing
+            to drop when the toolbar gets tight. This guarantees the zoom %, +/−, and
+            Fit controls (to their left) are never the item pushed off / clipped at
+            the right edge. Hidden below a width where they'd otherwise cut mid-word. */}
+        <span className="micro canvas-kbd-hints" style={{ flexShrink: 0, display: "flex", gap: "var(--s2)", textTransform: "none", letterSpacing: 0 }}>
+          {[["0","fit"],["+/−","zoom"],["Tab","mode"],["Esc","deselect"]].map(([k, l]) => (
+            <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: "var(--s1)", whiteSpace: "nowrap" }}>
               <kbd>{k}</kbd>
               {l}
             </span>
@@ -1134,6 +1177,26 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
             </div>
           )}
 
+          {/* ── Minimap (bottom-right) — whole-graph outline + viewport box, so
+                orientation stays easy when panned/zoomed on a deep graph. ──────── */}
+          {manifest && contentW > 0 && contentH > 0 && viewport.w > 0 && (
+            <MiniMap
+              positions={positions}
+              contentW={contentW}
+              contentH={contentH}
+              pan={pan}
+              viewportW={viewport.w}
+              viewportH={viewport.h}
+              entry={manifest.entry}
+              runningNode={runningNode}
+              bottomOffset={
+                // Stack above the ledger badge (bottom ~16px, or 72 while scrubbing;
+                // badge is ~32px tall + gap) so they never overlap in the corner.
+                isScrubbing ? 72 + 40 : events.length > 0 ? 16 + 40 : undefined
+              }
+            />
+          )}
+
           {/* ── Ledger badge ───────────────────────────────────────────── */}
           {events.length > 0 && (
             <div className="small" style={{
@@ -1243,23 +1306,47 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showH
   const border    = status === "running" ? "var(--live)" : status === "done" ? "var(--ok)" : (isSelected || isEntry) ? "var(--brand)" : "var(--line)";
   const bw        = status !== "idle" || isSelected || isEntry ? 2 : 1;
 
-  // Capability pills — up to 3, then "+N". Each pill: teal SVG glyph + label.
-  const caps = node.capabilities.slice(0, 3);
-  const extra = node.capabilities.length - caps.length;
+  // Capability pills. Each pill carries the teal capability GLYPH plus the FULL
+  // capability name — never a truncated stub like "rag.sea…". We greedily place as
+  // many full-name pills as fit inside the node's pill lane; any capabilities that
+  // don't fit collapse into a single "+N" counter pill. So a pill is always either a
+  // legible full name or an honest count — the two failure modes the review flagged
+  // (clipped stubs) can't occur.
   const PILL_H = 18;
-  const PILL_PAD_X = 6;
-  const GLYPH = 11;
+  const PILL_PAD_X = 7;
+  const PILL_GAP = 5;
+  const GLYPH = 12;          // rendered glyph box inside the pill
+  const CHAR_W = 6.2;        // approx advance of the 11px label font
   const PILL_START_Y = y + 62;
+  const LANE_X = x + 10;
+  const LANE_W = w - 20;     // usable width for the whole pill row
 
-  let pillX = x + 10;
+  // Width a full-name pill needs (glyph + gap + text + horizontal padding).
+  const pillWidthFor = (name: string) =>
+    PILL_PAD_X + GLYPH + 4 + name.length * CHAR_W + PILL_PAD_X;
+
   const pills: Array<{ name: string | null; text: string; px: number; pw: number }> = [];
-  for (const c of caps) {
-    const label = c.name.length > 8 ? c.name.slice(0, 7) + "…" : c.name;
-    const pw = Math.min(78, label.length * 6.5 + GLYPH + PILL_PAD_X * 2 + 3);
-    pills.push({ name: c.name, text: label, px: pillX, pw });
-    pillX += pw + 5;
+  let pillX = LANE_X;
+  let placed = 0;
+  const total = node.capabilities.length;
+  for (let i = 0; i < total; i++) {
+    const c = node.capabilities[i]!;
+    const remaining = total - i;
+    // Reserve room for a "+N" counter if more caps remain than just this one.
+    const counterW = remaining > 1 ? 30 + PILL_GAP : 0;
+    const pw = pillWidthFor(c.name);
+    if (pillX + pw + counterW - LANE_X > LANE_W && placed > 0) break;
+    // A single very long name still gets its own pill (clipped by the lane, but it is
+    // the ONLY pill so nothing else is lost) — never chop it into a stub.
+    pills.push({ name: c.name, text: c.name, px: pillX, pw: Math.min(pw, LANE_W) });
+    pillX += Math.min(pw, LANE_W) + PILL_GAP;
+    placed++;
   }
-  if (extra > 0) pills.push({ name: null, text: `+${extra}`, px: pillX, pw: 26 });
+  const extra = total - placed;
+  if (extra > 0) {
+    const cw = 22 + String(extra).length * CHAR_W;
+    pills.push({ name: null, text: `+${extra}`, px: pillX, pw: cw });
+  }
 
   // Clean, short node title — the node id humanized (snake_case → "Snake case"),
   // NOT a truncated slice of the long role/prompt. The full role stays available on
@@ -1327,12 +1414,27 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showH
         </clipPath>
       </defs>
       <g clipPath={`url(#clip-pills-${node.id})`}>
-        {pills.map(({ text, px, pw }, i) => (
+        {pills.map(({ name, text, px, pw }, i) => (
           <g key={i}>
             <rect x={px} y={PILL_START_Y} width={pw} height={PILL_H} rx={5}
               fill="var(--canvas)" stroke="var(--line)" strokeWidth={1} />
-            <text x={px + PILL_PAD_X} y={PILL_START_Y + PILL_H / 2} fontSize={11}
-              fill="var(--ink-soft)" dominantBaseline="middle">{text}</text>
+            {name ? (
+              <>
+                {/* teal capability glyph, vertically centered in the pill */}
+                <CapGlyphSvg
+                  name={name}
+                  x={px + PILL_PAD_X}
+                  y={PILL_START_Y + (PILL_H - GLYPH) / 2}
+                  size={GLYPH}
+                />
+                <text x={px + PILL_PAD_X + GLYPH + 4} y={PILL_START_Y + PILL_H / 2} fontSize={11}
+                  fill="var(--ink-soft)" dominantBaseline="middle">{text}</text>
+              </>
+            ) : (
+              // "+N" counter pill — brand-tinted so it reads as "more", not a capability.
+              <text x={px + pw / 2} y={PILL_START_Y + PILL_H / 2} fontSize={11} fontWeight={600}
+                fill="var(--brand)" textAnchor="middle" dominantBaseline="middle">{text}</text>
+            )}
           </g>
         ))}
       </g>
@@ -1376,6 +1478,84 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showH
         )}
       </g>
     </g>
+  );
+}
+
+// ── Minimap ───────────────────────────────────────────────────────────────────
+// A small (~140×90) overview: every node as a dot/box in graph space, plus a
+// rectangle marking the slice of the graph the main viewport currently shows.
+// Read-only orientation aid — no interaction, keeps the canvas the source of truth.
+
+function MiniMap({
+  positions, contentW, contentH, pan, viewportW, viewportH, entry, runningNode, bottomOffset,
+}: {
+  positions: Map<string, NodePos>;
+  contentW: number;
+  contentH: number;
+  pan: ViewXform;
+  viewportW: number;
+  viewportH: number;
+  entry: string;
+  runningNode: string | null;
+  bottomOffset?: number;
+}) {
+  const MAP_W = 140, MAP_H = 90, PAD = 6;
+  // Scale graph-space → minimap-space, preserving aspect, fitting inside padding.
+  const k = Math.min((MAP_W - 2 * PAD) / contentW, (MAP_H - 2 * PAD) / contentH);
+  const offX = (MAP_W - contentW * k) / 2;
+  const offY = (MAP_H - contentH * k) / 2;
+
+  // Viewport rectangle in graph coords: invert the main transform. A screen point
+  // (sx,sy) maps to graph point ((sx - tx)/scale - GRAPH_OFFSET). Corners at (0,0)
+  // and (viewportW, viewportH).
+  const gx0 = (0 - pan.tx) / pan.scale - GRAPH_OFFSET;
+  const gy0 = (0 - pan.ty) / pan.scale - GRAPH_OFFSET;
+  const gx1 = (viewportW - pan.tx) / pan.scale - GRAPH_OFFSET;
+  const gy1 = (viewportH - pan.ty) / pan.scale - GRAPH_OFFSET;
+
+  const rx = offX + gx0 * k;
+  const ry = offY + gy0 * k;
+  const rw = (gx1 - gx0) * k;
+  const rh = (gy1 - gy0) * k;
+
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        position: "absolute",
+        bottom: bottomOffset != null ? bottomOffset : "var(--s4)",
+        right: "var(--s4)", zIndex: 6,
+        width: MAP_W, height: MAP_H,
+        background: "rgba(248,247,244,.9)", backdropFilter: "blur(8px)",
+        border: "1px solid var(--line)", borderRadius: "var(--r)",
+        boxShadow: "var(--shadow-sm)", overflow: "hidden",
+        pointerEvents: "none",
+        transition: "bottom var(--t-standard)",
+      }}
+    >
+      <svg width={MAP_W} height={MAP_H} style={{ display: "block" }}>
+        {[...positions.entries()].map(([id, p]) => {
+          const isEntry = id === entry;
+          const isRunning = id === runningNode;
+          return (
+            <rect key={id}
+              x={offX + p.x * k} y={offY + p.y * k}
+              width={Math.max(2, p.w * k)} height={Math.max(2, p.h * k)}
+              rx={1.5}
+              fill={isRunning ? "var(--live)" : isEntry ? "var(--brand)" : "var(--line-strong)"}
+              opacity={isRunning ? 0.9 : isEntry ? 0.85 : 0.5}
+            />
+          );
+        })}
+        {/* viewport rectangle */}
+        <rect
+          x={rx} y={ry} width={rw} height={rh}
+          fill="var(--brand)" fillOpacity={0.1}
+          stroke="var(--brand)" strokeWidth={1.25}
+          rx={2}
+        />
+      </svg>
+    </div>
   );
 }
 
