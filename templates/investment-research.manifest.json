@@ -4,7 +4,7 @@
   "intent": "Answer a research question about a fund or holding with verifiable rigor: a supervisor decomposes the question, specialist workers pull the data record and the qualitative context, an analyst synthesizes an answer, an LLM judge validates it against the evidence and forces a retry if it is weak or ungrounded, and a human approves before the answer is delivered. Every step is a signed, replayable record.",
   "entry": "intake",
   "runBudgetCents": 900,
-  "maxNodeVisits": 4,
+  "maxNodeVisits": 6,
   "seed": {
     "question": "Why was the Meridian Small-Cap Value fund placed on the watchlist this quarter?",
     "fund_record": "Fund: Meridian Small-Cap Value (MSCVX). Status: WATCHLIST (placed this quarter). Trailing 1yr return: -8.2% vs benchmark Russell 2000 Value -2.1% (underperformed by 6.1pts). 3yr return: +4.1% vs benchmark +6.8%. Net expense ratio: 1.12%. AUM: $1.8B (down from $2.6B a year ago; net outflows $0.7B). Portfolio manager: lead PM departed 7 months ago; co-PM now lead. Style drift flag: RAISED (growth-leaning names entered a value mandate). Liquidity: 9% in names taking >5 days to exit.",
@@ -62,7 +62,7 @@
     },
     {
       "id": "judge",
-      "role": "You are the JUDGE / reflection node — the evaluator step that catches a weak or ungrounded answer before it reaches a human and forces a retry. Critically evaluate the analyst's 'answer' (in the CURRENT DATA TO ANALYZE section) against the evidence: Is it grounded ONLY in the facts and context provided (no hallucinated numbers)? Does it correctly separate the TRIGGER from symptoms? Does it directly answer the 'question'? Be strict. Output object keys: verdict (exactly 'pass' if the answer is grounded, correct, and complete, or 'revise' if it hallucinates, confuses trigger/symptom, or is incomplete), critique (one sentence on why), score (INTEGER 0-100 confidence the answer is correct).",
+      "role": "You are the JUDGE / reflection node — the evaluator step that catches a weak or ungrounded answer before it reaches a human and forces a retry. Critically evaluate the analyst's 'answer' (in the CURRENT DATA TO ANALYZE section) against the evidence: Is it grounded ONLY in the facts and context provided (no hallucinated numbers)? Does it correctly separate the TRIGGER from symptoms? Does it directly answer the 'question'? Be strict. Output object keys: verdict (exactly 'pass' if the answer is grounded, correct, and complete, or 'revise' if it hallucinates, confuses trigger/symptom, or is incomplete), critique (one sentence on why), score (INTEGER 0-100 confidence the answer is correct). IMPORTANT: this is a bounded loop. If the answer has ALREADY been revised once (a prior critique exists in the data), you MUST output verdict 'pass' now — do not request another revision. Only request 'revise' on the FIRST evaluation.",
       "autonomy": "full",
       "capabilities": [
         {

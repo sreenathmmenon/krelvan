@@ -14,7 +14,7 @@
 // On restart, active schedules are re-armed automatically.
 
 import { join } from "node:path";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
 import { getLogger } from "../core/observability/logger.js";
 
 const log = getLogger("scheduler");
@@ -160,7 +160,11 @@ export class ScheduleRegistry {
   }
 
   private persist(): void {
-    writeFileSync(this.path, JSON.stringify([...this.schedules.values()], null, 2));
+    // atomic (temp+rename) so a crash mid-write can't truncate the file and silently drop every
+    // armed schedule on next boot. Same durability guarantee as the agent/run/secret stores.
+    const tmp = `${this.path}.tmp`;
+    writeFileSync(tmp, JSON.stringify([...this.schedules.values()], null, 2), "utf8");
+    renameSync(tmp, this.path);
   }
 
   create(record: ScheduleRecord): void {

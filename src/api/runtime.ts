@@ -410,7 +410,9 @@ export class CapabilityRegistry {
   }
 
   private persist(): void {
-    writeFileSync(this.path, JSON.stringify([...this.caps.values()], null, 2));
+    // atomic (temp+rename) so a crash / kill -9 / full disk mid-write can't truncate the file
+    // and silently wipe every installed capability on next boot (matches AgentRegistry/RunRegistry).
+    atomicWrite(this.path, JSON.stringify([...this.caps.values()], null, 2));
   }
 
   installFromYaml(name: string, yaml: string): { ok: true; capability: CapabilityRecord } | { ok: false; error: string } {
@@ -1282,8 +1284,8 @@ export class KrelvanRuntime {
     const episodicPath = join(memDir, `${agentId}.episodes.json`);
 
     try { mkdirSync(memDir, { recursive: true }); } catch { /* already exists */ }
-    writeFileSync(semanticPath, "[]");
-    writeFileSync(episodicPath, "[]");
+    atomicWrite(semanticPath, "[]");
+    atomicWrite(episodicPath, "[]");
     // Reset soul back to a clean version-0 bootstrap so it is never null after clear
     const agent = this.agentRegistry.get(agentId);
     saveSoul(agentId, {
@@ -1430,10 +1432,14 @@ export class KrelvanRuntime {
     const agent = this.agentRegistry.get(run.agentId);
     if (!agent) return { ok: false, error: "agent not found for this run" };
 
-    // Append AwaitResolved — this unblocks the kernel's halt check
-    let appendResult: Awaited<ReturnType<typeof this.store.append>>;
+    // Hold the guard across the ENTIRE resolution — the ledger append AND the status flip AND
+    // the executeRun launch. Releasing it right after the append (in a finally) opened a window
+    // where a second racing approve could pass the status check, append a second AwaitResolved,
+    // and launch a SECOND concurrent executeRun for the same run (a double-execution / double-
+    // charge window). Guard released only once everything is committed or a terminal state is set.
     try {
-      appendResult = await this.store.append(
+      // Append AwaitResolved — this unblocks the kernel's halt check
+      const appendResult = await this.store.append(
         {
           type: "AwaitResolved",
           scope: { tenantId: "default", runId, branchId: "main" },
@@ -1442,31 +1448,32 @@ export class KrelvanRuntime {
         } satisfies NewEvent<Record<string, unknown>>,
         { ts: this.now(), signer: this.ownerSigner },
       );
+      if (!appendResult.ok) {
+        return { ok: false, error: `ledger append failed: ${appendResult.error.message}` };
+      }
+
+      log.info({ runId, correlationId, decision }, "approval resolved");
+
+      if (decision === "deny") {
+        // On deny: the kernel will see AwaitResolved(deny) → the engine's approve()
+        // callback returns false for the already-park'd call, so the run halts again
+        // at the same node. Mark it failed so it doesn't stay halted.
+        this.runRegistry.update(runId, {
+          status: "failed",
+          finishedAt: this.now(),
+          reason: `approval denied for correlation ${correlationId}`,
+        });
+        return { ok: true };
+      }
+
+      // On approve: flip status to running (the atomic gate — a racing resolve now fails the
+      // status !== "halted" check) THEN resume execution asynchronously.
+      this.runRegistry.update(runId, { status: "running" });
+      void this.executeRun(runId, agent.signed.manifest, {}, run.agentId);
+      return { ok: true };
     } finally {
       this._resolvingApprovals.delete(runId);
     }
-    if (!appendResult.ok) {
-      return { ok: false, error: `ledger append failed: ${appendResult.error.message}` };
-    }
-
-    log.info({ runId, correlationId, decision }, "approval resolved");
-
-    if (decision === "deny") {
-      // On deny: the kernel will see AwaitResolved(deny) → the engine's approve()
-      // callback returns false for the already-park'd call, so the run halts again
-      // at the same node. Mark it failed so it doesn't stay halted.
-      this.runRegistry.update(runId, {
-        status: "failed",
-        finishedAt: this.now(),
-        reason: `approval denied for correlation ${correlationId}`,
-      });
-      return { ok: true };
-    }
-
-    // On approve: resume execution asynchronously
-    this.runRegistry.update(runId, { status: "running" });
-    void this.executeRun(runId, agent.signed.manifest, {}, run.agentId);
-    return { ok: true };
   }
 
   // ── Secrets (customer-managed) ─────────────────────────────────────────────

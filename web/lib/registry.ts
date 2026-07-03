@@ -97,7 +97,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
               "intent": "Resolve a customer support ticket the trustworthy way, with the best ideas from the leading support platforms — but made provable. Triage intent/sentiment/language at the door; screen distress and out-of-scope topics straight to a human; load this customer's own isolated history; ground every answer in the knowledge base and ask a clarifying question rather than guess on weak grounding; have a judge verify the draft before it goes out; resolve or escalate fail-closed; gate any consequential action behind human approval; hand off escalations with a pre-investigated case file (never a cold transfer); capture a tamper-evident QA score on every resolution; and log knowledge-base gaps for follow-up. Every step is a signed, replayable ledger record — so every resolution, escalation, and QA score is provable.",
               "entry": "triage",
               "runBudgetCents": 1000,
-              "maxNodeVisits": 5,
+              "maxNodeVisits": 6,
               "seed": {
                       "from_address": "customer@example.com",
                       "subject": "Question about my order",
@@ -172,7 +172,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                       },
                       {
                               "id": "judge",
-                              "role": "You are the QUALITY JUDGE — the evaluator that checks the drafted 'reply' (in the CURRENT DATA TO ANALYZE section) BEFORE it can reach the customer. Check, strictly: (a) grounded — every factual claim supported by the retrieved context, no invented policy/price/date; (b) complete — answers every ask in 'triage.asks'; (c) safe — no consequential promise (refund/guarantee/specific date) that has not been approved; (d) tone — appropriate for 'triage.sentiment', not dismissive; (e) language — written in 'triage.language'. Output object keys: verdict (exactly 'pass' if grounded, complete, safe, well-toned, and in the right language, or 'revise' otherwise), critique (one specific sentence on what to fix, or 'none'), score (INTEGER 0-100 confidence the reply is correct and safe).",
+                              "role": "You are the QUALITY JUDGE — the evaluator that checks the drafted 'reply' (in the CURRENT DATA TO ANALYZE section) BEFORE it can reach the customer. Check, strictly: (a) grounded — every factual claim supported by the retrieved context, no invented policy/price/date; (b) complete — answers every ask in 'triage.asks'; (c) safe — no consequential promise (refund/guarantee/specific date) that has not been approved; (d) tone — appropriate for 'triage.sentiment', not dismissive; (e) language — written in 'triage.language'. Output object keys: verdict (exactly 'pass' if grounded, complete, safe, well-toned, and in the right language, or 'revise' otherwise), critique (one specific sentence on what to fix, or 'none'), score (INTEGER 0-100 confidence the reply is correct and safe). IMPORTANT: this is a bounded loop. If the answer has ALREADY been revised once (a prior critique exists in the data), you MUST output verdict 'pass' now — do not request another revision. Only request 'revise' on the FIRST evaluation.",
                               "autonomy": "full",
                               "capabilities": [
                                       {

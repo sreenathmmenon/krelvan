@@ -98,27 +98,34 @@ export const webSearchCapability: CapabilityPlugin = {
       );
 
       if (!outcome.ok) {
+        // A Brave error (401 revoked key, 429 rate-limit, 5xx) must NOT hard-fail the run.
+        // Every other outbound plugin returns a soft failure the graph can branch on; do the
+        // same — degrade to LLM synthesis if a provider is configured, else a soft {ok:false}.
         const msg = outcome.status === 0
           ? `network error: ${outcome.rawBody}`
           : `Brave Search API ${outcome.status}: ${outcome.rawBody}`;
-        throw new Error(`web_search: ${msg}`);
+        log.warn({ nodeId: call.nodeId, query, err: msg }, "web_search: Brave failed — degrading");
+        if (!hasLlm) {
+          return { output: { ok: false, error: `web_search: ${msg}`, results: [], query, count: 0 }, claimedCostCents: 0 };
+        }
+        // fall through to Path 2 (LLM synthesis) below
+      } else {
+        const json = (await outcome.resp.json()) as BraveResponse;
+        const raw = json.web?.results ?? [];
+
+        const results = raw.slice(0, 5).map((r) => ({
+          title: r.title ?? "",
+          url: r.url ?? "",
+          snippet: r.description ?? "",
+        }));
+
+        log.info({ nodeId: call.nodeId, count: results.length, query }, "web_search: brave results received");
+
+        return {
+          output: { results, query, count: results.length },
+          claimedCostCents: 8,
+        };
       }
-
-      const json = (await outcome.resp.json()) as BraveResponse;
-      const raw = json.web?.results ?? [];
-
-      const results = raw.slice(0, 5).map((r) => ({
-        title: r.title ?? "",
-        url: r.url ?? "",
-        snippet: r.description ?? "",
-      }));
-
-      log.info({ nodeId: call.nodeId, count: results.length, query }, "web_search: brave results received");
-
-      return {
-        output: { results, query, count: results.length },
-        claimedCostCents: 8,
-      };
     }
 
     // ── Path 2: LLM synthesis via configured provider ────────────────────────
