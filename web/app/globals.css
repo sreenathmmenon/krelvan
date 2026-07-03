@@ -2039,6 +2039,13 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 .proveit__cmd { display: flex; align-items: center; gap: var(--s2); }
 .proveit__dollar { color: var(--dark-brand-bright); font-weight: 700; flex-shrink: 0; }
 .proveit__cmd code { color: var(--dark-ink-soft); word-break: break-all; }
+/* Mobile: don't break a filename mid-word ("sample-run.krproo|f.json" reads as a bug on a
+   precision tool). Let the command line scroll horizontally inside the terminal instead. */
+@media (max-width: 560px) {
+  .proveit__cmd { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .proveit__cmd code { word-break: normal; white-space: pre; }
+  .proveit__termbody { font-size: 11.5px; }
+}
 .proveit__cmd code.dim { color: var(--dark-ink-muted); }
 .proveit__out { margin: var(--s2) 0 0; color: var(--dark-ink-muted); white-space: pre-wrap; font-family: var(--font-mono); }
 .proveit__ok { color: var(--dark-brand-bright); font-weight: 600; }

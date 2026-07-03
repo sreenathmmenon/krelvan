@@ -445,7 +445,7 @@ function CatalogCard({ e, installed, autonomy, onInstalled, flash, onDetail, onC
   async function quickInstall(ev: React.MouseEvent) {
     ev.stopPropagation();
     // A customizable template opens the "make it mine" form first: name it, point it at
-    // your knowledge base, set the tone — the WordPress-style clone flow.
+    // your knowledge base, set the tone — the clone-and-customize flow.
     if (customizable) { onCustomize(e); return; }
     // Community items + anything needing secrets go through the detail drawer (review first).
     if (e.tier === "community" || (e.secretRefs && e.secretRefs.length > 0) || e.kind === "pack") { onDetail(e); return; }
@@ -680,7 +680,7 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
 
 // ── "Add your own" drawer (manual install: YAML / JS / MCP) ───────────────────
 /**
- * The "make it mine" form — the WordPress-style clone flow. Renders the template's
+ * The "make it mine" form — the clone-and-customize flow. Renders the template's
  * declared customize knobs (rename / knowledge base / tone / autonomy toggles) as a
  * small form, prefilled with the template's defaults, and creates the builder's own
  * named agent via POST /api/templates/customize. Empty text fields are omitted so the

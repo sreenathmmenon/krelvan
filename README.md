@@ -129,8 +129,8 @@ The hard infrastructure is solved so you only build domain logic:
 Ship agentic solutions for clients in days, not months.
 
 ### The marketplace (a Git repo, not a hosted site)
-The "Discover" tab loads a registry `index.json` from a Git repo — the WordPress-style
-model. Anyone publishes a capability by opening a PR. Entries are real and installable:
+The "Discover" tab loads a registry `index.json` from a Git repo — an open, PR-based
+model anyone can publish to. Entries are real and installable:
 
 - **YAML capabilities** — wrap any HTTP API (no code).
 - **MCP connectors** — connect GitHub, Slack, a filesystem, or any MCP server; every tool it exposes becomes a capability.
