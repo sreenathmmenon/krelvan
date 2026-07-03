@@ -103,6 +103,7 @@ export default function Dashboard() {
   const [agents, setAgents] = useState<AgentRecord[]>(cachedAgents ?? []);
   const [runs, setRuns] = useState<RunRecord[]>(getCached<RunRecord[]>("runs") ?? []);
   const [loading, setLoading] = useState(!cachedAgents);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [composeFocused, setComposeFocused] = useState(false);
   // runId → summary text (null = generating, string = done, key absent = not started)
   const [summaries, setSummaries] = useState<Record<string, string | null>>({});
@@ -113,7 +114,10 @@ export default function Dashboard() {
       const [a, r] = await Promise.all([listAgents(), listRuns()]);
       setAgents(a);
       setRuns(r);
-    } catch { /* API not yet reachable */ }
+      setLoadErr(null);
+    } catch (e) {
+      setLoadErr((e as Error).message || "could not reach Krelvan");
+    }
     finally { setLoading(false); }
   }, []);
 
@@ -186,9 +190,12 @@ export default function Dashboard() {
   const recentRuns = runs.slice(0, 6);
   const hasData = agents.length > 0 || runs.length > 0;
   const latestCompleted = runs.find(r => r.status === "completed") ?? null;
+  // A failed first load with no cached data — show error+retry, NOT the brand-new-user
+  // hero (which would falsely tell a returning user they have no agents).
+  const loadFailed = !loading && !hasData && loadErr !== null;
   // empty = launch-day shape. We only commit to it once the first load resolves so
-  // we never flash the hero before real data arrives.
-  const isEmpty = !loading && !hasData;
+  // we never flash the hero before real data arrives — and never on a load failure.
+  const isEmpty = !loading && !hasData && !loadErr;
 
   // 6-bucket run-volume sparkline: count runs per day over the last 6 days,
   // normalized to bar heights. Purely derived from `runs` — no new data path.
@@ -297,9 +304,22 @@ export default function Dashboard() {
         />
       )}
 
+      {/* ── load failure (no cached data) — never fall through to the empty hero,
+          which would falsely tell a returning user they have no agents ── */}
+      {loadFailed && (
+        <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s8)" }}>
+          <div className="state-error" style={{ textAlign: "center", padding: "var(--s7)", justifyContent: "center" }}>
+            <div>
+              <p style={{ margin: "0 0 var(--s3)" }}>Couldn&apos;t load your workspace — {loadErr}</p>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setLoading(true); void reload(); }}>Retry</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── page header (populated / loading only — hidden on empty so the empty
           state opens with the dark hero + composer as the very first element) ── */}
-      {!isEmpty && (
+      {!isEmpty && !loadFailed && (
         <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--line)" }}>
           <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s6)" }}>
             <div className="workspace-head">

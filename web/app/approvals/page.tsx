@@ -165,12 +165,15 @@ function ApprovalCard({
   onResolve: (correlationId: string, runId: string, decision: "approve" | "deny") => Promise<void>;
 }) {
   const [resolving, setResolving] = useState<"approve" | "deny" | null>(null);
+  // Two-step confirm for the irreversible "Deny" (kills the run). Mirrors the delete-confirm pattern.
+  const [confirmDeny, setConfirmDeny] = useState(false);
   const label = CAP_LABEL[approval.capability] ?? approval.capability;
   const risk = riskFor(approval.capability);
   const accent = RISK_ACCENT[risk.level];
 
   async function handle(decision: "approve" | "deny") {
     setResolving(decision);
+    setConfirmDeny(false);
     try {
       await onResolve(approval.correlationId, approval.runId, decision);
     } finally {
@@ -244,12 +247,19 @@ function ApprovalCard({
           View run →
         </a>
         <button
-          className="btn btn-sm btn-ghost approval-resolve"
+          className={confirmDeny ? "btn btn-sm btn-danger approval-resolve" : "btn btn-sm btn-ghost approval-resolve"}
           title="Stop the run here — nothing is sent"
           disabled={resolving !== null}
-          onClick={() => void handle("deny")}
+          onClick={() => {
+            if (!confirmDeny) {
+              setConfirmDeny(true);
+              setTimeout(() => setConfirmDeny(false), 3000);
+              return;
+            }
+            void handle("deny");
+          }}
         >
-          {resolving === "deny" ? "Denying…" : (
+          {resolving === "deny" ? "Denying…" : confirmDeny ? "Deny — this stops the run" : (
             <>
               <svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none">
                 <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />

@@ -501,6 +501,8 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [startingRun, setStartingRun] = useState(false);
+  // Toast for a failed run action so the click isn't silently lost (button just resets).
+  const [actionErr, setActionErr] = useState<string | null>(null);
   const sseRef = useRef<EventSource | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   // Live container size — drives the minimap's viewport rectangle.
@@ -725,6 +727,8 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
 
   // ── Pointer handlers for pan ──────────────────────────────────────────────
 
+  function flashErr(msg: string) { setActionErr(msg); setTimeout(() => setActionErr(null), 4000); }
+
   function onWheel(e: React.WheelEvent) {
     e.preventDefault();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -767,6 +771,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--canvas)", opacity: mounted ? 1 : 0, transition: "opacity 200ms ease" }}>
+      {actionErr && <div role="alert" className="toast toast-error">{actionErr}</div>}
       {/* Mobile: the interactive canvas is a desktop-class tool. On phones we show a
           clean notice + quick actions instead of a cramped, unusable graph. */}
       <div className="canvas-mobile-note">
@@ -987,6 +992,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
                   setSelectedRunId(r.runId);
                   setMode("live");
                 })
+                .catch(e => flashErr(`Couldn't start the run — ${(e as Error).message}`))
                 .finally(() => setStartingRun(false));
             }}
             disabled={startingRun || detail?.run.status === "running"}
@@ -1291,6 +1297,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
                       setSelectedRunId(r.runId);
                       setMode("live");
                     })
+                    .catch(e => flashErr(`Couldn't start the run — ${(e as Error).message}`))
                     .finally(() => setStartingRun(false));
                 }}
               >

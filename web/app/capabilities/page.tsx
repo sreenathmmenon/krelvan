@@ -991,6 +991,9 @@ function CapCard({ cap, autonomy, onChange, flash, onView }: { cap: CapabilityRe
 
 // ── Connectors (MCP) subsection ──────────────────────────────────────────────
 function Connectors({ servers, onChange, flash, onAdd }: { servers: McpServerRecord[]; onChange: () => Promise<void>; flash: (m: string) => void; onAdd: () => void }) {
+  // Two-step confirm (keyed by server name) — Disconnect tears down the server AND every
+  // capability it exposes, so it's irreversible. Mirrors the delete-confirm pattern.
+  const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
   return (
     <Section title="Connectors" sub="MCP servers — each exposes its tools as capabilities">
       <div style={{ display: "flex", gap: "var(--s2)", marginBottom: "var(--s4)", flexWrap: "wrap", alignItems: "center" }}>
@@ -1020,7 +1023,23 @@ function Connectors({ servers, onChange, flash, onAdd }: { servers: McpServerRec
                 {s.tools.length > 6 && <span className="small muted">+{s.tools.length - 6}</span>}
               </div>
               <div className="cap-card__foot">
-                <button className="btn btn-danger btn-sm" onClick={() => { void disconnectMcpServer(s.name).then(onChange).then(() => flash(`${s.name} disconnected`)); }}>Disconnect</button>
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={() => {
+                    if (confirmDisconnect !== s.name) {
+                      setConfirmDisconnect(s.name);
+                      setTimeout(() => setConfirmDisconnect(prev => prev === s.name ? null : prev), 3000);
+                      return;
+                    }
+                    setConfirmDisconnect(null);
+                    void disconnectMcpServer(s.name)
+                      .then(onChange)
+                      .then(() => flash(`${s.name} disconnected`))
+                      .catch(e => flash(`Couldn't disconnect ${s.name} — ${(e as Error).message}`));
+                  }}
+                >
+                  {confirmDisconnect === s.name ? "Disconnect — removes its tools" : "Disconnect"}
+                </button>
               </div>
             </div>
           ))}

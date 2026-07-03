@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { listRuns, autoSummarizeRuns, timeAgo, getCached, type RunRecord } from "../../lib/api";
 
 type Filter = "all" | "running" | "halted" | "completed" | "failed";
@@ -96,6 +97,7 @@ function RunIdCell({ runId }: { runId: string }) {
 }
 
 export default function RunsPage() {
+  const router = useRouter();
   // Seed from the session cache so a revisit paints instantly (no spinner flash);
   // the effect still refetches in the background to stay fresh.
   const cachedRuns = getCached<RunRecord[]>("runs");
@@ -289,7 +291,11 @@ export default function RunsPage() {
                     <tr
                       key={r.runId}
                       className="is-clickable"
-                      onClick={() => { window.location.href = `/runs/${r.runId}`; }}
+                      role="link"
+                      tabIndex={0}
+                      aria-label={`Open run ${r.manifestName}`}
+                      onClick={() => router.push(`/runs/${r.runId}`)}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); router.push(`/runs/${r.runId}`); } }}
                     >
                       <td style={{ paddingRight: 0 }}>
                         <span className={`status-dot ${STATUS_DOT_CLASS[r.status]}`} aria-hidden="true" />

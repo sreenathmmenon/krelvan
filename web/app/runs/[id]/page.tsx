@@ -79,6 +79,13 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [startingRun, setStartingRun] = useState(false);
   const [events, setEvents]     = useState<LedgerEvent[]>([]);
   const [loading, setLoading]   = useState(true);
+  // A transient load failure (network / 5xx) vs. a real 404. On the former we show
+  // error+retry, NOT the "run could not be found" state.
+  const [loadErr, setLoadErr]   = useState<string | null>(null);
+  // Toast for a failed primary action (run again / deny) so the click isn't silently lost.
+  const [actionErr, setActionErr] = useState<string | null>(null);
+  // Two-step confirm for the irreversible "Deny" action (mirrors the delete confirm pattern).
+  const [confirmDeny, setConfirmDeny] = useState<string | null>(null);
   const [tab, setTab]           = useState<"output" | "canvas" | "timeline" | "state" | "explain">("output");
   const [explanation, setExplanation] = useState<RunExplanation | null>(null);
   const [explaining, setExplaining] = useState(false);
@@ -101,11 +108,19 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     finally { setVerifying(false); }
   }
 
-  // Initial load — fetch run + events once
+  // Initial load — fetch run + events once. A 404 is a genuine "not found" (falls
+  // through to detail === null); any other failure is transient → error+retry.
   const load = useCallback(async () => {
-    const [d, evs] = await Promise.all([getRun(id), getRunEvents(id)]);
-    setDetail(d);
-    setEvents(evs);
+    try {
+      const [d, evs] = await Promise.all([getRun(id), getRunEvents(id)]);
+      setDetail(d);
+      setEvents(evs);
+      setLoadErr(null);
+    } catch (e) {
+      const msg = (e as Error).message || "";
+      if (/\b404\b|not found/i.test(msg)) setLoadErr(null);
+      else setLoadErr(msg || "could not reach Krelvan");
+    }
   }, [id]);
 
   // Load pending approvals for this run
@@ -252,8 +267,11 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     }
   }
 
+  function flashErr(msg: string) { setActionErr(msg); setTimeout(() => setActionErr(null), 4000); }
+
   async function handleResolveApproval(correlationId: string, decision: "approve" | "deny") {
     setResolving(correlationId);
+    setConfirmDeny(null);
     try {
       await resolveApproval(correlationId, id, decision);
       setApprovals(prev => prev.filter(a => a.correlationId !== correlationId));
@@ -263,6 +281,8 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       } else {
         setDetail(prev => prev ? { ...prev, run: { ...prev.run, status: "failed" } } : prev);
       }
+    } catch (e) {
+      flashErr(`Couldn't ${decision === "approve" ? "approve" : "deny"} — ${(e as Error).message}`);
     } finally {
       setResolving(null);
     }
@@ -274,7 +294,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     try {
       const newRun = await startRun(detail.run.agentId);
       router.push(`/runs/${newRun.runId}`);
-    } catch { /* ignore */ } finally {
+    } catch (e) {
+      flashErr(`Couldn't start the run — ${(e as Error).message}`);
+    } finally {
       setStartingRun(false);
     }
   }
@@ -288,6 +310,19 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       <div className="state-loading" style={{ flexDirection: "column", gap: "var(--s3)" }}>
         <span className="spinner" aria-hidden="true" />
         <span>Loading run…</span>
+      </div>
+    </div>
+  );
+  if (!detail && loadErr) return (
+    <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
+      <div style={{ marginBottom: "var(--s6)" }}>
+        <Link href="/runs" className="small" style={{ color: "var(--ink-muted)" }}>← All runs</Link>
+      </div>
+      <div className="state-error" style={{ textAlign: "center", padding: "var(--s7)", justifyContent: "center" }}>
+        <div>
+          <p style={{ margin: "0 0 var(--s3)" }}>Couldn&apos;t load this run — {loadErr}</p>
+          <button className="btn btn-secondary btn-sm" onClick={() => { setLoading(true); void load().finally(() => setLoading(false)); }}>Retry</button>
+        </div>
       </div>
     </div>
   );
@@ -318,6 +353,8 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
 
   return (
     <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
+
+      {actionErr && <div role="alert" className="toast toast-error">{actionErr}</div>}
 
       {/* HITL approval banner — STICKY so the decision the operator must make stays in view
           even on a long run-detail page (it must never scroll out of reach below the fold). */}
@@ -357,12 +394,19 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               </div>
               <div style={{ display: "flex", gap: "var(--s2)", flexShrink: 0 }}>
                 <button
-                  className="btn btn-sm btn-ghost"
+                  className={confirmDeny === a.correlationId ? "btn btn-sm btn-danger" : "btn btn-sm btn-ghost"}
                   title="Stop the run here — nothing is sent"
                   disabled={resolving !== null}
-                  onClick={() => void handleResolveApproval(a.correlationId, "deny")}
+                  onClick={() => {
+                    if (confirmDeny !== a.correlationId) {
+                      setConfirmDeny(a.correlationId);
+                      setTimeout(() => setConfirmDeny(prev => prev === a.correlationId ? null : prev), 3000);
+                      return;
+                    }
+                    void handleResolveApproval(a.correlationId, "deny");
+                  }}
                 >
-                  {resolving === a.correlationId ? "…" : <><Glyph kind="cross" size={14} /> Deny</>}
+                  {resolving === a.correlationId ? "…" : confirmDeny === a.correlationId ? <>Deny — this stops the run</> : <><Glyph kind="cross" size={14} /> Deny</>}
                 </button>
                 <button
                   className="btn btn-primary btn-sm"
@@ -517,7 +561,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           </div>
           <div className="run-seal__actions">
             <a
-              href={`/proxy/api/runs/${id}/export`}
+              href={`${API_BASE}/api/runs/${id}/export`}
               download
               className="run-seal__cta run-seal__cta--primary"
               title={verification.nonRepudiable
@@ -636,7 +680,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               </div>
               <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center", flexShrink: 0 }}>
                 <a
-                  href={`/proxy/api/runs/${id}/export`}
+                  href={`${API_BASE}/api/runs/${id}/export`}
                   download
                   className="btn btn-sm btn-secondary"
                   style={{ textDecoration: "none" }}

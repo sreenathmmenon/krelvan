@@ -710,32 +710,49 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
   const [intentOpen, setIntentOpen] = useState(false);
   const [schedules, setSchedules] = useState<ScheduleRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  // Transient load failure (network / 5xx) vs. a real 404. On the former we show
+  // error+retry, NOT the "agent isn't here" state.
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  // Toast for a failed primary action (run now) so the click isn't silently lost.
+  const [actionErr, setActionErr] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [tab, setTab] = useState<"graph" | "runs" | "schedules" | "trigger" | "memory">("graph");
   const [running, setRunning] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  function flashErr(msg: string) { setActionErr(msg); setTimeout(() => setActionErr(null), 4000); }
+
   const load = useCallback(async () => {
-    const [a, r, s] = await Promise.all([
-      getAgent(id),
-      getAgentRuns(id),
-      listSchedules(),
-    ]);
-    setAgent(a);
-    setRuns(r);
-    setSchedules(s);
+    try {
+      const [a, r, s] = await Promise.all([
+        getAgent(id),
+        getAgentRuns(id),
+        listSchedules(),
+      ]);
+      setAgent(a);
+      setRuns(r);
+      setSchedules(s);
+      setLoadErr(null);
+    } catch (e) {
+      const msg = (e as Error).message || "";
+      // A 404 is a genuine "not here" (falls through to agent === null); any other
+      // failure is transient → error+retry.
+      if (/\b404\b|not found/i.test(msg)) setLoadErr(null);
+      else setLoadErr(msg || "could not reach Krelvan");
+    }
   }, [id]);
 
   useEffect(() => {
     void load().finally(() => setLoading(false));
-    // Poll if any runs are live
+    // Poll for live updates. A single failed tick is tolerated (skip it, keep polling)
+    // — one transient error must not freeze live updates until the page is reloaded.
     const t = setInterval(async () => {
       try {
         const [a, r] = await Promise.all([getAgent(id), getAgentRuns(id)]);
         setAgent(a);
         setRuns(r);
-      } catch { clearInterval(t); }
+      } catch { /* transient — skip this tick, keep polling */ }
     }, 3000);
     return () => clearInterval(t);
   }, [id, load]);
@@ -746,6 +763,8 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
     try {
       await startRun(agent.id);
       await load();
+    } catch (e) {
+      flashErr(`Couldn't start the run — ${(e as Error).message}`);
     } finally {
       setRunning(false);
     }
@@ -769,6 +788,21 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
       <div className="state-loading">
         <span className="spinner" aria-hidden="true" />
         Loading agent…
+      </div>
+    </div>
+  );
+  if (!agent && loadErr) return (
+    <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
+      <nav aria-label="Breadcrumb" style={{ marginBottom: "var(--s5)" }}>
+        <Link href="/dashboard" className="small" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s1)", color: "var(--ink-muted)", textDecoration: "none" }}>
+          <Glyph name="back" size={13} color="currentColor" /> Agents
+        </Link>
+      </nav>
+      <div className="state-error" style={{ textAlign: "center", padding: "var(--s7)", justifyContent: "center" }}>
+        <div>
+          <p style={{ margin: "0 0 var(--s3)" }}>Couldn&apos;t load this agent — {loadErr}</p>
+          <button className="btn btn-secondary btn-sm" onClick={() => { setLoading(true); void load().finally(() => setLoading(false)); }}>Retry</button>
+        </div>
       </div>
     </div>
   );
@@ -809,6 +843,8 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div style={{ minHeight: "100vh" }}>
+
+      {actionErr && <div role="alert" className="toast toast-error">{actionErr}</div>}
 
       {/* ── header bar ── */}
       <div style={{ borderBottom: "1px solid var(--line)", background: "var(--surface)", paddingTop: "var(--s5)", paddingBottom: "var(--s6)" }}>
