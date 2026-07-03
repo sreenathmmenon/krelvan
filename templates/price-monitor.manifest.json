@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Price Monitor",
-  "intent": "Watch a product/price page on a schedule, detect when the price changes versus the last run, and alert me \u2014 keeping a signed record of every check.",
+  "intent": "Watch a product/price page on a schedule, detect when the price changes versus the last run, and alert me — keeping a signed record of every check.",
   "entry": "recall_baseline",
   "runBudgetCents": 200,
   "maxNodeVisits": 2,
@@ -37,7 +37,7 @@
     },
     {
       "id": "analyze",
-      "role": "You are a price-watch analyst. FIRST: if there is an UPSTREAM ERRORS section, OR the CURRENT DATA TO ANALYZE section is empty/missing/contains no price (e.g. an error page, a loading page, or no number that looks like a price), then the page could NOT be read \u2014 set current_price to \"\" (empty), changed to false, and result to a short note like 'Could not read a price from the page'. Do NOT invent or guess a price in that case. OTHERWISE: Read TWO things: (A) the CURRENT DATA TO ANALYZE section contains the freshly-fetched page text \u2014 extract the price the page shows RIGHT NOW from there. (B) the MEMORY section contains 'last_price (from a PREVIOUS run)' \u2014 the OLD price. If MEMORY is absent or has no last_price, this is the FIRST run. Steps: 1) From the CURRENT page text only, extract the current price as a bare number string, e.g. \"39.99\" (no symbols/words). Put it in current_price. 2) Take the previous price from MEMORY's last_price. 3) Set changed to true ONLY if a previous last_price existed AND it is different from the current price; otherwise false. Rules: write prices as quoted strings; NEVER copy the memory value into current_price \u2014 current_price must come from the CURRENT page text; never invent a previous price like 0.00; if no price is visible, current_price is \"\" not a guess. Output object keys: current_price (the price on the page now as a quoted string, or \"\" if none), changed (true/false), result (one sentence).",
+      "role": "You are a price-watch analyst. FIRST: if there is an UPSTREAM ERRORS section, OR the CURRENT DATA TO ANALYZE section is empty/missing/contains no price (e.g. an error page, a loading page, or no number that looks like a price), then the page could NOT be read — set current_price to \"\" (empty), changed to false, and result to a short note like 'Could not read a price from the page'. Do NOT invent or guess a price in that case. OTHERWISE: Read TWO things: (A) the CURRENT DATA TO ANALYZE section contains the freshly-fetched page text — extract the price the page shows RIGHT NOW from there. (B) the MEMORY section contains 'last_price (from a PREVIOUS run)' — the OLD price. If MEMORY is absent or has no last_price, this is the FIRST run. Steps: 1) From the CURRENT page text only, extract the current price as a bare number string, e.g. \"39.99\" (no symbols/words). Put it in current_price. 2) Take the previous price from MEMORY's last_price. 3) Set changed to true ONLY if a previous last_price existed AND it is different from the current price; otherwise false. Rules: write prices as quoted strings; NEVER copy the memory value into current_price — current_price must come from the CURRENT page text; never invent a previous price like 0.00; if no price is visible, current_price is \"\" not a guess. Output object keys: current_price (the price on the page now as a quoted string, or \"\" if none), changed (true/false), result (one sentence).",
       "autonomy": "full",
       "capabilities": [
         {
@@ -146,5 +146,19 @@
   "schedule": {
     "kind": "cron",
     "expr": "0 * * * *"
+  },
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Price Monitor"
+    },
+    "url": {
+      "label": "URL to watch",
+      "type": "text",
+      "seedKey": "url",
+      "default": "https://example.com"
+    }
   }
 }

@@ -187,5 +187,19 @@
       "from": "archive",
       "to": "remember"
     }
-  ]
+  ],
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Inbox Triage & Reply"
+    },
+    "from_address": {
+      "label": "Reply-from address",
+      "type": "text",
+      "seedKey": "from_address",
+      "default": "jordan@acme.com"
+    }
+  }
 }

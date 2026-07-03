@@ -14,9 +14,27 @@
       "role": "Chunk and embed the provided text into the knowledge base.",
       "autonomy": "full",
       "capabilities": [
-        { "name": "rag.ingest", "sideEffect": "write-reversible", "budgetCents": 20 }
+        {
+          "name": "rag.ingest",
+          "sideEffect": "write-reversible",
+          "budgetCents": 20
+        }
       ]
     }
   ],
-  "edges": []
+  "edges": [],
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Knowledge Base Ingest"
+    },
+    "kb": {
+      "label": "Knowledge base",
+      "type": "text",
+      "seedKey": "kb",
+      "default": "support-kb"
+    }
+  }
 }

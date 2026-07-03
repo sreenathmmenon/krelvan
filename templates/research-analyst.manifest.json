@@ -115,5 +115,19 @@
       "from": "compose",
       "to": "remember"
     }
-  ]
+  ],
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Research Analyst"
+    },
+    "topic": {
+      "label": "Topic",
+      "type": "text",
+      "seedKey": "topic",
+      "default": "the current state of small open-weight language models"
+    }
+  }
 }

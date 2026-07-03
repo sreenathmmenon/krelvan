@@ -632,7 +632,11 @@ export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
       >
         {/* header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s2)" }}>
-          <span className="h3 text-truncate" style={{ color: "var(--ink)", flex: 1 }}>
+          <span className="h3" title={agent.signed.manifest.name} style={{
+            color: "var(--ink)", flex: 1, minWidth: 0,
+            display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+            overflow: "hidden", lineHeight: 1.25,
+          }}>
             {agent.signed.manifest.name}
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexShrink: 0 }}>

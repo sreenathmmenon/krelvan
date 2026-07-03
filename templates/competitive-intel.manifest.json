@@ -135,5 +135,19 @@
   "schedule": {
     "kind": "cron",
     "expr": "0 9 * * *"
+  },
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Competitive Intel Monitor"
+    },
+    "webhook_label": {
+      "label": "Webhook label",
+      "type": "text",
+      "seedKey": "webhook_label",
+      "default": "the team intel channel"
+    }
   }
 }

@@ -157,5 +157,13 @@
   "schedule": {
     "kind": "cron",
     "expr": "0 8 * * *"
+  },
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Daily Digest"
+    }
   }
 }

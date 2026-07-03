@@ -136,5 +136,19 @@
   "schedule": {
     "kind": "interval",
     "ms": 3600000
+  },
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Incident Responder"
+    },
+    "status_channel": {
+      "label": "Status channel",
+      "type": "text",
+      "seedKey": "status_channel",
+      "default": "https://hooks.example.com/incidents"
+    }
   }
 }

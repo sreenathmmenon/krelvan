@@ -32,6 +32,27 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
 // The model sometimes returns its explanation wrapped in JSON (e.g.
 // {"agent":"…","explanation":"…"}) or fenced in ```json. Unwrap it to the prose
 // so the flagship "Agent reasoning" surface never shows raw JSON or a dangling brace.
+/** Turn a capability + node role into a plain-language "what will happen" line for the
+ *  approval banner, so an operator approves the ACTION, not the internal capability name. */
+function actionSummary(capability: string, nodeRole?: string): string {
+  const byCap: Record<string, string> = {
+    email_send: "Send an email to the customer",
+    slack_send: "Post a message to Slack",
+    telegram_send: "Send a Telegram message",
+    notify_webhook: "Send a webhook notification",
+    http_post: "Make a write request to an external service",
+    remember: "Write to the agent's memory",
+    identify: "Update the agent's identity",
+  };
+  if (byCap[capability]) return byCap[capability]!;
+  // fall back to the node's human role (first sentence) if the capability isn't a known action
+  if (nodeRole) {
+    const first = nodeRole.split(/[.!?]/)[0]?.trim();
+    if (first) return first.length > 90 ? first.slice(0, 88) + "…" : first;
+  }
+  return `Run the "${capability}" action`;
+}
+
 function cleanExplanation(raw: string): string {
   if (!raw) return raw;
   let s = raw.trim();
@@ -310,14 +331,28 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             <span style={{ fontSize: 13, fontWeight: 600, color: "var(--live)" }}>Run paused — waiting for your approval</span>
           </div>
           {approvals.map(a => (
-            <div key={a.correlationId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "var(--s3)", background: "var(--surface)", padding: "var(--s3) var(--s4)", borderRadius: "var(--r)" }}>
-              <div>
+            <div key={a.correlationId} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "var(--s3)", background: "var(--surface)", padding: "var(--s3) var(--s4)", borderRadius: "var(--r)" }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                {/* Say what will actually happen in plain terms, not the plumbing — an operator
+                    must approve WHAT is sent, not "call slack_send". */}
                 <div style={{ fontSize: 13, fontWeight: 600 }}>
-                  Node <strong>{a.nodeId}</strong> wants to call <strong>{a.capability}</strong>
+                  {actionSummary(a.capability, a.nodeRole)}
                 </div>
-                <div className="micro" style={{ marginTop: "var(--s1)", textTransform: "none", letterSpacing: 0 }}>Approve to proceed · deny to stop the run.</div>
+                {a.preview && a.preview.length > 0 && (
+                  <div style={{ marginTop: "var(--s2)", display: "grid", gap: "var(--s1)", padding: "var(--s2) var(--s3)", background: "var(--canvas)", borderRadius: "var(--r-sm)", border: "1px solid var(--line)" }}>
+                    {a.preview.map((p, i) => (
+                      <div key={i} style={{ display: "flex", gap: "var(--s2)", fontSize: 12.5, lineHeight: 1.5 }}>
+                        <span className="micro" style={{ color: "var(--ink-muted)", flexShrink: 0, minWidth: 64, textTransform: "none", letterSpacing: 0 }}>{p.label}</span>
+                        <span style={{ color: "var(--ink)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{p.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="micro" style={{ marginTop: "var(--s2)", textTransform: "none", letterSpacing: 0, color: "var(--ink-muted)" }}>
+                  via <span className="mono">{a.capability}</span> at node <span className="mono">{a.nodeId}</span> · approve to proceed, deny to stop the run.
+                </div>
               </div>
-              <div style={{ display: "flex", gap: "var(--s2)" }}>
+              <div style={{ display: "flex", gap: "var(--s2)", flexShrink: 0 }}>
                 <button
                   className="btn btn-sm btn-danger"
                   disabled={resolving !== null}

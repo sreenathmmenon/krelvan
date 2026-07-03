@@ -19,9 +19,21 @@
       "role": "Persist the provided goals, principles, energy, and situation as durable semantic facts so the Personal Advisor can recall them. This is set once (and updated whenever your situation changes).",
       "autonomy": "full",
       "capabilities": [
-        { "name": "remember", "sideEffect": "write-reversible", "budgetCents": 10 }
+        {
+          "name": "remember",
+          "sideEffect": "write-reversible",
+          "budgetCents": 10
+        }
       ]
     }
   ],
-  "edges": []
+  "edges": [],
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Set Advisor Context"
+    }
+  }
 }

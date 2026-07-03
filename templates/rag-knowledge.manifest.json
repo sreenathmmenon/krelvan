@@ -152,5 +152,19 @@
       "from": "compose_answer",
       "to": "save"
     }
-  ]
+  ],
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Self-Improving RAG Agent"
+    },
+    "kb": {
+      "label": "Knowledge base",
+      "type": "text",
+      "seedKey": "kb",
+      "default": "company-kb"
+    }
+  }
 }

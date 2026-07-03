@@ -117,5 +117,13 @@
       "from": "compose_thread",
       "to": "queue"
     }
-  ]
+  ],
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Content Repurposer"
+    }
+  }
 }

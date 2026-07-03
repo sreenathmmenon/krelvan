@@ -117,5 +117,19 @@
       "from": "notify",
       "to": "record"
     }
-  ]
+  ],
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Knowledge-Base Builder (Wiki)"
+    },
+    "topic": {
+      "label": "Topic",
+      "type": "text",
+      "seedKey": "topic",
+      "default": "the topic to research and document"
+    }
+  }
 }

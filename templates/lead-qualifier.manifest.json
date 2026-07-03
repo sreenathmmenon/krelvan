@@ -132,5 +132,19 @@
       "from": "outreach",
       "to": "record"
     }
-  ]
+  ],
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Lead Qualifier & Outreach"
+    },
+    "lead_url": {
+      "label": "Lead URL",
+      "type": "text",
+      "seedKey": "lead_url",
+      "default": "https://example.com/company/acme"
+    }
+  }
 }

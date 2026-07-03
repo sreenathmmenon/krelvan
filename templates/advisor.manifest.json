@@ -16,7 +16,11 @@
       "role": "Load my personal context from memory: my goals (recall.goals), my principles (recall.principles), my current energy/capacity (recall.energy), and my situation (recall.situation). Also load recent episodes. On the very first run, before any context has been set, these will be empty.",
       "autonomy": "full",
       "capabilities": [
-        { "name": "recall", "sideEffect": "read", "budgetCents": 5 }
+        {
+          "name": "recall",
+          "sideEffect": "read",
+          "budgetCents": 5
+        }
       ]
     },
     {
@@ -24,7 +28,11 @@
       "role": "You are the user's trusted personal advisor — honest, direct, and concise, not a cheerleader. The user's question is in the 'question' state value. The MEMORY section holds the user's own context: goals, principles, energy, situation (keys like recall.goals, recall.principles, recall.energy, recall.situation). RULES: Use ONLY the goals/principles/situation that appear in the MEMORY section — do NOT invent the user's goals, values, or circumstances. If the MEMORY section is empty or has no goals/principles (this is a first-time use before context is set), give sensible GENERAL advice on the question AND clearly note that adding your goals and principles (via the set-context step) will make future advice far more tailored. When context IS present, ground every point in the user's actual goals and principles, and reference them. Weigh the decision against their stated energy/capacity. Be willing to advise AGAINST something if it conflicts with their principles. Output object keys: result (your advice to the user, 2-4 sentences, direct and grounded), recommendation (a short imperative: what you'd actually do, e.g. 'Decline it' or 'Take it, but cap it at 5 hours/week'), confidence (an integer 0-100 as a quoted string for how confident you are given the available context — LOWER it when context is missing), grounded (true if you used the user's goals/principles from MEMORY, false if you had to give general advice), learning (one short sentence capturing a durable pattern worth remembering about this person or decision for next time, e.g. 'User is protective of deep-work mornings'; or the literal string 'none' if there is nothing new worth remembering).",
       "autonomy": "full",
       "capabilities": [
-        { "name": "think", "sideEffect": "read", "budgetCents": 120 }
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 120
+        }
       ]
     },
     {
@@ -32,12 +40,30 @@
       "role": "Record this consultation to memory: persist the new learning as a durable fact (advisor_learning) and log the episode so there is a signed audit trail of the advice given. If there was no new learning, the episode is still recorded.",
       "autonomy": "full",
       "capabilities": [
-        { "name": "remember", "sideEffect": "write-reversible", "budgetCents": 5 }
+        {
+          "name": "remember",
+          "sideEffect": "write-reversible",
+          "budgetCents": 5
+        }
       ]
     }
   ],
   "edges": [
-    { "from": "recall_context", "to": "advise" },
-    { "from": "advise", "to": "record_learning" }
-  ]
+    {
+      "from": "recall_context",
+      "to": "advise"
+    },
+    {
+      "from": "advise",
+      "to": "record_learning"
+    }
+  ],
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Personal Advisor"
+    }
+  }
 }

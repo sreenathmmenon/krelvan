@@ -130,5 +130,19 @@
       "from": "assemble",
       "to": "record"
     }
-  ]
+  ],
+  "customize": {
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Supervisor (Multi-Agent Delegation)"
+    },
+    "topic": {
+      "label": "Topic",
+      "type": "text",
+      "seedKey": "topic",
+      "default": "the economics of on-device LLM inference"
+    }
+  }
 }
