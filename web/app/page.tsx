@@ -532,13 +532,14 @@ export default function Landing() {
               <p className="micro" style={{ marginBottom: "var(--s4)" }}>Open-source · self-hosted</p>
               <h1
                 className="display dark-ink"
-                style={{ fontSize: "clamp(40px, 5vw, 60px)", lineHeight: 1.05, fontWeight: 600, letterSpacing: "-0.03em", marginBottom: "var(--s5)", textWrap: "balance", maxWidth: "13ch" }}
+                style={{ fontSize: "clamp(38px, 4.8vw, 58px)", lineHeight: 1.06, fontWeight: 600, letterSpacing: "-0.03em", marginBottom: "var(--s5)", textWrap: "balance", maxWidth: "18ch" }}
               >
-                AI agents that <span className="dark-teal" style={{ fontWeight: 800 }}>prove what they did</span>.
+                Write a sentence. <span className="dark-teal" style={{ fontWeight: 800 }}>Get a working agent system.</span>
               </h1>
-              <p className="dark-ink-soft body-lg" style={{ maxWidth: "48ch", marginBottom: "var(--s5)" }}>
-                Every step an agent takes is signed into a tamper-evident ledger. Export any run
-                and re-check the math yourself, offline — no server, no trust in us.
+              <p className="dark-ink-soft body-lg" style={{ maxWidth: "52ch", marginBottom: "var(--s5)" }}>
+                Krelvan turns plain English into real agents that act across your tools and run
+                on your schedule — then an open marketplace to extend what exists, publish what
+                you make, and sell what works.
               </p>
               {/* the falsifiable hero gesture — a runnable command, not a promise */}
               <button type="button" className="hero-verify-cmd" onClick={() => void navigator.clipboard.writeText(VERIFY_CMD).then(() => { setHeroCopied(true); setTimeout(() => setHeroCopied(false), 1600); })}
