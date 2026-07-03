@@ -17,3 +17,4 @@ web/tsconfig.tsbuildinfo
 # local dev scripts (workflow orchestration, screenshot helpers) — not product code
 *.workflow.js
 .shot.mjs
+release/
