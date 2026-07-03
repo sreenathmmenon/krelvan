@@ -357,7 +357,8 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               </div>
               <div style={{ display: "flex", gap: "var(--s2)", flexShrink: 0 }}>
                 <button
-                  className="btn btn-sm btn-danger"
+                  className="btn btn-sm btn-ghost"
+                  title="Stop the run here — nothing is sent"
                   disabled={resolving !== null}
                   onClick={() => void handleResolveApproval(a.correlationId, "deny")}
                 >

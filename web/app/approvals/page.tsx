@@ -244,7 +244,8 @@ function ApprovalCard({
           View run →
         </a>
         <button
-          className="btn btn-sm btn-danger approval-resolve"
+          className="btn btn-sm btn-ghost approval-resolve"
+          title="Stop the run here — nothing is sent"
           disabled={resolving !== null}
           onClick={() => void handle("deny")}
         >
