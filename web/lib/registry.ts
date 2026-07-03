@@ -3190,6 +3190,161 @@ export const REGISTRY_SEED: CatalogEntry[] = [
     "sourceUrl": "https://github.com/ComposioHQ/composio"
   },
   {
+    "name": "gmail",
+    "title": "Gmail",
+    "oneLiner": "Read, search, send, and label email in your Gmail inbox.",
+    "category": "Communication",
+    "sideEffect": "message-human",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "mcp",
+    "mcp": {
+      "name": "gmail",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@gongrzhe/server-gmail-autoauth-mcp"
+      ],
+      "defaultSideEffect": "message-human",
+      "env": {
+        "GMAIL_CREDENTIALS": "{{secret:GMAIL_CREDENTIALS}}"
+      }
+    },
+    "secretRefs": [
+      "GMAIL_CREDENTIALS"
+    ],
+    "sourceUrl": "https://github.com/GongRzhe/Gmail-MCP-Server"
+  },
+  {
+    "name": "google-calendar",
+    "title": "Google Calendar",
+    "oneLiner": "Read events, check availability, and create meetings on your calendar.",
+    "category": "Productivity",
+    "sideEffect": "write-reversible",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "mcp",
+    "mcp": {
+      "name": "google-calendar",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@cocal/google-calendar-mcp"
+      ],
+      "defaultSideEffect": "write-reversible",
+      "env": {
+        "GOOGLE_OAUTH_CREDENTIALS": "{{secret:GOOGLE_OAUTH_CREDENTIALS}}"
+      }
+    },
+    "secretRefs": [
+      "GOOGLE_OAUTH_CREDENTIALS"
+    ],
+    "sourceUrl": "https://github.com/nspady/google-calendar-mcp"
+  },
+  {
+    "name": "google-sheets",
+    "title": "Google Sheets",
+    "oneLiner": "Read and write rows, ranges, and formulas in your Google Sheets.",
+    "category": "Productivity",
+    "sideEffect": "write-reversible",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "mcp",
+    "mcp": {
+      "name": "google-sheets",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@mkummer225/google-sheets-mcp"
+      ],
+      "defaultSideEffect": "write-reversible",
+      "env": {
+        "GOOGLE_OAUTH_CREDENTIALS": "{{secret:GOOGLE_OAUTH_CREDENTIALS}}"
+      }
+    },
+    "secretRefs": [
+      "GOOGLE_OAUTH_CREDENTIALS"
+    ],
+    "sourceUrl": "https://github.com/mkummer225/google-sheets-mcp"
+  },
+  {
+    "name": "google-drive",
+    "title": "Google Drive",
+    "oneLiner": "Search, read, and manage files in your Google Drive.",
+    "category": "Productivity",
+    "sideEffect": "write-reversible",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "mcp",
+    "mcp": {
+      "name": "google-drive",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-gdrive"
+      ],
+      "defaultSideEffect": "write-reversible",
+      "env": {
+        "GOOGLE_OAUTH_CREDENTIALS": "{{secret:GOOGLE_OAUTH_CREDENTIALS}}"
+      }
+    },
+    "secretRefs": [
+      "GOOGLE_OAUTH_CREDENTIALS"
+    ],
+    "sourceUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/gdrive"
+  },
+  {
+    "name": "discord",
+    "title": "Discord",
+    "oneLiner": "Send messages, read channels, and manage a Discord server.",
+    "category": "Communication",
+    "sideEffect": "message-human",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "mcp",
+    "mcp": {
+      "name": "discord",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@barryyip0625/mcp-discord"
+      ],
+      "defaultSideEffect": "message-human",
+      "env": {
+        "DISCORD_TOKEN": "{{secret:DISCORD_TOKEN}}"
+      }
+    },
+    "secretRefs": [
+      "DISCORD_TOKEN"
+    ],
+    "sourceUrl": "https://github.com/barryyip0625/mcp-discord"
+  },
+  {
+    "name": "postgres",
+    "title": "PostgreSQL",
+    "oneLiner": "Query and update your own PostgreSQL / Supabase database.",
+    "category": "Data",
+    "sideEffect": "write-irreversible",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "mcp",
+    "mcp": {
+      "name": "postgres",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "{{secret:DATABASE_URL}}"
+      ],
+      "defaultSideEffect": "write-irreversible",
+      "env": {}
+    },
+    "secretRefs": [
+      "DATABASE_URL"
+    ],
+    "sourceUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/postgres"
+  },
+  {
     "name": "sendgrid.send",
     "title": "SendGrid Email",
     "oneLiner": "Send an email via SendGrid.",
