@@ -1,7 +1,7 @@
 // Krelvan capability registry — the live marketplace source.
 //
 // The "Discover" tab fetches a registry index.json from a GitHub repo (raw URL),
-// configurable via NEXT_PUBLIC_KRELVAN_REGISTRY_URL. This is the "WordPress.org for
+// configurable via NEXT_PUBLIC_KRELVAN_REGISTRY_URL. This is the open marketplace for
 // agents" model: the registry IS a Git repo — anyone publishes by opening a PR that
 // adds an entry to index.json (community) or you curate official entries. No separate
 // marketplace server to host.

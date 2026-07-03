@@ -1,5 +1,5 @@
 /**
- * Krelvan admin authentication — WordPress-style first-run setup + username/password login
+ * Krelvan admin authentication — first-run setup + username/password login
  * with server-side opaque sessions. Built to OWASP 2026 best practice using ONLY Node
  * built-ins (no third-party auth dependency — this removes the supply-chain attack class
  * that hit n8n / Mastra-MCP / LiteLLM).
@@ -14,7 +14,7 @@
  *    token is rotated on login and ALL sessions are killed on password change.
  *  - FIRST-RUN: a console-printed, short-lived setup token gates the setup endpoint (the
  *    PocketBase model) so a stranger reaching a fresh, network-exposed install FIRST cannot
- *    claim admin (the WordPress "claim window" hole).
+ *    claim admin (the first-run "claim window" hole).
  *  - ANTI-ENUMERATION: a missing user still incurs a full scrypt computation against a dummy
  *    hash, so response timing/CPU cannot reveal whether an account exists.
  *

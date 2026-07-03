@@ -1531,9 +1531,10 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   position: relative;
   font-size: 14px; font-weight: 500;
   color: var(--ink-soft); text-decoration: none;
-  padding: var(--s2) 0; white-space: nowrap;
-  transition: color var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease);
+  padding: var(--s2) var(--s3); white-space: nowrap; border-radius: var(--r-sm);
+  transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease);
 }
+.nav-link:hover { color: var(--ink); background: var(--surface-sunken); }
 .nav-link:hover { color: var(--brand); }
 .nav-link[data-active="true"] { color: var(--brand); font-weight: 600; }
 /* icon variant — the four primary product links */

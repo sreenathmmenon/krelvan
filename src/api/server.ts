@@ -518,7 +518,7 @@ async function handleInstallTemplate(req: IncomingMessage, res: ServerResponse, 
 }
 
 /**
- * POST /api/templates/customize — the "make it mine" clone flow (the WordPress model).
+ * POST /api/templates/customize — the "make it mine" clone flow (clone-and-customize).
  * Body: { manifest, settings, capabilities?, secretRefs? }. Bakes the builder's settings
  * (declared by the template's `customize` block — rename / seed values / autonomy toggles)
  * into a FRESH manifest via applyCustomize, then installs it through the normal template

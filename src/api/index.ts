@@ -116,7 +116,7 @@ async function main(): Promise<void> {
   // from abandoned (never-logged-out) sessions. Unref'd: never keeps the process alive.
   setInterval(() => runtime.adminAuth.sweepExpired(), 10 * 60 * 1000).unref();
 
-  // ── First-run admin setup (WordPress-style) ─────────────────────────────────
+  // ── First-run admin setup ─────────────────────────────────
   // If no admin account exists yet, mint a short-lived setup token and print the setup
   // link to the console. This closes the "claim window": a stranger who reaches a fresh,
   // network-exposed install FIRST cannot create the admin without this token.

@@ -1,5 +1,5 @@
 /**
- * applyCustomize — the "make it mine" bake step. These tests prove the WordPress-model
+ * applyCustomize — the "make it mine" bake step. These tests prove the clone-and-customize model
  * clone flow: a builder's settings bake into a fresh valid manifest; anything not
  * declared customizable is rejected (deny-by-default); the template itself is never
  * mutated; and validateManifest rejects malformed customize blocks at load.

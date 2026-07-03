@@ -565,7 +565,7 @@ export class KrelvanRuntime {
   readonly secretStore: SecretStore;
   /** Per-agent webhook trigger tokens (the inbound/interactive path). */
   readonly triggerStore: TriggerStore;
-  /** WordPress-style admin login (first-run setup + username/password + sessions). */
+  /** Admin login (first-run setup + username/password + sessions). */
   readonly adminAuth: AdminAuth;
   readonly scheduler: Scheduler;
   readonly compiler: Compiler;

@@ -199,8 +199,13 @@ export default function NavClient() {
               <KrelvanLogo size={20} markColor="var(--brand)" inkColor="var(--ink)" />
             </Link>
             <nav className="nav-links" aria-label="Main navigation">
+              {/* Real product nav — what a visitor actually wants: build it, browse the
+                  marketplace, read the docs. FAQ + GitHub are secondary, not the whole menu. */}
+              <a href={pathname === "/" ? "#builder" : "/#builder"} className="nav-link">Build an agent</a>
+              <a href={pathname === "/" ? "#marketplace" : "/#marketplace"} className="nav-link">Marketplace</a>
+              <a href="https://github.com/sreenathmmenon/krelvan#readme" className="nav-link" target="_blank" rel="noopener noreferrer">Docs</a>
               <Link href="/faq" className="nav-link" data-active={pathname === "/faq"}>FAQ</Link>
-              <a href="https://github.com/sreenathmmenon/krelvan" className="nav-link" target="_blank" rel="noopener noreferrer">GitHub</a>
+              <a href="https://github.com/sreenathmmenon/krelvan" className="nav-link" target="_blank" rel="noopener noreferrer" aria-label="GitHub repository">GitHub</a>
             </nav>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexShrink: 0 }}>

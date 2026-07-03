@@ -128,7 +128,7 @@ function ExampleGallery() {
   }, []);
   if (items.length === 0) return null;
   return (
-    <section style={{ background: "var(--surface)", borderTop: "1px solid var(--line)" }}>
+    <section id="marketplace" style={{ background: "var(--surface)", borderTop: "1px solid var(--line)", scrollMarginTop: "var(--s6)" }}>
       <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
         <p className="micro" style={{ marginBottom: "var(--s3)" }}>The marketplace is a Git repo — clone it, read it, run it</p>
         <h2 className="display h1" style={{ marginBottom: "var(--s3)", maxWidth: "24ch" }}>
