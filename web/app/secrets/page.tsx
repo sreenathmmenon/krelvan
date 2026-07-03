@@ -269,7 +269,7 @@ function ModelSection() {
 
         <form onSubmit={(e) => void handleSave(e)} style={{ display: "flex", flexDirection: "column", gap: "var(--s5)" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
-            <span className="micro">Provider</span>
+            <span className="label" style={{ marginBottom: 0 }}>Provider</span>
             <select className="input" value={provider} onChange={e => setProvider(e.target.value)} style={{ maxWidth: 280 }}>
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="openai">OpenAI</option>
@@ -279,7 +279,7 @@ function ModelSection() {
 
           {needsKey && (
             <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
-              <span className="micro">API key {ready && status?.source === "in-app" ? "(leave blank to keep current)" : ""}</span>
+              <span className="label" style={{ marginBottom: 0 }}>API key {ready && status?.source === "in-app" ? "(leave blank to keep current)" : ""}</span>
               <input
                 type="password" className="input input-mono" value={apiKey}
                 onChange={e => setApiKey(e.target.value)} autoComplete="off"
@@ -291,13 +291,13 @@ function ModelSection() {
 
           {provider === "ollama" && (
             <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
-              <span className="micro">Base URL (optional)</span>
+              <span className="label" style={{ marginBottom: 0 }}>Base URL (optional)</span>
               <input className="input input-mono" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="http://localhost:11434" />
             </label>
           )}
 
           <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
-            <span className="micro">Model (optional)</span>
+            <span className="label" style={{ marginBottom: 0 }}>Model (optional)</span>
             <input
               className="input input-mono" value={model} onChange={e => setModelName(e.target.value)}
               placeholder={provider === "anthropic" ? "claude-sonnet-4-6" : provider === "ollama" ? "qwen2.5:14b" : "gpt-4o"}
@@ -422,7 +422,7 @@ function SecretForm({ prefillName, lockName, onSave, onError, onClearPrefill }: 
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--s5)" }}>
         <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
-          <span className="micro" style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
+          <span className="label" style={{ marginBottom: 0, display: "flex", alignItems: "center", gap: "var(--s2)" }}>
             Name
             {locked && (
               <span className="micro" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--brand)", textTransform: "none", letterSpacing: 0 }} title="Locked to the exact key this capability expects">
@@ -446,7 +446,7 @@ function SecretForm({ prefillName, lockName, onSave, onError, onClearPrefill }: 
           </span>
         </label>
         <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
-          <span className="micro">Value</span>
+          <span className="label" style={{ marginBottom: 0 }}>Value</span>
           <input
             type="password"
             className="input input-mono"

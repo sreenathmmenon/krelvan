@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 function SetupForm() {
   const router = useRouter();
@@ -53,42 +54,67 @@ function SetupForm() {
   if (!ready) return null;
 
   return (
-    <div style={{ maxWidth: 420, margin: "10vh auto 0", padding: "0 var(--s4)" }}>
-      <div className="card" style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
-        <div>
-          <div className="h2" style={{ color: "var(--ink)" }}>Welcome to Krelvan</div>
-          <p className="small" style={{ color: "var(--ink-soft)", margin: "var(--s2) 0 0", lineHeight: 1.55 }}>
-            Create your admin account. This is a one-time setup.
+    <div className="auth-split">
+      {/* left — branded proof panel (dark), identical identity to the login screen */}
+      <aside className="auth-split__brand">
+        <div className="auth-split__brand-inner">
+          <Link href="/" className="auth-split__wordmark display" aria-label="Krelvan — back to home"
+            style={{ display: "inline-block", textDecoration: "none", color: "var(--dark-brand-bright)" }}>
+            ← Krelvan
+          </Link>
+          <h1 className="auth-split__tagline display">
+            Write a sentence. <span className="dark-teal">Get a working agent system.</span>
+          </h1>
+          <p className="auth-split__sub">
+            Krelvan turns plain English into real agents that act across your tools and run on
+            your schedule — extend them from an open marketplace, publish what you make, and
+            sell what works.
           </p>
+          <div className="auth-split__trust">
+            <span>Open source</span><span aria-hidden="true">·</span>
+            <span>Apache-2.0</span><span aria-hidden="true">·</span>
+            <span>Self-hosted</span>
+          </div>
         </div>
-        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: "var(--s3)" }}>
-          {!tokenFromUrl && (
-            <label className="small" style={{ display: "flex", flexDirection: "column", gap: 4, color: "var(--ink-soft)" }}>
-              Setup token <span style={{ color: "var(--ink-muted)" }}>(printed on the server console)</span>
-              <input className="input input-mono" value={setupToken} onChange={(e) => setSetupToken(e.target.value)} required />
+      </aside>
+
+      {/* right — the first-run setup form */}
+      <main className="auth-split__form">
+        <div className="auth-split__card">
+          <div className="micro" style={{ marginBottom: "var(--s2)" }}>First-run setup</div>
+          <div className="h2" style={{ color: "var(--ink)", marginBottom: "var(--s2)" }}>Create your admin account</div>
+          <p className="small muted" style={{ marginBottom: "var(--s5)", lineHeight: 1.6 }}>
+            This is a one-time step — it sets up the owner account for this Krelvan instance.
+          </p>
+          <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
+            {!tokenFromUrl && (
+              <label className="small" style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink-soft)", fontWeight: 500 }}>
+                Setup token <span style={{ color: "var(--ink-muted)", fontWeight: 400 }}>(printed on the server console)</span>
+                <input className="input input-mono" value={setupToken} onChange={(e) => setSetupToken(e.target.value)} required />
+              </label>
+            )}
+            <label className="small" style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink-soft)", fontWeight: 500 }}>
+              Username
+              <input className="input" value={username} onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username" autoFocus required minLength={3} />
             </label>
-          )}
-          <label className="small" style={{ display: "flex", flexDirection: "column", gap: 4, color: "var(--ink-soft)" }}>
-            Username
-            <input className="input" value={username} onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username" autoFocus required minLength={3} />
-          </label>
-          <label className="small" style={{ display: "flex", flexDirection: "column", gap: 4, color: "var(--ink-soft)" }}>
-            Password <span style={{ color: "var(--ink-muted)" }}>(8+ characters)</span>
-            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password" required minLength={8} />
-          </label>
-          <label className="small" style={{ display: "flex", flexDirection: "column", gap: 4, color: "var(--ink-soft)" }}>
-            Confirm password
-            <input className="input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)}
-              autoComplete="new-password" required />
-          </label>
-          {error && <div className="small" style={{ color: "var(--danger)" }}>{error}</div>}
-          <button className="btn btn-primary" type="submit" disabled={busy || !username || !password || !setupToken}>
-            {busy ? "Creating account…" : "Create admin account"}
-          </button>
-        </form>
-      </div>
+            <label className="small" style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink-soft)", fontWeight: 500 }}>
+              Password <span style={{ color: "var(--ink-muted)", fontWeight: 400 }}>(8+ characters)</span>
+              <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password" required minLength={8} />
+            </label>
+            <label className="small" style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink-soft)", fontWeight: 500 }}>
+              Confirm password
+              <input className="input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)}
+                autoComplete="new-password" required />
+            </label>
+            {error && <div className="state-error" role="alert" style={{ margin: 0 }}>{error}</div>}
+            <button className="btn btn-primary btn-lg" type="submit" disabled={busy || !username || !password || !setupToken} style={{ marginTop: "var(--s2)" }}>
+              {busy ? "Creating account…" : "Create admin account →"}
+            </button>
+          </form>
+        </div>
+      </main>
     </div>
   );
 }

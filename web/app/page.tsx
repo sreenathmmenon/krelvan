@@ -653,8 +653,8 @@ export default function Landing() {
                   <button
                     onClick={() => setBuildError(null)}
                     aria-label="Dismiss error"
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontSize: 16, lineHeight: 1, flexShrink: 0, padding: "0 var(--s1)" }}
-                  >×</button>
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", lineHeight: 1, flexShrink: 0, padding: "0 var(--s1)", display: "inline-flex" }}
+                  ><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></button>
                 </div>
               ) : null}
 
@@ -726,7 +726,7 @@ export default function Landing() {
             Every node is a real step, every edge a real branch, and each run replays over the
             same signed ledger — so the graph is not a diagram of the agent, it is the agent.
           </p>
-          <figure style={{ margin: 0, borderRadius: "var(--r-xl, 16px)", overflow: "hidden", border: "1px solid var(--line)", boxShadow: "var(--shadow-lg, 0 24px 48px -12px rgba(0,0,0,.12))", background: "var(--graph-bg, #fbfbf9)" }}>
+          <figure style={{ margin: 0, borderRadius: "var(--r-xl, 16px)", overflow: "hidden", border: "1px solid var(--line)", boxShadow: "var(--shadow-lg)", background: "var(--graph-bg)" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/product-canvas.png" alt="The Krelvan canvas showing a 12-node support agent: triage, retrieve, judge with a revise loop, route, send, escalate — each step signed into the ledger."
               width={1400} height={640} loading="lazy" style={{ display: "block", width: "100%", height: "auto" }} />

@@ -270,8 +270,12 @@ export default function Dashboard() {
           <button
             onClick={() => setBuildError(null)}
             aria-label="Dismiss error"
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontSize: 16, lineHeight: 1, flexShrink: 0, padding: "0 var(--s1)" }}
-          >×</button>
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", display: "inline-flex", alignItems: "center", flexShrink: 0, padding: "0 var(--s1)" }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
       ) : null}
 

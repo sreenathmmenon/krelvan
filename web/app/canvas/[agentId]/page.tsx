@@ -853,8 +853,8 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
           box-shadow: 0 1px 6px color-mix(in srgb, var(--ok) 40%, transparent);
         }
         .canvas-verify-pill[data-state="fail"] {
-          color: var(--danger, #b42318); background: var(--danger-tint, rgba(180,35,24,.10));
-          border-color: color-mix(in srgb, var(--danger, #b42318) 45%, transparent);
+          color: var(--danger); background: var(--danger-tint);
+          border-color: color-mix(in srgb, var(--danger) 45%, transparent);
         }
         .canvas-verify-pill[data-state="pending"] {
           color: var(--brand); background: var(--brand-tint);
@@ -866,7 +866,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
         .canvas-mode-toggle {
           display: inline-flex; align-items: center; flex-shrink: 0;
           padding: 2px; gap: 2px; border-radius: var(--r-pill);
-          background: var(--surface-sunken, rgba(0,0,0,.05));
+          background: var(--surface-sunken);
           border: 1px solid var(--line);
         }
         .canvas-mode-toggle button {
@@ -878,7 +878,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
         }
         .canvas-mode-toggle button:hover { color: var(--ink); }
         .canvas-mode-toggle button[aria-pressed="true"] {
-          color: var(--brand-ink, #fff); background: var(--brand);
+          color: var(--brand-ink); background: var(--brand);
           box-shadow: var(--shadow-sm);
         }
 
@@ -895,7 +895,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
       <div className="canvas-toolbar" style={{
         height: 52, flexShrink: 0,
         borderBottom: "1px solid var(--line)",
-        background: "rgba(248,247,244,.96)", backdropFilter: "blur(10px)",
+        background: "color-mix(in srgb, var(--canvas) 96%, transparent)", backdropFilter: "blur(10px)",
         display: "flex", alignItems: "center", gap: "var(--s4)", padding: "0 var(--s5)",
         zIndex: 20, overflow: "hidden",
       }}>
@@ -1380,9 +1380,9 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={() => { setIsScrubbing(false); setScrubCursor(null); }}
-                style={{ flexShrink: 0, color: "var(--brand)" }}
+                style={{ flexShrink: 0, color: "var(--brand)", display: "inline-flex", alignItems: "center", gap: "var(--s1)" }}
               >
-                Live ▶
+                Live <IconPlay color="var(--brand)" />
               </button>
             )}
             {/* event label at cursor */}
@@ -1659,7 +1659,7 @@ function MiniMap({
         bottom: bottomOffset != null ? bottomOffset : "var(--s4)",
         right: "var(--s4)", zIndex: 6,
         width: MAP_W, height: MAP_H,
-        background: "rgba(248,247,244,.9)", backdropFilter: "blur(8px)",
+        background: "color-mix(in srgb, var(--canvas) 90%, transparent)", backdropFilter: "blur(8px)",
         border: "1px solid var(--line)", borderRadius: "var(--r)",
         boxShadow: "var(--shadow-sm)", overflow: "hidden",
         pointerEvents: "none",
@@ -1899,7 +1899,10 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
               }}
             >
               Full run state ({globalState.length} keys)
-              <span aria-hidden="true">{showGlobal ? "▴" : "▾"}</span>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"
+                style={{ flexShrink: 0, transform: showGlobal ? "rotate(180deg)" : "none", transition: "transform var(--t-fast) var(--ease)" }}>
+                <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </button>
             {showGlobal && (
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>

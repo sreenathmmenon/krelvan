@@ -367,8 +367,27 @@ function AgentGraphCanvas({
             const glyphCaps = n.capabilities.slice(0, 3);
             const glyphGap = 22;
             const glyphStart = p.w / 2 - ((glyphCaps.length - 1) * glyphGap) / 2;
-            const capLine = n.capabilities.map(c => c.name).join(" · ");
-            const capShort = capLine.length > 22 ? capLine.slice(0, 21) + "…" : capLine;
+            const capNames = n.capabilities.map(c => c.name);
+            const capLine = capNames.join(" · ");
+            // Truncate on the capability boundary — never mid-name. Show as many whole
+            // names as fit, then a "+N" remainder (matches the canvas capability-pill idiom).
+            let capShort = capLine;
+            if (capLine.length > 22) {
+              const shown: string[] = [];
+              let used = 0;
+              for (const nm of capNames) {
+                const add = shown.length ? nm.length + 3 : nm.length;
+                if (used + add > 20 && shown.length) break;
+                shown.push(nm);
+                used += add;
+              }
+              const rest = capNames.length - shown.length;
+              capShort = shown.join(" · ") + (rest > 0 ? ` +${rest}` : "");
+            }
+            // Humanized node title (snake_case → "Snake case"), matching the canvas
+            // node-label style — never a raw id sliced mid-word. Full id stays on hover.
+            const nodeLabel = n.id.replace(/[_-]+/g, " ").replace(/^\w/, c => c.toUpperCase());
+            const nodeLabelShort = nodeLabel.length > 20 ? nodeLabel.slice(0, 18) + "…" : nodeLabel;
             return (
               <g
                 key={n.id}
@@ -409,7 +428,7 @@ function AgentGraphCanvas({
                   fill="var(--ink)"
                   fontFamily="var(--font-sans)"
                 >
-                  {n.id.length > 18 ? n.id.slice(0, 17) + "…" : n.id}
+                  {nodeLabelShort}
                 </text>
                 {glyphCaps.length > 0 ? (
                   <g color="var(--brand)" opacity={0.9}>
@@ -490,7 +509,7 @@ function NodeDetailPanel({ node, onClose }: { node: ManifestNode; onClose: () =>
       </div>
       <div style={{ marginBottom: "var(--s4)" }}>
         <div className="micro" style={{ marginBottom: "var(--s2)" }}>Autonomy</div>
-        <span className={`badge ${node.autonomy === "full" ? "badge-done" : "badge-info"}`}>
+        <span className={`badge ${node.autonomy === "full" ? "badge-neutral" : "badge-info"}`}>
           {node.autonomy === "full" ? "runs on its own" : node.autonomy}
         </span>
       </div>
@@ -649,7 +668,7 @@ function SchedulePanel({ agentId, schedules, onRefresh }: { agentId: string; sch
                 {s.enabled ? (s.armed ? "armed" : "enabled") : "paused"}
               </span>
               {s.lastRunAt && <span className="small muted mono">last {timeAgo(s.lastRunAt)}</span>}
-              {s.nextRunAt && <span className="small mono" style={{ color: armed ? "var(--live)" : "var(--ink-muted)" }}>next {timeAgo(s.nextRunAt)}</span>}
+              {s.nextRunAt && <span className="small mono" style={{ color: armed ? "var(--brand)" : "var(--ink-muted)" }}>next {timeAgo(s.nextRunAt)}</span>}
             </div>
           </div>
           <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center", flexWrap: "wrap" }}>
@@ -1120,7 +1139,9 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                         </div>
                         <div className="small muted">{timeAgo(r.createdAt)}</div>
                       </div>
-                      <span aria-hidden="true" style={{ color: "var(--ink-muted)", fontSize: 14, lineHeight: 1 }}>›</span>
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ flexShrink: 0, color: "var(--ink-muted)" }}>
+                        <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
                     </Link>
                   );
                 })}

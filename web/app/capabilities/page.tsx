@@ -807,7 +807,7 @@ function CustomizeDrawer({ e, onClose, onInstalled, flash }: {
               )}
             </div>
           ))}
-          {err && <p className="small" style={{ color: "var(--danger, #b3261e)", margin: 0 }}>{err}</p>}
+          {err && <p className="small" style={{ color: "var(--danger)", margin: 0 }}>{err}</p>}
           <div style={{ display: "flex", gap: "var(--s3)", alignItems: "center" }}>
             <button className="btn btn-primary" disabled={busy} onClick={submit}>
               {busy ? "Creating…" : "Create my agent"}

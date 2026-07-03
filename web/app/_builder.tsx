@@ -133,9 +133,9 @@ export function MiniGraph({ nodes, edges, entry, variant = "light", maxHeight = 
     maxY = Math.max(maxY, p.y + MNH);
   }
   const dark = variant === "dark";
-  const nodeFill = dark ? "var(--dark-node-fill, #14201F)" : "var(--surface)";
-  const lineColor = dark ? "var(--dark-line, #2A3331)" : "var(--line-strong)";
-  const entryStroke = dark ? "var(--dark-brand-bright, #1AA39A)" : "var(--brand)";
+  const nodeFill = dark ? "var(--dark-node-fill)" : "var(--surface)";
+  const lineColor = dark ? "var(--dark-line)" : "var(--line-strong)";
+  const entryStroke = dark ? "var(--dark-brand-bright)" : "var(--brand)";
   const arrowId = dark ? "mg-arrow-dark" : "mg-arrow";
 
   // Back-edges (retry loops) arc through a lane above/below the rows — extend the
@@ -196,14 +196,14 @@ export function MiniGraph({ nodes, edges, entry, variant = "light", maxHeight = 
           if (!p) return null;
           const isEntry = n.id === entry;
           const caps = n.capabilities;
-          const dotColor = caps.some(c => c.name === "think") ? (dark ? "var(--dark-brand-bright, #1AA39A)" : "var(--brand)")
+          const dotColor = caps.some(c => c.name === "think") ? (dark ? "var(--dark-brand-bright)" : "var(--brand)")
             : caps.some(c => c.name === "remember" || c.name === "recall") ? "var(--ok)"
-            : (dark ? "var(--dark-ink-muted, #8C928E)" : "var(--ink-muted)");
+            : (dark ? "var(--dark-ink-muted)" : "var(--ink-muted)");
           // a short, human label inside the node so even a 1-node graph reads as a real
           // step (not an anonymous grey dot): the primary capability or the node role.
           const primaryCap = caps[0]?.name?.replace(/^[a-z]+\./, "") ?? "";
           const label = (primaryCap || n.role || n.id).slice(0, 14);
-          const labelColor = dark ? "var(--dark-ink-soft, #C8C4BC)" : "var(--ink-soft)";
+          const labelColor = dark ? "var(--dark-ink-soft)" : "var(--ink-soft)";
           return (
             <g key={n.id} transform={`translate(${p.x},${p.y})`}>
               {/* Clean single-stroke node — no heavy double ring (which read as a stray
@@ -225,7 +225,7 @@ export function MiniGraph({ nodes, edges, entry, variant = "light", maxHeight = 
       {nodes.length > 1 && (
         <div className="mono" style={{
           position: "absolute", bottom: "var(--s1)", right: "var(--s1)",
-          fontSize: 11, color: dark ? "var(--dark-ink-muted, #8C928E)" : "var(--ink-muted)",
+          fontSize: 11, color: dark ? "var(--dark-ink-muted)" : "var(--ink-muted)",
           background: dark ? "rgba(255,255,255,0.06)" : "var(--surface-sunken)",
           padding: "var(--s1)", borderRadius: "var(--r-sm)",
         }}>
@@ -525,7 +525,7 @@ export function BuildPreviewModal({ result, onRun, onDiscard }: { result: BuildR
               width: 30, padding: 0, flexShrink: 0,
             }}
           >
-            ×
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
           </button>
         </div>
 
@@ -870,24 +870,24 @@ export function HeroAnimation() {
         <svg viewBox="0 0 320 72" width="100%" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
           <defs>
             <marker id="ha-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L6,3 z" fill="var(--dark-line, #2A3331)" />
+              <path d="M0,0 L0,6 L6,3 z" fill="var(--dark-line)" />
             </marker>
           </defs>
-          <path className="heroanim__edge heroanim__edge--1" d="M86 36 C112 36, 112 36, 132 36" fill="none" stroke="var(--dark-line,#2A3331)" strokeWidth="2" markerEnd="url(#ha-arrow)" />
-          <path className="heroanim__edge heroanim__edge--2" d="M226 36 C252 36, 252 36, 272 36" fill="none" stroke="var(--dark-line,#2A3331)" strokeWidth="2" markerEnd="url(#ha-arrow)" />
+          <path className="heroanim__edge heroanim__edge--1" d="M86 36 C112 36, 112 36, 132 36" fill="none" stroke="var(--dark-line)" strokeWidth="2" markerEnd="url(#ha-arrow)" />
+          <path className="heroanim__edge heroanim__edge--2" d="M226 36 C252 36, 252 36, 272 36" fill="none" stroke="var(--dark-line)" strokeWidth="2" markerEnd="url(#ha-arrow)" />
           {[
             { x: 16,  label: s.nodes[0], cls: "1", i: 0 },
             { x: 132, label: s.nodes[1], cls: "2", i: 1 },
             { x: 248, label: s.nodes[2], cls: "3", i: 2 },
           ].map(n => {
             const gated = s.gateNode === n.i;
-            const accent = gated ? "var(--live, #D97706)" : "var(--dark-brand-bright,#1AA39A)";
+            const accent = gated ? "var(--live)" : "var(--dark-brand-bright)";
             return (
             <g key={n.cls} className={`heroanim__node heroanim__node--${n.cls}${gated ? " heroanim__node--gate" : ""}`} transform={`translate(${n.x},16)`}>
-              <rect width="72" height="40" rx="9" fill="var(--dark-node-fill,#14201F)" stroke={gated ? accent : "var(--dark-line,#2A3331)"} strokeWidth="1.4" />
+              <rect width="72" height="40" rx="9" fill="var(--dark-node-fill)" stroke={gated ? accent : "var(--dark-line)"} strokeWidth="1.4" />
               <rect className="heroanim__node-bar" width="72" height="3" rx="1.5" fill={accent} />
               <circle className="heroanim__node-dot" cx="36" cy="18" r="4.5" fill={accent} />
-              <text x="36" y="32" textAnchor="middle" fontSize="8" fontFamily="var(--font-mono)" fill="var(--dark-ink-soft,#C8C4BC)">{n.label}</text>
+              <text x="36" y="32" textAnchor="middle" fontSize="8" fontFamily="var(--font-mono)" fill="var(--dark-ink-soft)">{n.label}</text>
             </g>
             );
           })}

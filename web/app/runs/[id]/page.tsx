@@ -408,13 +408,13 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         <div style={{
           position: "sticky", top: "var(--s3)", zIndex: 40,
           marginBottom: "var(--s5)", padding: "var(--s4) var(--s5)",
-          background: "var(--live-tint)", border: "1px solid var(--live)",
+          background: "var(--brand-tint)", border: "1px solid var(--brand)",
           borderRadius: "var(--r)", display: "flex", flexDirection: "column", gap: "var(--s3)",
-          boxShadow: "var(--shadow-md, 0 8px 24px -8px rgba(0,0,0,.18))",
+          boxShadow: "var(--shadow-md)",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
-            <span className="badge badge-running"><span className="dot" />Awaiting approval</span>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--live)" }}>Awaiting approval — waiting on your decision</span>
+            <span className="badge badge-info"><span className="dot" />Awaiting approval</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--brand)" }}>Awaiting approval — waiting on your decision</span>
           </div>
           {approvals.map(a => (
             <div key={a.correlationId} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "var(--s3)", background: "var(--surface)", padding: "var(--s3) var(--s4)", borderRadius: "var(--r)" }}>
@@ -1124,7 +1124,7 @@ function OutputBlockCard({ block, showCopy, copied, onCopy }: {
       >
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)" }}>
           {isData && (
-            <span className="mono" style={{ fontSize: 11, color: "var(--ink-muted)", width: 10, display: "inline-block" }}>{open ? "▾" : "▸"}</span>
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ color: "var(--ink-muted)", transform: open ? "rotate(90deg)" : "none", transition: "transform var(--t-fast) var(--ease)", flexShrink: 0 }}><path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
           )}
           <span className="micro" style={{ color: "var(--brand)", letterSpacing: ".06em" }}>{block.label}</span>
           <span className="mono badge badge-neutral" style={{ fontSize: 11 }}>{block.nodeId}</span>
@@ -1585,7 +1585,7 @@ function NodeDetail({ nodeId, projection, events, budgetCents, onClose }: {
           className="btn btn-ghost btn-sm"
           style={{ padding: "0 var(--s2)" }}
         >
-          ×
+          <Glyph kind="cross" size={14} />
         </button>
       </div>
 
