@@ -83,6 +83,7 @@ if (cmd === "help" || cmd === "--help" || cmd === "-h") {
 Usage:
   krelvan [up]          build if needed, then start the API + web UI
   krelvan up --api-only start only the API (no web UI)
+  krelvan hello         your first agent in one command: run it, hold its signed proof
   krelvan verify <file> verify an exported run proof bundle, offline
   krelvan help          show this help
 
@@ -107,6 +108,24 @@ if (cmd === "verify") {
   const r = spawnSync(process.execPath, [join(__dirname, "krelvan-verify.mjs"), ...args.slice(1)], { stdio: "inherit", shell: false });
   process.exit(r.status ?? 0);
 }
+
+// `krelvan hello` — the first-run magic moment: build a tiny real agent, run it through
+// the real signed ledger, export the proof bundle, verify it — zero keys, zero config,
+// no server, no model. Needs only the CORE build (tsc), not the web UI.
+if (cmd === "hello") {
+  const { spawnSync } = await import("node:child_process");
+  const { existsSync: exists } = await import("node:fs");
+  const helloJs = join(ROOT, "dist", "cli", "hello.js");
+  if (!exists(helloJs)) {
+    log("first run — building the core (tsc)…");
+    const b = spawnSync(NPM_BIN(), ["run", "build"], { cwd: ROOT, stdio: "inherit", shell: false });
+    if ((b.status ?? 1) !== 0) { console.error("build failed"); process.exit(1); }
+  }
+  const r = spawnSync(process.execPath, [helloJs], { stdio: "inherit", shell: false });
+  process.exit(r.status ?? 0);
+}
+
+function NPM_BIN() { return process.platform === "win32" ? "npm.cmd" : "npm"; }
 
 /** Run a command to completion, inheriting stdio. Rejects on non-zero exit. */
 function run(command, cmdArgs, opts = {}) {
