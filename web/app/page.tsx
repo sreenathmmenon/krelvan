@@ -541,20 +541,10 @@ export default function Landing() {
                 on your schedule — then an open marketplace to extend what exists, publish what
                 you make, and sell what works.
               </p>
-              {/* the falsifiable hero gesture — a runnable command, not a promise */}
-              <button type="button" className="hero-verify-cmd" onClick={() => void navigator.clipboard.writeText(VERIFY_CMD).then(() => { setHeroCopied(true); setTimeout(() => setHeroCopied(false), 1600); })}
-                aria-label={heroCopied ? "Command copied" : "Copy: npx krelvan verify a signed run offline"} title="Click to copy">
-                <span className="hero-verify-cmd__prompt" aria-hidden="true">$</span>
-                <code>npx krelvan verify sample-run.krproof.json</code>
-                <span className="hero-verify-cmd__ok" aria-hidden="true">
-                  {heroCopied
-                    ? <span style={{ fontSize: 11, fontWeight: 600 }}>Copied</span>
-                    : <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M4 4h6v6M10 4L3 11" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>}
-                </span>
-              </button>
-              <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap", marginTop: "var(--s5)" }}>
-                <button className="btn btn-dark-primary btn-lg" onClick={scrollToProveIt}>
-                  Verify a real run →
+              <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap", marginTop: "var(--s2)" }}>
+                {/* Primary CTA matches the headline: the product is BUILD-first. */}
+                <button className="btn btn-dark-primary btn-lg" onClick={focusBuilder}>
+                  Build an agent →
                 </button>
                 <a href="https://github.com/sreenathmmenon/krelvan" className="btn btn-dark-ghost btn-lg" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)" }}>
                   <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M8 1.6a6.4 6.4 0 0 0-2 12.5c.3.06.43-.14.43-.3v-1.1c-1.8.4-2.2-.85-2.2-.85-.3-.75-.72-.95-.72-.95-.6-.4.04-.4.04-.4.65.05 1 .67 1 .67.58 1 1.5.7 1.9.55.06-.43.23-.7.42-.87-1.45-.16-2.97-.72-2.97-3.2 0-.7.25-1.3.66-1.74-.07-.16-.29-.82.06-1.7 0 0 .54-.18 1.78.66a6.1 6.1 0 0 1 3.24 0c1.24-.84 1.78-.66 1.78-.66.35.88.13 1.54.06 1.7.41.44.66 1.04.66 1.74 0 2.49-1.52 3.04-2.97 3.2.23.2.44.6.44 1.2v1.78c0 .17.12.37.44.3A6.4 6.4 0 0 0 8 1.6z"/></svg>
@@ -563,13 +553,13 @@ export default function Landing() {
                 </a>
               </div>
               <div className="hero-trustline">
-                <span className="hero-trustline__item">Apache-2.0</span>
+                <span className="hero-trustline__item">Open-source</span>
                 <span className="hero-trustline__sep" aria-hidden="true">·</span>
-                <span className="hero-trustline__item">Ed25519-signed by default</span>
+                <span className="hero-trustline__item">Self-hosted</span>
                 <span className="hero-trustline__sep" aria-hidden="true">·</span>
                 <span className="hero-trustline__item">7 LLM providers</span>
                 <span className="hero-trustline__sep" aria-hidden="true">·</span>
-                <span className="hero-trustline__item">runs on your own machine</span>
+                <span className="hero-trustline__item">Open marketplace</span>
               </div>
               <HeroStatStrip />
             </div>
