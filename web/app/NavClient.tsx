@@ -17,6 +17,7 @@ import { KrelvanLogo } from "./KrelvanLogo";
 // 16×16 stroke glyphs, house style (matches lib/glyphs.ts). key → path.
 const G = {
   dashboard:  "M2.5 2.5h4v4h-4zM9.5 2.5h4v4h-4zM2.5 9.5h4v4h-4zM9.5 9.5h4v4h-4z",              // grid
+  inbox:      "M2.5 8.5h3l1 2h3l1-2h3M2.5 8.5 4 3.2A1 1 0 0 1 5 2.5h6a1 1 0 0 1 1 .7l1.5 5.3M2.5 8.5v3.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V8.5", // inbox tray
   agents:     "M8 1.6a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM3.5 14v-1a2.5 2.5 0 0 1 2.5-2.5h4A2.5 2.5 0 0 1 12.5 13v1M8 5.6v2M4.5 8.5A3.5 3.5 0 0 1 8 7.5a3.5 3.5 0 0 1 3.5 1", // node/agent
   marketplace:"M2.5 6h11l-.8-3H3.3L2.5 6zM3 6v7.5h10V6M2.5 6a1.6 1.6 0 0 0 3 0 1.6 1.6 0 0 0 3 0 1.6 1.6 0 0 0 3 0M6.5 13.5v-3h3v3", // storefront
   runs:       "M5 4h8M5 8h8M5 12h5M2.4 4h.01M2.4 8h.01M2.4 12h.01",                             // list/pulse
@@ -50,6 +51,7 @@ type NavItem = { label: string; href: string; glyph: GlyphKey };
 // workspace overview; "Agents" is the same surface framed for the agent list.
 const PRIMARY: NavItem[] = [
   { label: "Dashboard",   href: "/dashboard",    glyph: "dashboard" },
+  { label: "Inbox",       href: "/inbox",        glyph: "inbox" },
   { label: "Agents",      href: "/dashboard",    glyph: "agents" },
   { label: "Marketplace", href: "/capabilities", glyph: "marketplace" }, // route stays /capabilities
   { label: "Runs",        href: "/runs",         glyph: "runs" },
