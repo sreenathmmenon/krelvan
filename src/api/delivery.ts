@@ -64,7 +64,8 @@ function inputFor(channel: DeliveryChannel, p: DeliveryPayload, cfg: Record<stri
     case "telegram":
       return { text: `<b>${escapeHtml(p.agentName)}</b>\n${escapeHtml(p.body)}`, ...(cfg["chat_id"] ? { chat_id: cfg["chat_id"] } : {}) };
     case "webhook":
-      return { url: cfg["url"] ?? "", title: heading, message: p.body, runId: p.runId, agent: p.agentName };
+      // notify_webhook posts input.payload as the JSON body — put the full output there.
+      return { url: cfg["url"] ?? "", payload: { agent: p.agentName, title: p.title, output: p.body, runId: p.runId } };
     default:
       return {};
   }
@@ -93,8 +94,9 @@ export async function deliver(targets: DeliveryTarget[], payload: DeliveryPayloa
       } as EffectCall;
       const res = await plugin.invoke(call);
       const out = (res.output ?? {}) as Record<string, unknown>;
-      // Channel plugins signal success via `sent: true`; a missing key/creds returns sent:false.
-      const ok = out["sent"] === true || out["ok"] === true || out["delivered"] === true;
+      // Each channel plugin signals success with its own key: email/slack/telegram → sent,
+      // notify_webhook → notified. A missing key/creds returns the false form.
+      const ok = out["sent"] === true || out["ok"] === true || out["delivered"] === true || out["notified"] === true;
       outcomes.push({ channel: t.channel, ok, detail: ok ? "delivered" : String(out["error"] ?? out["reason"] ?? "not configured — add the channel's key/URL in Secrets") });
     } catch (err) {
       outcomes.push({ channel: t.channel, ok: false, detail: (err as Error)?.message ?? "delivery error" });
