@@ -41,7 +41,9 @@
     "demo:live": "tsx src/demo/live-compile.ts",
     "demo:plugins": "tsx src/demo/demo-plugins.ts",
     "api": "PORT=3201 tsx src/api/index.ts",
-    "api:dev": "PORT=3201 tsx --watch src/api/index.ts"
+    "api:dev": "PORT=3201 tsx --watch src/api/index.ts",
+    "registry:sync": "tsx scripts/sync-registry.ts",
+    "registry:check": "tsx scripts/sync-registry.ts -- --check"
   },
   "dependencies": {
     "tsx": "^4.19.0"

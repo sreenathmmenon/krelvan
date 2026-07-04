@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/sreenathmmenon/krelvan-registry/main/schema.json",
+  "title": "Krelvan Registry",
+  "description": "The Krelvan capability marketplace, distributed as a Git repo. A Krelvan install fetches this index.json (raw URL) so the marketplace is live, forkable, and self-hostable. Point any install at your own fork via NEXT_PUBLIC_KRELVAN_REGISTRY_URL.",
+  "type": "object",
+  "required": ["version", "capabilities"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "type": "integer", "const": 1, "description": "Registry envelope version." },
+    "generator": { "type": "string", "description": "Tool that produced this file (krelvan scripts/sync-registry.ts)." },
+    "updated": { "type": "string", "description": "When the catalog last changed (committer-owned)." },
+    "counts": {
+      "type": "object",
+      "description": "Entry counts by kind, for a quick glance at catalog size.",
+      "additionalProperties": { "type": "integer" }
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "Every installable entry in the marketplace.",
+      "items": { "$ref": "#/definitions/entry" }
+    }
+  },
+  "definitions": {
+    "sideEffect": {
+      "type": "string",
+      "enum": ["read", "write-reversible", "write-irreversible", "spend", "message-human", "identity-mutation"],
+      "description": "What this capability can touch. Krelvan shows this BEFORE install and pauses for approval on the dangerous classes."
+    },
+    "entry": {
+      "type": "object",
+      "required": ["name", "title", "oneLiner", "category", "sideEffect", "tier", "author", "kind"],
+      "properties": {
+        "name": { "type": "string", "description": "Unique id, e.g. 'notion' or 'publish-and-deploy'." },
+        "title": { "type": "string", "description": "Human display name." },
+        "oneLiner": { "type": "string", "description": "One sentence: what it does." },
+        "category": { "type": "string", "description": "e.g. Communication, Productivity, Data, Commerce, Research." },
+        "sideEffect": { "$ref": "#/definitions/sideEffect" },
+        "tier": { "type": "string", "enum": ["official", "community", "verified"], "description": "Trust tier." },
+        "author": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["yaml", "mcp", "template", "pack", "builtin"],
+          "description": "yaml = an HTTP API wrapped no-code; mcp = a Model Context Protocol server; template = a whole installable agent; pack = a curated bundle of connectors; builtin = a core capability."
+        },
+        "secretRefs": { "type": "array", "items": { "type": "string" }, "description": "Names of the secrets/keys this entry needs (set in Krelvan → Secrets)." },
+        "price": { "type": "string", "description": "Display price for paid entries, e.g. '$5/mo'. Free entries omit it." },
+        "licenseUrl": { "type": "string", "description": "Where to buy/get a license key (paid entries)." },
+        "sourceUrl": { "type": "string", "description": "GitHub source for this capability." },
+        "yaml": { "type": "string", "description": "kind=yaml: the full capability definition, installed straight into Krelvan." },
+        "mcp": {
+          "type": "object",
+          "description": "kind=mcp: the MCP connection config. Every tool the server exposes becomes a capability.",
+          "properties": {
+            "name": { "type": "string" },
+            "command": { "type": "string" },
+            "args": { "type": "array", "items": { "type": "string" } },
+            "url": { "type": "string" },
+            "env": { "type": "object", "additionalProperties": { "type": "string" } },
+            "tools": { "type": "array", "items": { "type": "string" } },
+            "defaultSideEffect": { "$ref": "#/definitions/sideEffect" }
+          }
+        },
+        "manifest": { "type": "object", "description": "kind=template: the full agent manifest (nodes, edges, seed) installed as a ready-to-run agent." },
+        "capabilities": {
+          "type": "array",
+          "description": "kind=template: the yaml capabilities this template bundles (so installing the template also installs the connectors its nodes need).",
+          "items": {
+            "type": "object",
+            "required": ["name", "yaml"],
+            "properties": {
+              "name": { "type": "string" },
+              "sideEffect": { "$ref": "#/definitions/sideEffect" },
+              "yaml": { "type": "string" }
+            }
+          }
+        },
+        "recommendedModel": { "type": "string", "description": "kind=template: a model that reasons reliably for this agent." },
+        "connectors": { "type": "array", "items": { "type": "string" }, "description": "kind=pack: names of the connectors this pack installs." }
+      }
+    }
+  }
+}

@@ -925,7 +925,17 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                               "default": "publish-post"
                       }
               }
+      },
+    "capabilities": [
+      {
+        "name": "github.dispatch",
+        "yaml": "name: github.dispatch\ndescription: Trigger a GitHub Actions workflow via the repository_dispatch API.\nsideEffect: write-irreversible\nestimateCents: 0\nhttp:\n  url: \"https://api.github.com/repos/{{input.repo}}/dispatches\"\n  method: POST\n  headers:\n    Accept: \"application/vnd.github+json\"\n    Authorization: \"Bearer {{secret:github-token}}\"\n    User-Agent: \"krelvan\"\n  body:\n    event_type: \"{{input.event_type}}\"\ninput:\n  repo:\n    type: string\n    required: true\n    description: \"owner/name of the repository.\"\n  event_type:\n    type: string\n    required: true\n    description: The repository_dispatch event type your workflow listens for.\nsuccessCodes:\n  - 204\n"
+      },
+      {
+        "name": "deploy.vercel",
+        "yaml": "name: deploy.vercel\ndescription: Trigger a production deployment on Vercel via a Deploy Hook URL.\nsideEffect: write-irreversible\nestimateCents: 0\n\n# Vercel Deploy Hooks: Project → Settings → Git → Deploy Hooks → create one,\n# which gives a unique URL. POSTing to it triggers a new build+deploy of the\n# linked branch. No token in the request — the secret IS the hook URL, so we\n# store the whole URL as a secret and reference it.\nhttp:\n  url: \"{{secret:vercel-deploy-hook}}\"\n  method: POST\n  headers:\n    Content-Type: \"application/json\"\n  body:\n    ref: \"{{input.ref}}\"\n\ninput:\n  ref:\n    type: string\n    description: Optional git ref (branch or commit) to deploy. Defaults to the hook's configured branch.\n\noutput:\n  job:\n    type: string\n    description: The deployment job descriptor returned by Vercel.\n\nsuccessCodes:\n  - 200\n  - 201\n  - 202\n"
       }
+    ]
   },
   {
     "name": "research-analyst",
