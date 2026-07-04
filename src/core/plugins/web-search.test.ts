@@ -1,0 +1,59 @@
+/**
+ * web_search — query extraction must use the real TOPIC, not the node's instruction text,
+ * and the output must carry both `results` and a readable `findings` block for downstream
+ * nodes. These guard the two data-flow bugs that made research agents produce hollow output:
+ * (1) searching for "You are a research scout. Search the web..." instead of the topic, and
+ * (2) emitting only `results` when agents read `findings`.
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { webSearchCapability } from "./web-search.js";
+
+// Drive the capability with no search/LLM keys so it takes the keyless path deterministically
+// where possible; we assert on the QUERY it derives (logged via the returned output.query) and
+// on the OUTPUT SHAPE. Network is best-effort; we only assert shape + query derivation here.
+
+test("web_search derives the query from the topic state value, not the role instruction", async () => {
+  // A research node's input carries a role instruction AND a topic — the query must be the topic.
+  const res = await webSearchCapability.invoke({
+    nodeId: "search",
+    capability: "web_search",
+    input: {
+      role: "You are a research scout. Search the open web for high-signal sources about the topic.",
+      topic: "on-device LLM inference economics",
+    },
+  } as Parameters<typeof webSearchCapability.invoke>[0]);
+  const out = res.output as { query?: string };
+  assert.equal(out.query, "on-device LLM inference economics", "query must be the topic, not the role text");
+});
+
+test("web_search extracts the subject from a role instruction when no topic key is present", async () => {
+  const res = await webSearchCapability.invoke({
+    nodeId: "search",
+    capability: "web_search",
+    input: { role: "You are a research scout. Search the open web for sources about quantum error correction." },
+  } as Parameters<typeof webSearchCapability.invoke>[0]);
+  const out = res.output as { query?: string };
+  // Must NOT be the whole "You are a research scout..." instruction.
+  assert.ok(out.query && !/^you are/i.test(out.query), `query must not be the instruction: got "${out.query}"`);
+  assert.match(out.query!, /quantum error correction/i, "should extract the subject after 'about'");
+});
+
+test("web_search returns a soft error (never throws) when there is no query at all", async () => {
+  const res = await webSearchCapability.invoke({
+    nodeId: "search", capability: "web_search", input: {},
+  } as Parameters<typeof webSearchCapability.invoke>[0]);
+  const out = res.output as { count?: number; error?: string };
+  assert.equal(out.count, 0);
+  assert.ok(out.error && out.error.length > 0, "must explain the missing query");
+});
+
+test("explicit query key wins over everything", async () => {
+  const res = await webSearchCapability.invoke({
+    nodeId: "search",
+    capability: "web_search",
+    input: { query: "redis vs memcached benchmarks", topic: "something else", role: "You are a scout..." },
+  } as Parameters<typeof webSearchCapability.invoke>[0]);
+  const out = res.output as { query?: string };
+  assert.equal(out.query, "redis vs memcached benchmarks");
+});

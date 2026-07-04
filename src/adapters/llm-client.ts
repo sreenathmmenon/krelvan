@@ -270,7 +270,15 @@ class OpenAILLMClient implements LLMClient {
 
     if (!outcome.ok) throw new Error(outcome.status === 0 ? `network error: ${outcome.rawBody}` : `LLM API ${outcome.status}: ${outcome.rawBody}`);
 
-    const json = (await outcome.resp.json()) as { choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens: number; completion_tokens: number } };
+    const raw = (await outcome.resp.json()) as Record<string, unknown>;
+    // Most OpenAI-compatible providers return { choices, usage } at the top level. Some
+    // gateways (e.g. ClinePass) wrap the payload in { data: { choices, usage }, success }.
+    // Unwrap a single `data` envelope when the standard `choices` field is absent, so the
+    // same client works for both shapes instead of silently reading an empty completion.
+    const body = (!("choices" in raw) && raw["data"] && typeof raw["data"] === "object")
+      ? (raw["data"] as Record<string, unknown>)
+      : raw;
+    const json = body as { choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens: number; completion_tokens: number } };
     const text = (json.choices?.[0]?.message?.content ?? "").trim();
     return { text, inputTokens: json.usage?.prompt_tokens ?? 0, outputTokens: json.usage?.completion_tokens ?? 0 };
   }

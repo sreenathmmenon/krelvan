@@ -36,6 +36,67 @@ interface BraveResponse {
   };
 }
 
+// Shape search hits into the output every downstream node can actually use: the raw
+// `results` array AND a readable `findings` text block (what LLM nodes read from context).
+// Agents reference either `results` (structured) or `findings` (prose) — both are populated.
+function shapeSearchOutput(results: SearchResult[], query: string, costCents: number) {
+  const findings = results
+    .map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`)
+    .join("\n\n");
+  return {
+    output: { results, findings, query, count: results.length },
+    claimedCostCents: costCents,
+  };
+}
+
+// ── Keyless real web search ───────────────────────────────────────────────────
+// Returns genuine results (title + real URL + snippet) with no API key, so every agent
+// does real research out of the box. Uses DuckDuckGo's HTML endpoint, parsed defensively.
+// Isolated + best-effort: if the source or its markup changes, it returns [] and the caller
+// degrades gracefully (never throws into the run).
+interface SearchResult { title: string; url: string; snippet: string }
+
+async function keylessWebSearch(query: string): Promise<SearchResult[]> {
+  const outcome = await fetchWithRetry(
+    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+    { method: "GET", headers: { "User-Agent": "Mozilla/5.0 (compatible; Krelvan-agent/1.0)", "Accept": "text/html" } },
+    { maxAttempts: 2, baseDelayMs: 400 },
+  );
+  if (!outcome.ok) throw new Error(`keyless search HTTP ${outcome.status}`);
+  const html = await outcome.resp.text();
+
+  const results: SearchResult[] = [];
+  const snippets: string[] = [];
+  const snippetRe = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+  for (let sm = snippetRe.exec(html); sm !== null && snippets.length < 12; sm = snippetRe.exec(html)) {
+    snippets.push(cleanText(sm[1] ?? ""));
+  }
+  const linkRe = /class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  let i = 0;
+  for (let lm = linkRe.exec(html); lm !== null && results.length < 6; lm = linkRe.exec(html)) {
+    const url = unwrapDdgUrl(lm[1] ?? "");
+    const title = cleanText(lm[2] ?? "");
+    if (url && title) results.push({ title, url, snippet: snippets[i] ?? "" });
+    i++;
+  }
+  return results;
+}
+
+function cleanText(s: string): string {
+  return s.replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&").replace(/&#x27;/g, "'").replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ").trim();
+}
+
+// DuckDuckGo wraps result links as //duckduckgo.com/l/?uddg=<encoded-real-url>. Unwrap it.
+function unwrapDdgUrl(href: string): string {
+  const m = href.match(/[?&]uddg=([^&]+)/);
+  if (m?.[1]) { try { return decodeURIComponent(m[1]); } catch { /* fall through */ } }
+  if (href.startsWith("//")) return `https:${href}`;
+  return href.startsWith("http") ? href : "";
+}
+
 // ── Implementation ────────────────────────────────────────────────────────────
 
 export const webSearchCapability: CapabilityPlugin = {
@@ -47,19 +108,31 @@ export const webSearchCapability: CapabilityPlugin = {
   async invoke(call: EffectCall) {
     const input = call.input as Record<string, unknown>;
 
-    // Primary: explicit "query" key (set via manifest seed or prior node output).
-    // Fallback 1: the node's role text often describes what to search (strip the verb prefix).
-    // Fallback 2: the agent intent captures the overall goal.
-    let query = String(input["query"] ?? "").trim();
+    // The search query must be the actual TOPIC, not the node's instruction text. Prefer
+    // explicit/short topic signals from state; only fall back to the role, and when we do,
+    // extract the real subject (the phrase after "about/for/on") rather than the whole prompt
+    // — otherwise we search for "You are a research scout. Search the open web..." and get junk.
+    const topicKeys = ["query", "topic", "subject", "search_query", "q"];
+    let query = "";
+    for (const k of topicKeys) {
+      const v = String(input[k] ?? "").trim();
+      if (v) { query = v; break; }
+    }
     if (!query) {
       const role = String(input["role"] ?? input[`${call.nodeId}.role`] ?? "").trim();
       if (role) {
-        // Strip common instructional prefixes so what remains is a usable search topic.
-        query = role.replace(/^(search (for|the web for|the internet for)|look up|find|retrieve|fetch)\s+/i, "").slice(0, 200);
+        // Pull the subject out of an instruction: the phrase after "about/for/on/regarding".
+        const m = role.match(/\b(?:about|for|on|regarding|into)\s+(?:the\s+)?['"]?([^'".\n]{4,120})/i);
+        query = (m?.[1] ?? role.replace(/^[\s\S]*?(?:search|look up|find|research)\s+/i, "")).trim().slice(0, 160);
       }
     }
     if (!query) {
-      query = String(input["intent"] ?? "").slice(0, 200).trim();
+      query = String(input["intent"] ?? "").slice(0, 160).trim();
+    }
+    // Guard: if the "query" is still an instruction (starts like a role), it's unusable as a search.
+    if (/^you are\b/i.test(query)) {
+      const m = query.match(/\b(?:about|for|on|regarding)\s+(?:the\s+)?['"]?([^'".\n]{4,120})/i);
+      query = (m?.[1] ?? "").trim();
     }
     if (!query) {
       log.warn({ nodeId: call.nodeId }, "web_search: no query in state — set 'query' in manifest seed");
@@ -121,18 +194,31 @@ export const webSearchCapability: CapabilityPlugin = {
 
         log.info({ nodeId: call.nodeId, count: results.length, query }, "web_search: brave results received");
 
-        return {
-          output: { results, query, count: results.length },
-          claimedCostCents: 8,
-        };
+        return shapeSearchOutput(results, query, 8);
       }
     }
 
-    // ── Path 2: LLM synthesis via configured provider ────────────────────────
+    // ── Path 2: Real keyless web search — works for every customer, no key ────
+    // Krelvan's promise is "describe an outcome, get a working agent." A research agent must
+    // return REAL results out of the box, not model-imagined ones. This queries a keyless web
+    // search and returns genuine {title, url, snippet}. Premium providers (Tavily/Brave/SerpAPI
+    // connectors) are the optional upgrade; the LLM-synthesis below is only a last resort.
+    try {
+      const results = await keylessWebSearch(query);
+      if (results.length > 0) {
+        log.info({ nodeId: call.nodeId, count: results.length, query }, "web_search: keyless web results received");
+        return shapeSearchOutput(results, query, 2);
+      }
+      log.warn({ nodeId: call.nodeId, query }, "web_search: keyless search returned nothing — degrading");
+    } catch (err) {
+      log.warn({ nodeId: call.nodeId, query, err: (err as Error)?.message }, "web_search: keyless search failed — degrading");
+    }
+
+    // ── Path 3: LLM synthesis via configured provider (last resort) ──────────
     if (hasLlm) {
       const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
       const model = process.env["KRELVAN_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
-      log.info({ nodeId: call.nodeId, query, model, provider }, "web_search: no Brave key — falling back to LLM synthesis");
+      log.info({ nodeId: call.nodeId, query, model, provider }, "web_search: keyless search unavailable — LLM synthesis (last resort)");
 
       const client = getLLMClient();
       const response = await client.complete({
