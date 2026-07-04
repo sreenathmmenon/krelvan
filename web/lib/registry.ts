@@ -496,6 +496,206 @@ export const REGISTRY_SEED: CatalogEntry[] = [
       }
   },
   {
+    "name": "growth-team",
+    "title": "Autonomous Growth Team",
+    "oneLiner": "Point it at your site and brand voice — a team of specialist agents researches, audits SEO, drafts content, prospects outreach, checks AI-answer visibility, and ships a prioritized growth plan, with your approval before anything publishes.",
+    "category": "Templates",
+    "sideEffect": "message-human",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "slack-bot-token",
+      "resend-api-key"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+              "version": 1,
+              "name": "Autonomous Growth Team",
+              "intent": "Point it at a company's website and brand voice, and a team of specialist agents goes to work: it studies the site, researches the market and audience, audits SEO and finds keyword gaps, drafts channel-ready content in the brand's voice, prospects outreach targets, checks how the brand shows up in AI answers, and assembles a prioritized growth plan — pausing for your approval before anything is published or sent. Runs on a schedule so the work compounds. Every step is a signed, replayable record.",
+              "entry": "study_site",
+              "runBudgetCents": 900,
+              "maxNodeVisits": 2,
+              "seed": {
+                      "site_url": "https://example.com",
+                      "brand_voice": "clear, confident, technical but human — no hype, no buzzwords",
+                      "audience": "technical founders and engineering leaders evaluating developer tools",
+                      "goal": "grow qualified sign-ups and become the obvious choice in our category"
+              },
+              "nodes": [
+                      {
+                              "id": "study_site",
+                              "role": "You are the brand analyst on a growth team. Fetch the company's 'site_url' and read what it says. Extract the real positioning. Output object keys: product (one sentence: what the company actually sells), positioning (its current angle/claims), signals (a tight list of concrete facts a marketer can use — features, proof points, audience cues).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "http_get",
+                                              "sideEffect": "read",
+                                              "budgetCents": 8
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "market_research",
+                              "role": "You are the market researcher. Using the 'audience', the 'goal', and the study_site 'product'/'signals', search the web for what this audience cares about, how the category talks, and where attention is. Ground everything in real findings — invent nothing. Output object keys: findings (the load-bearing market/audience insights as a tight list), themes (3-5 content themes that would resonate), angle (one sentence: the sharpest wedge for this brand).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "web_search",
+                                              "sideEffect": "read",
+                                              "budgetCents": 40
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "seo_audit",
+                              "role": "You are the SEO strategist. Using study_site 'product'/'signals' and market_research 'findings'/'themes', identify the keyword and topic gaps this brand should own and the highest-leverage pieces to publish. Output object keys: keyword_gaps (the specific queries/topics to target, with why), content_priorities (a ranked short list of pieces to write, most valuable first), quick_wins (any on-site fixes worth flagging).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "think",
+                                              "sideEffect": "read",
+                                              "budgetCents": 60
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "draft_content",
+                              "role": "You are the content lead. Write channel-ready drafts in the exact 'brand_voice', grounded ONLY in study_site 'signals' and market_research 'findings'/'themes' — no invented claims. Produce, for the single highest-priority item from seo_audit 'content_priorities': a blog/article draft AND short social posts adapted for the platforms this 'audience' uses. Output object keys: article (title + full draft), social (2-3 platform-ready posts), why (one line on why this piece first).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "compose",
+                                              "sideEffect": "read",
+                                              "budgetCents": 120
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "prospect_outreach",
+                              "role": "You are the outreach specialist. Using market_research 'findings' and the 'audience', identify the KINDS of people/communities/creators worth reaching (roles, communities, publications — described generically, not scraped contacts) and draft one warm, specific outreach message in the 'brand_voice' the team could adapt. Output object keys: targets (the target types/communities to pursue, with why each fits), outreach_draft (one ready-to-adapt message).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "think",
+                                              "sideEffect": "read",
+                                              "budgetCents": 60
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "ai_visibility",
+                              "role": "You are the AI-answer-visibility analyst. Increasingly, buyers ask AI assistants (not just search engines) for recommendations. Using study_site 'product'/'positioning' and market_research 'findings', assess how likely this brand is to be surfaced as an answer to the questions this 'audience' would ask an AI assistant, and what to change to be cited. Output object keys: likely_prompts (the real questions this audience would ask an assistant), gaps (why the brand may not surface today), actions (concrete moves to become the cited answer).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "think",
+                                              "sideEffect": "read",
+                                              "budgetCents": 60
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "growth_plan",
+                              "role": "You are the head of growth assembling the team's work into ONE prioritized plan for the 'goal'. Pull together: seo_audit content_priorities + quick_wins, draft_content (the ready piece), prospect_outreach targets + message, and ai_visibility actions. Output object keys: result (a crisp, prioritized growth plan — this week's actions first, then the backlog, each with the expected payoff and which draft/asset is already ready to ship), summary (a 2-3 sentence executive summary).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "compose",
+                                              "sideEffect": "read",
+                                              "budgetCents": 100
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "publish",
+                              "role": "Publish/announce the ready content (draft_content 'article'/'social') to the brand's channels. This SENDS TO REAL PEOPLE / posts publicly, so the run PAUSES here and shows you exactly what will go out to approve, edit, or reject first. Nothing is published without your explicit go-ahead. Deliver the approved content to the notification target. Output object key: announced.",
+                              "autonomy": "suggest",
+                              "capabilities": [
+                                      {
+                                              "name": "notify_webhook",
+                                              "sideEffect": "message-human",
+                                              "budgetCents": 5
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "remember_cycle",
+                              "role": "Persist what this cycle produced and decided so the next run builds on it instead of repeating — the growth_plan summary and which piece shipped. One line for the record.",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "remember",
+                                              "sideEffect": "write-reversible",
+                                              "budgetCents": 5
+                                      }
+                              ]
+                      }
+              ],
+              "edges": [
+                      {
+                              "from": "study_site",
+                              "to": "market_research"
+                      },
+                      {
+                              "from": "market_research",
+                              "to": "seo_audit"
+                      },
+                      {
+                              "from": "seo_audit",
+                              "to": "draft_content"
+                      },
+                      {
+                              "from": "draft_content",
+                              "to": "prospect_outreach"
+                      },
+                      {
+                              "from": "prospect_outreach",
+                              "to": "ai_visibility"
+                      },
+                      {
+                              "from": "ai_visibility",
+                              "to": "growth_plan"
+                      },
+                      {
+                              "from": "growth_plan",
+                              "to": "publish"
+                      },
+                      {
+                              "from": "publish",
+                              "to": "remember_cycle"
+                      }
+              ],
+              "customize": {
+                      "agent_name": {
+                              "label": "Agent name",
+                              "type": "text",
+                              "rename": true,
+                              "default": "Autonomous Growth Team"
+                      },
+                      "site_url": {
+                              "label": "Your website URL",
+                              "type": "text",
+                              "seedKey": "site_url",
+                              "default": "https://example.com"
+                      },
+                      "brand_voice": {
+                              "label": "Your brand voice",
+                              "type": "text",
+                              "seedKey": "brand_voice",
+                              "default": "clear, confident, technical but human — no hype, no buzzwords"
+                      },
+                      "audience": {
+                              "label": "Your target audience",
+                              "type": "text",
+                              "seedKey": "audience",
+                              "default": "technical founders and engineering leaders evaluating developer tools"
+                      }
+              }
+      }
+  },
+  {
     "name": "order-to-refund",
     "title": "Order to Refund",
     "oneLiner": "Handle a refund request under your policy — issue the refund and notify the customer only with your explicit approval, since it moves real money.",
