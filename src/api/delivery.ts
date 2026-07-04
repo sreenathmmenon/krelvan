@@ -21,7 +21,9 @@ import { getLogger } from "../core/observability/logger.js";
 const log = getLogger("delivery");
 
 /** The channels shipped built-in. Everything else is a webhook or a marketplace connector. */
-export type DeliveryChannel = "inbox" | "email" | "slack" | "telegram" | "webhook";
+export type DeliveryChannel =
+  | "inbox" | "email" | "slack" | "telegram" | "webhook"
+  | "sms" | "whatsapp" | "twitter" | "linkedin" | "discord";
 
 /** One destination a customer chose for an agent's output. */
 export interface DeliveryTarget {
@@ -46,12 +48,75 @@ export interface DeliveryPayload {
   body: string;
 }
 
-const CHANNEL_PLUGIN: Record<Exclude<DeliveryChannel, "inbox">, CapabilityPlugin> = {
+/** Channels served by an existing send-plugin (reuse the engine's transport). */
+const CHANNEL_PLUGIN: Partial<Record<DeliveryChannel, CapabilityPlugin>> = {
   email: emailSendCapability,
   slack: slackSendCapability,
   telegram: telegramSendCapability,
   webhook: notifyWebhookCapability,
+  discord: notifyWebhookCapability, // Discord accepts a plain webhook POST ({ content })
 };
+
+/**
+ * Channels served by a direct provider API call. Each is a small adapter on the same rails:
+ * take the output, shape the provider's request, POST it (via safeFetch — SSRF-guarded).
+ * Keys come from the target config (customer paste) or env, never hardcoded.
+ */
+const DIRECT_CHANNELS = new Set<DeliveryChannel>(["sms", "whatsapp", "twitter", "linkedin"]);
+
+async function sendDirect(channel: DeliveryChannel, p: DeliveryPayload, cfg: Record<string, string>): Promise<DeliveryOutcome> {
+  const { safeFetch } = await import("../core/plugins/safe-fetch.js");
+  const text = `${p.agentName}: ${p.body}`;
+  try {
+    if (channel === "sms" || channel === "whatsapp") {
+      // Twilio: POST Messages.json with Basic auth (Account SID : Auth Token), form-encoded.
+      const sid = cfg["account_sid"] ?? process.env["KRELVAN_TWILIO_SID"] ?? "";
+      const token = cfg["auth_token"] ?? process.env["KRELVAN_TWILIO_TOKEN"] ?? "";
+      const from = cfg["from"] ?? process.env["KRELVAN_TWILIO_FROM"] ?? "";
+      const to = cfg["to"] ?? "";
+      if (!sid || !token || !from || !to) return { channel, ok: false, detail: "needs Twilio account_sid, auth_token, from and to — add them in Secrets / the channel config" };
+      const pfx = channel === "whatsapp" ? "whatsapp:" : "";
+      const form = new URLSearchParams({ To: `${pfx}${to}`, From: `${pfx}${from}`, Body: text.slice(0, 1500) });
+      const resp = await safeFetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Messages.json`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}` },
+        body: form.toString(),
+      });
+      return { channel, ok: resp.ok, detail: resp.ok ? "delivered" : `Twilio returned ${resp.status}` };
+    }
+    if (channel === "twitter") {
+      // X API v2: POST /2/tweets with an OAuth2 user bearer token. Post ≤ 280 chars.
+      const bearer = cfg["bearer_token"] ?? process.env["KRELVAN_X_BEARER"] ?? "";
+      if (!bearer) return { channel, ok: false, detail: "needs an X (Twitter) bearer_token — add it in the channel config / Secrets" };
+      const resp = await safeFetch("https://api.twitter.com/2/tweets", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${bearer}` },
+        body: JSON.stringify({ text: p.body.slice(0, 280) }),
+      });
+      return { channel, ok: resp.ok, detail: resp.ok ? "posted" : `X returned ${resp.status}` };
+    }
+    if (channel === "linkedin") {
+      // LinkedIn UGC: POST /v2/ugcPosts with a member bearer token + the author URN.
+      const bearer = cfg["bearer_token"] ?? process.env["KRELVAN_LINKEDIN_BEARER"] ?? "";
+      const authorUrn = cfg["author_urn"] ?? process.env["KRELVAN_LINKEDIN_URN"] ?? "";
+      if (!bearer || !authorUrn) return { channel, ok: false, detail: "needs a LinkedIn bearer_token and author_urn (urn:li:person:…) — add them in the channel config" };
+      const resp = await safeFetch("https://api.linkedin.com/v2/ugcPosts", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${bearer}`, "X-Restli-Protocol-Version": "2.0.0" },
+        body: JSON.stringify({
+          author: authorUrn,
+          lifecycleState: "PUBLISHED",
+          specificContent: { "com.linkedin.ugc.ShareContent": { shareCommentary: { text: p.body.slice(0, 2900) }, shareMediaCategory: "NONE" } },
+          visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
+        }),
+      });
+      return { channel, ok: resp.ok, detail: resp.ok ? "posted" : `LinkedIn returned ${resp.status}` };
+    }
+    return { channel, ok: false, detail: "unknown direct channel" };
+  } catch (err) {
+    return { channel, ok: false, detail: (err as Error)?.message ?? "send error" };
+  }
+}
 
 /** Shape the payload into the input keys each channel's plugin expects. */
 function inputFor(channel: DeliveryChannel, p: DeliveryPayload, cfg: Record<string, string>): Record<string, unknown> {
@@ -66,6 +131,9 @@ function inputFor(channel: DeliveryChannel, p: DeliveryPayload, cfg: Record<stri
     case "webhook":
       // notify_webhook posts input.payload as the JSON body — put the full output there.
       return { url: cfg["url"] ?? "", payload: { agent: p.agentName, title: p.title, output: p.body, runId: p.runId } };
+    case "discord":
+      // Discord incoming webhooks accept { content } — send it as the webhook payload.
+      return { url: cfg["url"] ?? "", payload: { content: `**${p.agentName}**\n${p.body}`.slice(0, 1900) } };
     default:
       return {};
   }
@@ -84,6 +152,8 @@ export async function deliver(targets: DeliveryTarget[], payload: DeliveryPayloa
   const outcomes: DeliveryOutcome[] = [];
   for (const t of targets) {
     if (t.channel === "inbox") { outcomes.push({ channel: "inbox", ok: true, detail: "in the Inbox" }); continue; }
+    // Direct-API channels (SMS/WhatsApp/X/LinkedIn) — a small provider adapter on the same rails.
+    if (DIRECT_CHANNELS.has(t.channel)) { outcomes.push(await sendDirect(t.channel, payload, t.config ?? {})); continue; }
     const plugin = CHANNEL_PLUGIN[t.channel];
     if (!plugin) { outcomes.push({ channel: t.channel, ok: false, detail: "unknown channel" }); continue; }
     try {
@@ -109,7 +179,7 @@ export async function deliver(targets: DeliveryTarget[], payload: DeliveryPayloa
 /** Validate a deliverTo array coming from the API — drops malformed entries. */
 export function sanitizeTargets(raw: unknown): DeliveryTarget[] {
   if (!Array.isArray(raw)) return [];
-  const valid: DeliveryChannel[] = ["inbox", "email", "slack", "telegram", "webhook"];
+  const valid: DeliveryChannel[] = ["inbox", "email", "slack", "telegram", "webhook", "sms", "whatsapp", "twitter", "linkedin", "discord"];
   const out: DeliveryTarget[] = [];
   for (const r of raw) {
     if (!r || typeof r !== "object") continue;

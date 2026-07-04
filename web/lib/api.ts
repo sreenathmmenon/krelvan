@@ -574,7 +574,9 @@ export async function revokeTrigger(agentId: string): Promise<void> {
 
 // ── Output delivery (where an agent's results go when a run finishes) ─────────────
 
-export type DeliveryChannel = "inbox" | "email" | "slack" | "telegram" | "webhook";
+export type DeliveryChannel =
+  | "inbox" | "email" | "slack" | "telegram" | "webhook"
+  | "sms" | "whatsapp" | "twitter" | "linkedin" | "discord";
 
 export interface DeliveryTarget {
   channel: DeliveryChannel;

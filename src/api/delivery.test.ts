@@ -38,6 +38,33 @@ test("deliver: inbox is a no-op success and never calls out", async () => {
   assert.equal(out[0]!.ok, true);
 });
 
+test("sanitizeTargets accepts the direct-API channels (sms/whatsapp/twitter/linkedin/discord)", () => {
+  const raw = [
+    { channel: "sms", config: { to: "+15551234567" } },
+    { channel: "whatsapp", config: { to: "+15551234567" } },
+    { channel: "twitter", config: { bearer_token: "x" } },
+    { channel: "linkedin", config: { bearer_token: "x", author_urn: "urn:li:person:1" } },
+    { channel: "discord", config: { url: "https://discord.com/api/webhooks/1/x" } },
+  ];
+  const out = sanitizeTargets(raw);
+  assert.deepEqual(out.map(t => t.channel).sort(), ["discord", "linkedin", "sms", "twitter", "whatsapp"]);
+});
+
+test("deliver: unconfigured direct channels fail gracefully with a helpful hint, never throw", async () => {
+  const targets: DeliveryTarget[] = [
+    { channel: "sms", config: {} },
+    { channel: "whatsapp", config: {} },
+    { channel: "twitter", config: {} },
+    { channel: "linkedin", config: {} },
+  ];
+  const out = await deliver(targets, { agentName: "Poster", runId: "r3", title: "Update", body: "Big news…" });
+  assert.equal(out.length, 4);
+  for (const o of out) {
+    assert.equal(o.ok, false, `${o.channel} with no creds must not report success`);
+    assert.match(o.detail ?? "", /needs|add/i, `${o.channel} must explain what's missing`);
+  }
+});
+
 test("deliver: an unconfigured external channel fails gracefully, never throws", async () => {
   // No KRELVAN_* env / no config → the underlying send plugins return sent:false, and
   // deliver() surfaces that as ok:false with a helpful detail — but must NOT throw.
