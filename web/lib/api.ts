@@ -572,6 +572,30 @@ export async function revokeTrigger(agentId: string): Promise<void> {
   await apiFetch(`/api/agents/${encodeURIComponent(agentId)}/trigger`, { method: "DELETE" });
 }
 
+// ── Output delivery (where an agent's results go when a run finishes) ─────────────
+
+export type DeliveryChannel = "inbox" | "email" | "slack" | "telegram" | "webhook";
+
+export interface DeliveryTarget {
+  channel: DeliveryChannel;
+  config?: Record<string, string>;
+}
+
+/** Where this agent's output is delivered when a run completes. Inbox is always included by the server. */
+export async function getDelivery(agentId: string): Promise<DeliveryTarget[]> {
+  const data = await apiFetch<{ deliverTo: DeliveryTarget[] }>(`/api/agents/${encodeURIComponent(agentId)}/delivery`);
+  return data.deliverTo;
+}
+
+/** Replace this agent's delivery targets. Returns the persisted set. */
+export async function setDelivery(agentId: string, targets: DeliveryTarget[]): Promise<DeliveryTarget[]> {
+  const data = await apiFetch<{ deliverTo: DeliveryTarget[] }>(`/api/agents/${encodeURIComponent(agentId)}/delivery`, {
+    method: "PUT",
+    body: JSON.stringify({ deliverTo: targets }),
+  });
+  return data.deliverTo;
+}
+
 // ── Secrets (customer-managed) ──────────────────────────────────────────────────
 
 export interface SecretMeta {

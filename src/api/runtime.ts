@@ -189,6 +189,8 @@ export interface AgentRecord {
   createdAt: number;
   scheduleMs?: number;  // if set, run on this interval
   lastRunId?: string;
+  /** Where this agent's output is delivered when a run completes (in addition to the Inbox). */
+  deliverTo?: import("./delivery.js").DeliveryTarget[];
 }
 
 export class AgentRegistry {
@@ -233,6 +235,15 @@ export class AgentRegistry {
   updateLastRun(agentId: string, runId: string): void {
     const a = this.agents.get(agentId);
     if (a) { a.lastRunId = runId; this.persist(); }
+  }
+
+  /** Set where this agent's output is delivered when a run completes. */
+  setDeliverTo(agentId: string, targets: import("./delivery.js").DeliveryTarget[]): boolean {
+    const a = this.agents.get(agentId);
+    if (!a) return false;
+    a.deliverTo = targets;
+    this.persist();
+    return true;
   }
 
   delete(id: string): boolean {
@@ -1818,12 +1829,51 @@ export class KrelvanRuntime {
         reason: result.reason,
       });
       log.info({ runId, status: result.status, spentCents: result.projection.budget.runSpentCents }, "run finished");
+
+      // Deliver the output to the customer's chosen destinations. Best-effort and detached:
+      // a delivery failure must never affect the run (the output is already in the Inbox).
+      if (result.status === "completed" && agentId) {
+        const agent = this.agentRegistry.get(agentId);
+        if (agent?.deliverTo && agent.deliverTo.length > 0) {
+          void this.deliverOutput(agent.deliverTo, manifest.name, runId, result.projection.state as Record<string, unknown>);
+        }
+      }
     } catch (err) {
       // An Error object serializes to {} in structured logs — extract message + stack so a
       // production failure is actually diagnosable (this is what obscured a real run failure).
       const e = err as Error;
       log.error({ runId, error: e?.message ?? String(err), stack: e?.stack }, "run threw unexpectedly");
       this.runRegistry.update(runId, { status: "failed", finishedAt: Date.now(), reason: e?.message ?? "unexpected error" });
+    }
+  }
+
+  /** Extract a run's human-facing output and push it to the agent's chosen delivery targets. */
+  private async deliverOutput(
+    targets: import("./delivery.js").DeliveryTarget[],
+    agentName: string,
+    runId: string,
+    state: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      // Prefer prose output (a *.result / *.body / *.reply / …); else the first notable value.
+      const entries = Object.entries(state);
+      const proseSuffix = [".result", ".briefing", ".body", ".reply", ".answer", ".digest", ".summary", ".message", ".note"];
+      let body = "";
+      for (const suf of proseSuffix) {
+        const hit = entries.find(([k, v]) => k.endsWith(suf) && typeof v === "string" && (v as string).trim().length > 0);
+        if (hit) { body = String(hit[1]).trim(); break; }
+      }
+      if (!body) {
+        const notable = entries
+          .filter(([k, v]) => (typeof v === "string" || typeof v === "number" || typeof v === "boolean") && !k.startsWith("_") && String(v).length > 0 && String(v).length < 200)
+          .slice(0, 5).map(([k, v]) => `${k.split(".").pop()}: ${v}`);
+        body = notable.join("\n") || "Run completed with no text output.";
+      }
+      const title = body.length > 90 ? body.slice(0, 88).trimEnd() + "…" : body;
+      const { deliver } = await import("./delivery.js");
+      await deliver(targets, { agentName, runId, title, body });
+    } catch (err) {
+      log.warn({ runId, error: (err as Error)?.message }, "output delivery failed (run unaffected)");
     }
   }
 }

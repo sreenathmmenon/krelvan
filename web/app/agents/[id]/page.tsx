@@ -5,8 +5,10 @@ import Link from "next/link";
 import {
   getAgent, getAgentRuns, startRun, deleteAgent, listSchedules, createSchedule, toggleSchedule, deleteSchedule,
   getTrigger, mintTrigger, revokeTrigger, listApprovals,
+  getDelivery, setDelivery,
   timeAgo,
   type AgentRecord, type RunRecord, type ScheduleRecord, type ManifestNode, type ManifestEdge, type PendingApproval,
+  type DeliveryChannel, type DeliveryTarget,
 } from "../../../lib/api";
 import MemoryTab from "./MemoryTab";
 import { edgeGeometry, edgeConditionLabel, type Box } from "../../../lib/graph-edges";
@@ -714,7 +716,7 @@ function SchedulePanel({ agentId, schedules, onRefresh }: { agentId: string; sch
   );
 }
 
-const TABS = ["graph", "runs", "schedules", "trigger", "memory"] as const;
+const TABS = ["graph", "runs", "schedules", "trigger", "delivery", "memory"] as const;
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -736,7 +738,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
   // Toast for a failed primary action (run now) so the click isn't silently lost.
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [tab, setTab] = useState<"graph" | "runs" | "schedules" | "trigger" | "memory">("graph");
+  const [tab, setTab] = useState<"graph" | "runs" | "schedules" | "trigger" | "delivery" | "memory">("graph");
   const [running, setRunning] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -999,7 +1001,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
           <div role="tablist" aria-label="Agent sections" style={{ display: "flex", gap: "var(--s5)" }}>
             {TABS.map((t, i) => {
               const active = tab === t;
-              const label = t === "graph" ? "Graph" : t === "runs" ? `Runs (${runs.length})` : t === "schedules" ? `Schedules${scheduleCount > 0 ? ` (${scheduleCount})` : ""}` : t === "trigger" ? "Trigger" : "Memory";
+              const label = t === "graph" ? "Graph" : t === "runs" ? `Runs (${runs.length})` : t === "schedules" ? `Schedules${scheduleCount > 0 ? ` (${scheduleCount})` : ""}` : t === "trigger" ? "Trigger" : t === "delivery" ? "Delivery" : "Memory";
               return (
                 <button
                   key={t}
@@ -1165,6 +1167,13 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
           <TriggerPanel agentId={id} />
         )}
 
+        {/* Delivery tab — where output goes when a run finishes */}
+        {tab === "delivery" && (
+          <div role="tabpanel" id="panel-delivery" aria-labelledby="tab-delivery">
+            <DeliveryPanel agentId={id} />
+          </div>
+        )}
+
         {/* Memory tab */}
         {tab === "memory" && (
           <MemoryTab
@@ -1266,6 +1275,248 @@ function TriggerPanel({ agentId }: { agentId: string }) {
           <div style={{ display: "flex", gap: "var(--s3)", marginTop: "var(--s2)" }}>
             <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => void mint()}>{busy ? "…" : "Rotate token"}</button>
             <button className="btn btn-sm agent-card__delete" disabled={busy} onClick={() => void revoke()}>{busy ? "…" : "Disable webhook"}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Delivery panel: choose where this agent's output goes when a run finishes ─────
+// Inbox is always on (the server guarantees it). The customer can add email, Slack,
+// Telegram, and webhook destinations, each with the small config that channel needs.
+
+// Teal SVG glyph per delivery channel — no emoji, drawn on the shared 16×16 grid.
+function DeliveryGlyph({ channel, size = 16 }: { channel: DeliveryChannel; size?: number }) {
+  let body: React.ReactNode;
+  switch (channel) {
+    case "inbox":
+      body = (
+        <>
+          <path d="M2.5 4.2c0-.7.6-1.3 1.3-1.3h8.4c.7 0 1.3.6 1.3 1.3v7.6c0 .7-.6 1.3-1.3 1.3H3.8c-.7 0-1.3-.6-1.3-1.3V4.2z" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <path d="M2.5 9h3l1.2 1.8h2.6L10.5 9h3" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      );
+      break;
+    case "email":
+      body = (
+        <>
+          <rect x="2.5" y="4" width="11" height="8" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" />
+          <path d="M3 4.8l5 4 5-4" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      );
+      break;
+    case "slack":
+      body = <path d="M3 4.5h10v6H7l-3 2.5v-2.5H3v-6z" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinejoin="round" />;
+      break;
+    case "telegram":
+      body = <path d="M13.2 3.2L2.8 7.3c-.5.2-.5.9 0 1l2.7.9 1 3c.1.4.6.5.9.2l1.5-1.4 2.7 2c.4.3.9.1 1-.4l1.6-8.5c.1-.6-.4-1-1-.8z" stroke="currentColor" strokeWidth="1.1" fill="none" strokeLinejoin="round" />;
+      break;
+    case "webhook":
+      body = (
+        <>
+          <path d="M8 2.6c2 0 3.3 1.5 3.3 3.4v2.4l1.2 1.8H3.5l1.2-1.8V6c0-1.9 1.3-3.4 3.3-3.4z" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <path d="M6.6 12.2c.2.8.8 1.2 1.4 1.2s1.2-.4 1.4-1.2" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+        </>
+      );
+      break;
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ flexShrink: 0, display: "block" }}>
+      {body}
+    </svg>
+  );
+}
+
+// The four addable channels (inbox is fixed/always-on and handled separately).
+// `configKey`   — the config field this channel needs an input for (null = no config).
+// `required`    — whether that field must be filled before Save.
+// `needsSecret` — an external key (bot token / signing) is set in Secrets, not here.
+const DELIVERY_CHANNELS: {
+  channel: Exclude<DeliveryChannel, "inbox">;
+  label: string;
+  blurb: string;
+  configKey: string | null;
+  required: boolean;
+  placeholder: string;
+  fieldLabel: string;
+  needsSecret: boolean;
+}[] = [
+  { channel: "email",    label: "Email",    blurb: "Send the result to an email address.",              configKey: "to",          required: true,  placeholder: "you@company.com",                    fieldLabel: "Send to",          needsSecret: true  },
+  { channel: "slack",    label: "Slack",    blurb: "Post the result to a Slack channel.",               configKey: "webhook_url", required: false, placeholder: "https://hooks.slack.com/services/…", fieldLabel: "Incoming webhook URL (optional)", needsSecret: true  },
+  { channel: "telegram", label: "Telegram", blurb: "Message the result to a Telegram chat.",            configKey: "chat_id",     required: false, placeholder: "123456789",                          fieldLabel: "Chat ID (optional)", needsSecret: true  },
+  { channel: "webhook",  label: "Webhook",  blurb: "POST the result as JSON to any URL you control.",   configKey: "url",         required: true,  placeholder: "https://api.example.com/hook",       fieldLabel: "POST to URL",      needsSecret: false },
+];
+
+function DeliveryPanel({ agentId }: { agentId: string }) {
+  // Per-channel enabled state + the single config value each needs. We keep the config
+  // string even while a channel is toggled off, so toggling back on doesn't lose a typed URL.
+  const [enabled, setEnabled] = useState<Record<string, boolean>>({});
+  const [config, setConfig] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const targets = await getDelivery(agentId);
+      const en: Record<string, boolean> = {};
+      const cfg: Record<string, string> = {};
+      for (const t of targets) {
+        if (t.channel === "inbox") continue; // inbox is implicit/always-on
+        en[t.channel] = true;
+        const meta = DELIVERY_CHANNELS.find(c => c.channel === t.channel);
+        if (meta?.configKey && t.config) cfg[t.channel] = t.config[meta.configKey] ?? "";
+      }
+      setEnabled(en);
+      setConfig(cfg);
+      setLoadErr(null);
+    } catch (e) {
+      setLoadErr((e as Error).message || "Could not load delivery settings.");
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  function toggle(channel: string) {
+    setSaved(false);
+    setEnabled(prev => ({ ...prev, [channel]: !prev[channel] }));
+  }
+  function setCfg(channel: string, value: string) {
+    setSaved(false);
+    setConfig(prev => ({ ...prev, [channel]: value }));
+  }
+
+  // Channels that are enabled but still missing a required config value — block Save.
+  const incomplete = DELIVERY_CHANNELS.filter(
+    c => enabled[c.channel] && c.required && !(config[c.channel] ?? "").trim(),
+  );
+
+  async function handleSave() {
+    if (incomplete.length > 0) {
+      setSaveErr(`Add ${incomplete[0]!.fieldLabel.toLowerCase()} for ${incomplete[0]!.label} before saving.`);
+      return;
+    }
+    setSaving(true);
+    setSaveErr(null);
+    try {
+      // Inbox is always included; the server also guarantees it, but sending it keeps the
+      // saved set explicit and self-describing.
+      const targets: DeliveryTarget[] = [{ channel: "inbox" }];
+      for (const c of DELIVERY_CHANNELS) {
+        if (!enabled[c.channel]) continue;
+        const value = (config[c.channel] ?? "").trim();
+        const target: DeliveryTarget = { channel: c.channel };
+        if (c.configKey && value) target.config = { [c.configKey]: value };
+        targets.push(target);
+      }
+      await setDelivery(agentId, targets);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 4000);
+    } catch (e) {
+      setSaveErr((e as Error).message || "Couldn't save. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <h2 className="h3" style={{ marginBottom: "var(--s2)" }}>Deliver output to</h2>
+      <p className="small soft" style={{ marginBottom: "var(--s5)", lineHeight: 1.6, maxWidth: "60ch" }}>
+        Choose where this agent&apos;s results go when a run finishes — they always land in your Inbox;
+        add more destinations here.
+      </p>
+
+      {loading ? (
+        <div className="skeleton skeleton-line" style={{ height: 72, width: "100%", maxWidth: 520 }} />
+      ) : loadErr ? (
+        <div className="state-error" role="alert" style={{ justifyContent: "space-between" }}>
+          <span>{loadErr}</span>
+          <button className="btn btn-sm btn-secondary" onClick={() => void load()} style={{ flexShrink: 0 }}>Retry</button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--s3)" }}>
+          {/* Inbox — fixed, always included */}
+          <div className="card" style={{ padding: "var(--s4) var(--s5)", display: "flex", alignItems: "center", gap: "var(--s4)", borderLeft: "3px solid var(--brand)" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 34, height: 34, borderRadius: "var(--r)", background: "var(--brand-tint)", color: "var(--brand)", flexShrink: 0 }}>
+              <DeliveryGlyph channel="inbox" size={18} />
+            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap" }}>
+                <span className="h3" style={{ margin: 0 }}>Agent Inbox</span>
+                <span className="badge badge-done"><span className="dot" />always on</span>
+              </div>
+              <p className="small muted" style={{ margin: "2px 0 0" }}>always — your Agent Inbox. Every run&apos;s output lands here.</p>
+            </div>
+          </div>
+
+          {/* The addable channels */}
+          {DELIVERY_CHANNELS.map(c => {
+            const on = !!enabled[c.channel];
+            const missing = on && c.required && !(config[c.channel] ?? "").trim();
+            return (
+              <div key={c.channel} className="card" style={{ padding: "var(--s4) var(--s5)", display: "flex", flexDirection: "column", gap: on && c.configKey ? "var(--s4)" : 0, borderLeft: `3px solid ${on ? "var(--brand)" : "var(--line-strong)"}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--s4)" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 34, height: 34, borderRadius: "var(--r)", background: on ? "var(--brand-tint)" : "var(--surface-sunken)", color: on ? "var(--brand)" : "var(--ink-muted)", flexShrink: 0, transition: "color var(--t-fast) var(--ease), background var(--t-fast) var(--ease)" }}>
+                    <DeliveryGlyph channel={c.channel} size={18} />
+                  </span>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <span className="h3" style={{ margin: 0 }}>{c.label}</span>
+                    <p className="small muted" style={{ margin: "2px 0 0" }}>{c.blurb}</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={on}
+                    aria-label={`${on ? "Disable" : "Enable"} ${c.label} delivery`}
+                    onClick={() => toggle(c.channel)}
+                    className={`btn btn-sm ${on ? "btn-primary" : "btn-secondary"}`}
+                    style={{ flexShrink: 0 }}
+                  >
+                    {on ? "On" : "Off"}
+                  </button>
+                </div>
+                {on && c.configKey && (
+                  <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
+                    <span className="label" style={{ marginBottom: 0 }}>{c.fieldLabel}</span>
+                    <input
+                      className={c.channel === "email" ? "input" : "input input-mono"}
+                      type={c.channel === "email" ? "email" : "text"}
+                      value={config[c.channel] ?? ""}
+                      onChange={e => setCfg(c.channel, e.target.value)}
+                      placeholder={c.placeholder}
+                      aria-invalid={missing}
+                    />
+                    {c.needsSecret && (
+                      <span className="small muted">
+                        Set the channel&apos;s key in{" "}
+                        <Link href="/secrets" style={{ color: "var(--brand)", fontWeight: 500 }}>Secrets</Link>.
+                      </span>
+                    )}
+                  </label>
+                )}
+              </div>
+            );
+          })}
+
+          {saveErr && <div className="state-error" role="alert" style={{ marginTop: "var(--s1)" }}>{saveErr}</div>}
+
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", marginTop: "var(--s2)" }}>
+            <button className="btn btn-primary" onClick={() => void handleSave()} disabled={saving || incomplete.length > 0}>
+              {saving ? "Saving…" : "Save destinations"}
+            </button>
+            {saved && (
+              <span role="status" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)", color: "var(--ok)", fontSize: 13, fontWeight: 500 }}>
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                Saved
+              </span>
+            )}
           </div>
         </div>
       )}

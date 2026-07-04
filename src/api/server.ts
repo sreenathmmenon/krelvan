@@ -214,6 +214,8 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     // Inbound/interactive: a public, token-authenticated webhook that starts an agent run.
     { method: "POST",   pattern: ["api", "triggers", ":agentId"],     handler: (q, r, p) => handleWebhookTrigger(q, r, p, runtime) },
     // Admin (session-gated): mint / view-status / revoke an agent's webhook trigger token.
+    { method: "GET",    pattern: ["api", "agents", ":id", "delivery"], handler: (q, r, p) => handleGetDelivery(q, r, p, runtime) },
+    { method: "PUT",    pattern: ["api", "agents", ":id", "delivery"], handler: (q, r, p) => handleSetDelivery(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleGetTrigger(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleMintTrigger(q, r, p, runtime) },
     { method: "DELETE", pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleRevokeTrigger(q, r, p, runtime) },
@@ -654,6 +656,24 @@ async function handleWebhookTrigger(req: IncomingMessage, res: ServerResponse, p
   const result = rt.triggerRun(agentId, initialState);
   if (!result.ok) { jsonError(res, 404, result.error); return; }
   json(res, 202, { run: result.run, triggered: true });
+}
+
+async function handleGetDelivery(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const agentId = params["id"] ?? "";
+  const agent = rt.agentRegistry.get(agentId);
+  if (!agent) { jsonError(res, 404, "agent not found"); return; }
+  json(res, 200, { deliverTo: agent.deliverTo ?? [] });
+}
+
+async function handleSetDelivery(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const agentId = params["id"] ?? "";
+  if (!rt.agentRegistry.get(agentId)) { jsonError(res, 404, "agent not found"); return; }
+  let body: unknown;
+  try { body = JSON.parse(await readBody(req)); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  const { sanitizeTargets } = await import("./delivery.js");
+  const targets = sanitizeTargets((body as { deliverTo?: unknown })?.deliverTo);
+  rt.agentRegistry.setDeliverTo(agentId, targets);
+  json(res, 200, { deliverTo: targets });
 }
 
 async function handleGetTrigger(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
