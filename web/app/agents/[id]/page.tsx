@@ -1320,6 +1320,54 @@ function DeliveryGlyph({ channel, size = 16 }: { channel: DeliveryChannel; size?
         </>
       );
       break;
+    case "discord":
+      // Rounded speech blob with two eyes — a Discord-ish mark.
+      body = (
+        <>
+          <path d="M4 4.4h8c.8 0 1.4.6 1.4 1.4v3.6c0 .8-.6 1.4-1.4 1.4H8.4l-2.6 1.9v-1.9H4c-.8 0-1.4-.6-1.4-1.4V5.8c0-.8.6-1.4 1.4-1.4z" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <circle cx="6.3" cy="7.6" r="0.9" fill="currentColor" />
+          <circle cx="9.7" cy="7.6" r="0.9" fill="currentColor" />
+        </>
+      );
+      break;
+    case "sms":
+      // Chat bubble with a tail and message dots.
+      body = (
+        <>
+          <path d="M2.6 4.4c0-.7.6-1.3 1.3-1.3h8.2c.7 0 1.3.6 1.3 1.3v5c0 .7-.6 1.3-1.3 1.3H6.6l-2.8 2.2V10.7h-.1c-.7 0-1.3-.6-1.3-1.3v-5z" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <circle cx="5.6" cy="6.9" r="0.75" fill="currentColor" />
+          <circle cx="8" cy="6.9" r="0.75" fill="currentColor" />
+          <circle cx="10.4" cy="6.9" r="0.75" fill="currentColor" />
+        </>
+      );
+      break;
+    case "whatsapp":
+      // Round chat bubble with a lower-left tail and a handset curl inside.
+      body = (
+        <>
+          <path d="M8 2.6a5.2 5.2 0 00-4.5 7.8L2.7 13l2.7-.8A5.2 5.2 0 108 2.6z" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+          <path d="M6.4 6.1c.3-.5.9-.5 1.1 0 .2.4-.1.8.2 1.3.3.5.9.9 1.5 1 .5.1.9-.5 1.3-.3" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      );
+      break;
+    case "twitter":
+      // The X mark — two crossing strokes.
+      body = (
+        <>
+          <path d="M4 3.8l8 8.4M12 3.8l-8 8.4" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+        </>
+      );
+      break;
+    case "linkedin":
+      // Rounded square badge with an "in" mark.
+      body = (
+        <>
+          <rect x="2.6" y="2.6" width="10.8" height="10.8" rx="2" stroke="currentColor" strokeWidth="1.2" fill="none" />
+          <circle cx="5.4" cy="5.6" r="0.9" fill="currentColor" />
+          <path d="M5.4 7.6v3.4M8 11V9.3c0-.8.5-1.3 1.2-1.3.7 0 1.1.5 1.1 1.3V11" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      );
+      break;
   }
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ flexShrink: 0, display: "block" }}>
@@ -1332,6 +1380,8 @@ function DeliveryGlyph({ channel, size = 16 }: { channel: DeliveryChannel; size?
 // `configKey`   — the config field this channel needs an input for (null = no config).
 // `required`    — whether that field must be filled before Save.
 // `needsSecret` — an external key (bot token / signing) is set in Secrets, not here.
+// `note` — an extra one-liner shown under the config field, for channels whose provider
+//          needs more than the single captured field (Twilio SID/token, API bearer, …).
 const DELIVERY_CHANNELS: {
   channel: Exclude<DeliveryChannel, "inbox">;
   label: string;
@@ -1341,11 +1391,17 @@ const DELIVERY_CHANNELS: {
   placeholder: string;
   fieldLabel: string;
   needsSecret: boolean;
+  note?: string;
 }[] = [
-  { channel: "email",    label: "Email",    blurb: "Send the result to an email address.",              configKey: "to",          required: true,  placeholder: "you@company.com",                    fieldLabel: "Send to",          needsSecret: true  },
-  { channel: "slack",    label: "Slack",    blurb: "Post the result to a Slack channel.",               configKey: "webhook_url", required: false, placeholder: "https://hooks.slack.com/services/…", fieldLabel: "Incoming webhook URL (optional)", needsSecret: true  },
-  { channel: "telegram", label: "Telegram", blurb: "Message the result to a Telegram chat.",            configKey: "chat_id",     required: false, placeholder: "123456789",                          fieldLabel: "Chat ID (optional)", needsSecret: true  },
-  { channel: "webhook",  label: "Webhook",  blurb: "POST the result as JSON to any URL you control.",   configKey: "url",         required: true,  placeholder: "https://api.example.com/hook",       fieldLabel: "POST to URL",      needsSecret: false },
+  { channel: "email",    label: "Email",       blurb: "Send the result to an email address.",              configKey: "to",           required: true,  placeholder: "you@company.com",                     fieldLabel: "Send to",                     needsSecret: true  },
+  { channel: "slack",    label: "Slack",       blurb: "Post the result to a Slack channel.",               configKey: "webhook_url",  required: false, placeholder: "https://hooks.slack.com/services/…",  fieldLabel: "Incoming webhook URL (optional)", needsSecret: true  },
+  { channel: "telegram", label: "Telegram",    blurb: "Message the result to a Telegram chat.",            configKey: "chat_id",      required: false, placeholder: "123456789",                           fieldLabel: "Chat ID (optional)",          needsSecret: true  },
+  { channel: "webhook",  label: "Webhook",     blurb: "POST the result as JSON to any URL you control.",   configKey: "url",          required: true,  placeholder: "https://api.example.com/hook",        fieldLabel: "POST to URL",                 needsSecret: false },
+  { channel: "discord",  label: "Discord",     blurb: "Post the result to a Discord channel.",             configKey: "url",          required: true,  placeholder: "https://discord.com/api/webhooks/…",  fieldLabel: "Discord webhook URL",         needsSecret: true  },
+  { channel: "sms",      label: "SMS",         blurb: "Text the result via Twilio SMS.",                   configKey: "to",           required: true,  placeholder: "+15551234567",                        fieldLabel: "Send to (phone)",             needsSecret: true, note: "Also set the provider keys (Twilio SID/token, or the API bearer token) in Secrets." },
+  { channel: "whatsapp", label: "WhatsApp",    blurb: "Message the result via Twilio WhatsApp.",           configKey: "to",           required: true,  placeholder: "+15551234567",                        fieldLabel: "Send to (WhatsApp number)",   needsSecret: true, note: "Also set the provider keys (Twilio SID/token, or the API bearer token) in Secrets." },
+  { channel: "twitter",  label: "X (Twitter)", blurb: "Auto-post the result to X.",                        configKey: "bearer_token", required: true,  placeholder: "your X API bearer token",             fieldLabel: "X bearer token",              needsSecret: true, note: "Also set the provider keys (Twilio SID/token, or the API bearer token) in Secrets." },
+  { channel: "linkedin", label: "LinkedIn",    blurb: "Auto-post the result to LinkedIn.",                 configKey: "author_urn",   required: true,  placeholder: "urn:li:person:…",                     fieldLabel: "LinkedIn author URN",         needsSecret: true, note: "Also set the provider keys (Twilio SID/token, or the API bearer token) in Secrets." },
 ];
 
 function DeliveryPanel({ agentId }: { agentId: string }) {
@@ -1499,6 +1555,7 @@ function DeliveryPanel({ agentId }: { agentId: string }) {
                         <Link href="/secrets" style={{ color: "var(--brand)", fontWeight: 500 }}>Secrets</Link>.
                       </span>
                     )}
+                    {c.note && <span className="small muted">{c.note}</span>}
                   </label>
                 )}
               </div>
