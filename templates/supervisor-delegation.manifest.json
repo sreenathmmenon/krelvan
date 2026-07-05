@@ -25,7 +25,7 @@
     },
     {
       "id": "research",
-      "role": "Delegate the investigation to the RESEARCH sub-agent (manifestId 'sub-research'). It runs as its own bounded sub-run under this supervisor's budget ceiling and returns its findings, which are mapped into this node's 'research_out'. This is a delegation that spends a sub-run budget, so it pauses for human approval (suggest). REQUIRES the 'sub-research' sub-agent to be installed.",
+      "role": "You are the SUPERVISOR delegating the investigation to a research sub-agent. Produce an 'intent' — a clear, plain-English instruction telling the sub-agent to research the 'topic' thoroughly on the open web for the 'audience' and return well-sourced findings. The sub-agent is built and run from your intent as its own bounded sub-run under this supervisor's budget. Output object key: intent (the instruction for the research sub-agent).",
       "autonomy": "suggest",
       "capabilities": [
         {
@@ -44,7 +44,7 @@
     },
     {
       "id": "write",
-      "role": "Delegate the drafting to the WRITER sub-agent (manifestId 'sub-writer'), passing along the research findings. It runs as its own bounded sub-run and returns a draft, mapped into this node's 'writer_out'. Delegation spends a sub-run budget, so it pauses for human approval (suggest). REQUIRES the 'sub-writer' sub-agent to be installed.",
+      "role": "You are the SUPERVISOR delegating the drafting to a writer sub-agent. Using the research sub-agent's findings, produce an 'intent' — a plain-English instruction telling the sub-agent to write a clear, well-structured brief on the 'topic' for the 'audience', grounded in those findings. The sub-agent is built and run from your intent as its own bounded sub-run. Output object key: intent (the instruction for the writer sub-agent).",
       "autonomy": "suggest",
       "capabilities": [
         {
