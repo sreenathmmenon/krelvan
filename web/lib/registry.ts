@@ -496,6 +496,170 @@ export const REGISTRY_SEED: CatalogEntry[] = [
       }
   },
   {
+    "name": "social-voice",
+    "title": "Voice — Social Thought-Leadership",
+    "oneLiner": "Your always-on LinkedIn ghostwriter: it researches your space, finds an angle worth saying, drafts a post in your voice with real evidence, and shows it to you for approval before anything publishes.",
+    "category": "Templates",
+    "sideEffect": "message-human",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "slack-bot-token",
+      "resend-api-key"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+              "version": 1,
+              "name": "Voice — Social Thought-Leadership",
+              "intent": "Your always-on thought-leadership desk. It researches your space, finds an angle worth saying, drafts a post in your voice grounded in real evidence, critiques its own draft, and shows it to you for approval before anything publishes to LinkedIn or X. It remembers what it has posted so it never repeats a topic, and gets better at sounding like you every run.",
+              "entry": "load_voice",
+              "runBudgetCents": 700,
+              "maxNodeVisits": 2,
+              "seed": {
+                      "niche": "applied AI for engineering teams",
+                      "brand_voice": "confident, specific, technical but human — a real stance, no hype, no buzzwords",
+                      "audience": "engineering leaders and founders building with AI",
+                      "channel": "LinkedIn",
+                      "query": "applied AI for engineering teams recent developments",
+                      "remember_map": "last_topic=find_the_angle.angle"
+              },
+              "nodes": [
+                      {
+                              "id": "load_voice",
+                              "role": "Load what we already know for this thought-leadership desk. Read recall.last_topic (the last angle we posted, so we don't repeat it) and any recalled brand-voice notes. Output object keys: prior_topic (the last topic posted, or 'none'), voice_notes (any learned voice guidance, or the seed brand_voice).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "recall",
+                                              "sideEffect": "read",
+                                              "budgetCents": 10
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "research_desk",
+                              "role": "You are the research desk. Search the web for what actually happened in the 'niche' recently — real, specific developments, debates practitioners are having, and a concrete stat, benchmark, or primary source worth citing. Ground everything in real results; invent nothing. Output object keys: developments (a tight list of the real recent developments you found, each a full sentence), debate (what practitioners are actively arguing about this week), evidence (one concrete stat/fact/source worth building a post around).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "web_search",
+                                              "sideEffect": "read",
+                                              "budgetCents": 40
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "find_the_angle",
+                              "role": "You are a sharp editor. Using research_desk 'developments'/'debate'/'evidence' and avoiding load_voice 'prior_topic', find the single best angle worth saying for the 'audience'. Prefer a contrarian-but-true take backed by the evidence. If nothing is fresh and worth saying, say so honestly. Output object keys: angle (one sentence: the specific take this post will make), rationale (why this angle, and why now), verdict (exactly 'strong' if there's a fresh evidence-backed angle, or 'weak' if it's a slow news day).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "think",
+                                              "sideEffect": "read",
+                                              "budgetCents": 80
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "draft",
+                              "role": "You are the ghostwriter. Write a LinkedIn post in the exact 'brand_voice' making the find_the_angle 'angle', grounded ONLY in research_desk 'developments'/'evidence' — cite the concrete evidence, take a real stance, no hype, no placeholders, no [brackets]. Also write one short X/Twitter variant. Structure: a sharp first line (hook), the claim with its evidence, a real point of view, one line of takeaway. Output object keys: post (the full LinkedIn post, ready to publish), x_variant (a tighter version for X, under 280 chars), hook (the first line, so it can be A/B judged).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "think",
+                                              "sideEffect": "read",
+                                              "budgetCents": 120
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "red_pen",
+                              "role": "You are a ruthless editor doing a final quality pass on draft.post. Check: is the first line dead or generic? Are the claims vague or unsupported? Any cliché or buzzword? Any placeholder/bracket? If it fails on any count, rewrite it once to fix it. If it's already strong, keep it. Output object keys: final_post (the polished, publish-ready LinkedIn post), changed (true if you rewrote it), critique (one line on what you fixed or why it passed).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "think",
+                                              "sideEffect": "read",
+                                              "budgetCents": 100
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "publish",
+                              "role": "Publish the approved post (red_pen.final_post) to the 'channel'. This POSTS PUBLICLY to real people, so the run PAUSES here and shows you the exact post, the angle rationale, and the sources to approve, edit, or skip before anything goes live. Nothing publishes without your explicit go-ahead. Output object key: published.",
+                              "autonomy": "suggest",
+                              "capabilities": [
+                                      {
+                                              "name": "notify_webhook",
+                                              "sideEffect": "message-human",
+                                              "budgetCents": 10
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "learn",
+                              "role": "Persist what this cycle produced so the desk compounds: remember the topic we posted (so we never repeat it) and note anything about the voice worth carrying forward. One line for the record.",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "remember",
+                                              "sideEffect": "write-reversible",
+                                              "budgetCents": 10
+                                      }
+                              ]
+                      }
+              ],
+              "edges": [
+                      {
+                              "from": "load_voice",
+                              "to": "research_desk"
+                      },
+                      {
+                              "from": "research_desk",
+                              "to": "find_the_angle"
+                      },
+                      {
+                              "from": "draft",
+                              "to": "red_pen"
+                      },
+                      {
+                              "from": "red_pen",
+                              "to": "publish"
+                      },
+                      {
+                              "from": "publish",
+                              "to": "learn"
+                      },
+                      {
+                              "from": "find_the_angle",
+                              "to": "draft"
+                      }
+              ],
+              "customize": {
+                      "agent_name": {
+                              "label": "Agent name",
+                              "type": "text",
+                              "rename": true,
+                              "default": "Voice — Social Thought-Leadership"
+                      },
+                      "niche": {
+                              "label": "Your niche / topic",
+                              "type": "text",
+                              "seedKey": "niche",
+                              "default": "applied AI for engineering teams"
+                      },
+                      "brand_voice": {
+                              "label": "Your voice",
+                              "type": "text",
+                              "seedKey": "brand_voice",
+                              "default": "confident, specific, technical but human — a real stance, no hype, no buzzwords"
+                      }
+              }
+      }
+  },
+  {
     "name": "growth-team",
     "title": "Autonomous Growth Team",
     "oneLiner": "Point it at your site and brand voice — a team of specialist agents researches, audits SEO, drafts content, prospects outreach, checks AI-answer visibility, and ships a prioritized growth plan, with your approval before anything publishes.",
