@@ -86,22 +86,35 @@ function matchRoute(routes: Route[], method: string, path: string): { handler: H
   return null;
 }
 
-async function readBody(req: IncomingMessage): Promise<string> {
+// Request-body size caps — the server is single-process, so an unbounded body would let one
+// large POST accumulate arbitrary memory (a trivial DoS). Reject early once the limit is passed.
+const MAX_JSON_BODY = 4 * 1024 * 1024;      // 4 MB — generous for a manifest/JSON payload
+const MAX_UPLOAD_BODY = 16 * 1024 * 1024;   // 16 MB — capability/plugin file uploads
+
+function readBodyLimited(req: IncomingMessage, max: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    let size = 0;
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > max) {
+        req.destroy();
+        reject(new Error(`request body too large (max ${Math.round(max / 1024 / 1024)} MB)`));
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
 }
 
+async function readBody(req: IncomingMessage): Promise<string> {
+  return (await readBodyLimited(req, MAX_JSON_BODY)).toString("utf8");
+}
+
 async function readBodyBuffer(req: IncomingMessage): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
+  return readBodyLimited(req, MAX_UPLOAD_BODY);
 }
 
 /**
