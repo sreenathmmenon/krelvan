@@ -905,7 +905,26 @@ export class KrelvanRuntime {
       installedCapabilities.push(cap.name);
     }
 
-    // 2) Import + sign the manifest as an agent.
+    // 2) Import + sign the manifest as an agent — but DEDUPE first so re-installing the same
+    //    template (even with a tweaked seed/query) UPDATES the existing agent instead of piling
+    //    up duplicates. Two installs are "the same agent" when they share a name AND the same
+    //    node/edge shape (the structure the user sees on the canvas); only seed values differ.
+    //    This keeps the Agents list clean no matter how many times anyone re-installs or a test
+    //    runs. An explicitly renamed clone (a different name) is intentionally kept separate.
+    const shapeKey = (m: Manifest) =>
+      `${m.name}::${m.nodes.map(n => `${n.id}:${n.capabilities.map(c => c.name).join(",")}`).join("|")}::${m.edges.map(e => `${e.from}>${e.to}`).join("|")}`;
+    const incomingKey = shapeKey(template.manifest);
+    const dup = this.agentRegistry.list().find(a => shapeKey(a.signed.manifest) === incomingKey);
+    if (dup) {
+      // Re-installing the same agent. Save the (possibly seed-tweaked) manifest, then remove the
+      // prior record if its content-hash id changed — so exactly ONE card remains, always.
+      const refreshed = this.importManifest(template.manifest);
+      if (!refreshed.ok) return { ok: false, error: "invalid_manifest", issues: refreshed.issues };
+      if (refreshed.agent.id !== dup.id) this.agentRegistry.delete(dup.id);
+      log.info({ agentId: refreshed.agent.id, name: template.manifest.name }, "template re-install → updated existing agent (deduped)");
+      return { ok: true, agent: refreshed.agent, installedCapabilities, missingSecrets: [...new Set(template.secretRefs ?? [])].filter((s) => !this.secretStore.has(s)) };
+    }
+
     const imported = this.importManifest(template.manifest);
     if (!imported.ok) return { ok: false, error: "invalid_manifest", issues: imported.issues };
 

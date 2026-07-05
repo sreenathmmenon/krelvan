@@ -1339,11 +1339,11 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
               fontWeight: 600,
               transition: "bottom var(--t-standard)",
               cursor: "help",
-            }} title="Append-only ledger — each event is SHA-256 content-addressed, hash-chained, and signed; any change is detectable when you verify the chain.">
+            }} title="Every step of this run is recorded, so you can replay exactly what happened.">
               <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--ok)", display: "inline-block", flexShrink: 0 }} aria-hidden="true" />
               <span><span className="mono">{events.length}</span> events</span>
               <span style={{ color: "var(--ink-muted)" }} aria-hidden="true">·</span>
-              <span>Signed ledger</span>
+              <span>Replayable</span>
             </div>
           )}
         </div>
@@ -1481,16 +1481,23 @@ function CanvasNode({ node, pos, status, visits, isSelected, heatFraction, showH
     pills.push({ name: null, text: `+${extra}`, px: pillX, pw: cw });
   }
 
-  // Clean, short node title — the node id humanized (snake_case → "Snake case"),
-  // NOT a truncated slice of the long role/prompt. The full role stays available on
-  // hover (the <title> below) and in the detail drawer.
+  // Clean, short node title — the node id humanized (snake_case → "Snake case").
   const displayLabel = node.id.replace(/[_-]+/g, " ").replace(/^\w/, c => c.toUpperCase());
   const shownLabel = displayLabel.length > 22 ? displayLabel.slice(0, 20) + "…" : displayLabel;
 
+  // Hover tooltip = a SHORT, human summary — NOT the full role prompt. Take the first sentence,
+  // drop any authoring internals ("Output object keys: …"), and cap the length. The complete
+  // role stays available in the detail drawer on click.
+  const roleSummary = (() => {
+    const firstSentence = (node.role ?? "").split(/(?<=[.!?])\s|(?:\.\s*Output\b)|\bOutput object keys\b|\n/i)[0]?.trim() ?? "";
+    const clean = firstSentence.replace(/\s+/g, " ");
+    return clean.length > 120 ? clean.slice(0, 118).trimEnd() + "…" : clean;
+  })();
+
   return (
-    <g onClick={onClick} style={{ cursor: "pointer" }} role="button" aria-label={`Node ${node.id}: ${node.role}`}>
-      {/* full role on hover — the node face shows a clean label, details on demand */}
-      <title>{node.id} — {node.role}</title>
+    <g onClick={onClick} style={{ cursor: "pointer" }} role="button" aria-label={`Node ${node.id}: ${displayLabel}`}>
+      {/* Hover shows a short summary; the full role lives in the click-through detail drawer. */}
+      <title>{roleSummary ? `${displayLabel} — ${roleSummary}` : displayLabel}</title>
       {/* selection ring */}
       {isSelected && (
         <rect x={x - 5} y={y - 5} width={w + 10} height={h + 10} rx={r + 4}
