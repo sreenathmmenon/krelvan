@@ -41,18 +41,47 @@ function saveStore(agentId: string, points: VectorPoint[]): void {
   writeFileSync(storePath(agentId), JSON.stringify(points));
 }
 
-/** Split text into overlapping chunks (~char-budget windows; respects paragraph breaks). */
-function chunk(text: string, size = 1200, overlap = 200): string[] {
+/** Split text into retrieval chunks. Paragraph-aware: for structured docs (FAQ, Q&A, docs with
+ *  blank-line-separated entries) each paragraph becomes its own unit, packed up to `size` — so a
+ *  single FAQ answer embeds cleanly instead of being diluted by unrelated neighbours. Falls back
+ *  to a sliding window for prose that has no paragraph structure. Smaller `size` favours recall,
+ *  which is what Q&A/support content needs. */
+function chunk(text: string, size = 600, overlap = 150): string[] {
   const clean = text.replace(/\r\n/g, "\n").trim();
-  if (clean.length <= size) return clean ? [clean] : [];
+  if (!clean) return [];
+  if (clean.length <= size) return [clean];
+
+  // Paragraph-aware path: pack blank-line-separated paragraphs into chunks up to `size`, but never
+  // split a single paragraph across chunks (keeps each Q&A / entry whole and individually searchable).
+  const paras = clean.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  if (paras.length > 1) {
+    const chunks: string[] = [];
+    let buf = "";
+    for (const p of paras) {
+      if (p.length >= size) {
+        // A single oversized paragraph: flush the buffer, then window this paragraph alone.
+        if (buf) { chunks.push(buf); buf = ""; }
+        chunks.push(...windowChunks(p, size, overlap));
+        continue;
+      }
+      if (buf && (buf.length + 2 + p.length) > size) { chunks.push(buf); buf = ""; }
+      buf = buf ? `${buf}\n\n${p}` : p;
+    }
+    if (buf) chunks.push(buf);
+    return chunks;
+  }
+  return windowChunks(clean, size, overlap);
+}
+
+/** Sliding-window chunking for unstructured prose (no paragraph breaks to respect). */
+function windowChunks(clean: string, size: number, overlap: number): string[] {
   const chunks: string[] = [];
   let i = 0;
   while (i < clean.length) {
     let end = Math.min(i + size, clean.length);
-    // Prefer to break on a paragraph/sentence boundary within the window.
     if (end < clean.length) {
       const slice = clean.slice(i, end);
-      const br = Math.max(slice.lastIndexOf("\n\n"), slice.lastIndexOf(". "));
+      const br = Math.max(slice.lastIndexOf("\n"), slice.lastIndexOf(". "));
       if (br > size * 0.5) end = i + br + 1;
     }
     const c = clean.slice(i, end).trim();
