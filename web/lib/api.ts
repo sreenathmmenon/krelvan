@@ -645,6 +645,41 @@ export async function deleteSecret(name: string): Promise<void> {
   await apiFetch(`/api/secrets/${encodeURIComponent(name)}`, { method: "DELETE" });
 }
 
+// ── Connections (per-user channel connect flows) ────────────────────────────────
+
+export interface TelegramConnection {
+  connected: boolean;
+  botUsername?: string;
+  chatName?: string;
+}
+
+/** Whether this instance has a Telegram bot connected, plus display metadata. */
+export async function getTelegramConnection(): Promise<TelegramConnection> {
+  return apiFetch<TelegramConnection>("/api/connections/telegram");
+}
+
+export type ConnectTelegramResult =
+  | { ok: true; botUsername: string; chatId: number; chatName: string }
+  | { ok: false; needsMessage: true; botUsername: string };
+
+/**
+ * Connect the customer's own Telegram bot. Validates the token, auto-detects the chat
+ * from the latest message, and stores the token encrypted server-side. The token is never
+ * echoed back. If no message exists yet, returns { ok:false, needsMessage:true } so the UI
+ * can ask the user to message their bot and retry.
+ */
+export async function connectTelegram(token: string): Promise<ConnectTelegramResult> {
+  return apiFetch<ConnectTelegramResult>("/api/connections/telegram", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
+/** Disconnect Telegram — removes the stored token, chat id, and metadata. */
+export async function disconnectTelegram(): Promise<void> {
+  await apiFetch("/api/connections/telegram", { method: "DELETE" });
+}
+
 // ── Agent Memory ──────────────────────────────────────────────────────────────
 
 export type Provenance = "owner" | "tool-observed" | "channel" | "agent" | "memory";

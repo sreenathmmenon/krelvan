@@ -18,3 +18,10 @@ web/tsconfig.tsbuildinfo
 *.workflow.js
 .shot.mjs
 release/
+
+# Secret material — never commit (defense in depth beyond /data/)
+secret.key
+secrets.json
+**/secret.key
+**/secrets.json
+.env

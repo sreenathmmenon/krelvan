@@ -234,6 +234,9 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "GET",    pattern: ["api", "secrets"],                 handler: (q, r) => handleListSecrets(q, r, runtime) },
     { method: "PUT",    pattern: ["api", "secrets", ":name"],        handler: (q, r, p) => handleSetSecret(q, r, p, runtime) },
     { method: "DELETE", pattern: ["api", "secrets", ":name"],        handler: (q, r, p) => handleDeleteSecret(q, r, p, runtime) },
+    { method: "GET",    pattern: ["api", "connections", "telegram"], handler: (q, r) => handleGetTelegramConnection(q, r, runtime) },
+    { method: "POST",   pattern: ["api", "connections", "telegram"], handler: (q, r) => handleConnectTelegram(q, r, runtime) },
+    { method: "DELETE", pattern: ["api", "connections", "telegram"], handler: (q, r) => handleDisconnectTelegram(q, r, runtime) },
     { method: "GET",    pattern: ["api", "mcp"],                     handler: (q, r) => handleListMcp(q, r, runtime) },
     { method: "POST",   pattern: ["api", "mcp"],                     handler: (q, r) => handleConnectMcp(q, r, runtime) },
     { method: "DELETE", pattern: ["api", "mcp", ":name"],            handler: (q, r, p) => handleDisconnectMcp(q, r, p, runtime) },
@@ -1366,6 +1369,135 @@ async function handleDeleteSecret(_req: IncomingMessage, res: ServerResponse, pa
   const name = decodeURIComponent(params["name"] ?? "");
   const existed = rt.deleteSecret(name);
   if (!existed) { jsonError(res, 404, `secret '${name}' not found`); return; }
+  json(res, 200, { ok: true });
+}
+
+// ── Telegram connection (per-user "Connect your own bot" flow) ──────────────────
+// A customer connects their OWN Telegram bot from the UI: they paste the bot token,
+// we validate it, auto-detect the chat id from the latest message, and store both in
+// the encrypted SecretStore. The token is NEVER logged or echoed back to the client.
+
+const TELEGRAM_TOKEN_SECRET = "KRELVAN_TELEGRAM_TOKEN";
+const TELEGRAM_CHAT_ID_SECRET = "KRELVAN_TELEGRAM_CHAT_ID";
+const TELEGRAM_META_BOT = "TELEGRAM_META_BOT_USERNAME";
+const TELEGRAM_META_CHAT = "TELEGRAM_META_CHAT_NAME";
+
+interface TelegramGetMe {
+  ok: boolean;
+  result?: { id: number; is_bot: boolean; first_name: string; username?: string };
+  description?: string;
+}
+
+interface TelegramChat {
+  id: number;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  title?: string;
+}
+
+interface TelegramGetUpdates {
+  ok: boolean;
+  result?: Array<{
+    update_id: number;
+    message?: { chat: TelegramChat };
+    channel_post?: { chat: TelegramChat };
+  }>;
+  description?: string;
+}
+
+/** Fetch with a hard timeout so a hung Telegram API call can't wedge the request. */
+async function telegramFetch(url: string, timeoutMs = 10_000): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function handleGetTelegramConnection(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  const connected = rt.secretStore.has(TELEGRAM_TOKEN_SECRET);
+  const botUsername = rt.secretStore.resolve(TELEGRAM_META_BOT);
+  const chatName = rt.secretStore.resolve(TELEGRAM_META_CHAT);
+  json(res, 200, {
+    connected,
+    ...(botUsername ? { botUsername } : {}),
+    ...(chatName ? { chatName } : {}),
+  });
+}
+
+async function handleConnectTelegram(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  const raw = await readBody(req);
+  let body: { token?: string };
+  try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  const token = typeof body.token === "string" ? body.token.trim() : "";
+  if (!token) { jsonError(res, 400, "token is required"); return; }
+
+  // 1) Validate the token via getMe.
+  let me: TelegramGetMe;
+  try {
+    const resp = await telegramFetch(`https://api.telegram.org/bot${token}/getMe`);
+    me = (await resp.json()) as TelegramGetMe;
+  } catch {
+    // Never include the token in the log or the error.
+    log.warn({}, "telegram connect: getMe request failed");
+    json(res, 400, { error: "That bot token isn't valid. Check it from @BotFather." });
+    return;
+  }
+  if (!me.ok || !me.result) {
+    json(res, 400, { error: "That bot token isn't valid. Check it from @BotFather." });
+    return;
+  }
+  const botUsername = me.result.username ?? me.result.first_name;
+
+  // 2) Auto-detect the chat id from the most recent update.
+  let updates: TelegramGetUpdates;
+  try {
+    const resp = await telegramFetch(`https://api.telegram.org/bot${token}/getUpdates`);
+    updates = (await resp.json()) as TelegramGetUpdates;
+  } catch {
+    log.warn({}, "telegram connect: getUpdates request failed");
+    json(res, 502, { error: "Couldn't reach Telegram to detect your chat. Try again in a moment." });
+    return;
+  }
+
+  const list = updates.result ?? [];
+  // Most recent first.
+  const latest = [...list].reverse().find((u) => u.message?.chat || u.channel_post?.chat);
+  const chat = latest?.message?.chat ?? latest?.channel_post?.chat;
+
+  if (!chat) {
+    // No message yet — the user must DM their bot first, then retry.
+    json(res, 200, { ok: false, needsMessage: true, botUsername });
+    return;
+  }
+
+  const chatId = chat.id;
+  const personName = [chat.first_name, chat.last_name].filter(Boolean).join(" ").trim();
+  const chatName =
+    chat.title
+    ?? (personName ||
+       (chat.username ? `@${chat.username}` : String(chatId)));
+
+  // 3) Persist token + chat id (encrypted). Metadata stored non-secret-sensitively so the
+  //    UI can show "Connected as @bot → Name" without re-hitting Telegram.
+  const setToken = rt.secretStore.set(TELEGRAM_TOKEN_SECRET, token);
+  if (!setToken.ok) { jsonError(res, 400, setToken.error); return; }
+  rt.secretStore.set(TELEGRAM_CHAT_ID_SECRET, String(chatId));
+  rt.secretStore.set(TELEGRAM_META_BOT, botUsername);
+  rt.secretStore.set(TELEGRAM_META_CHAT, chatName);
+
+  log.info({ botUsername }, "telegram connected via UI (token stored encrypted, never logged)");
+  json(res, 200, { ok: true, botUsername, chatId, chatName });
+}
+
+async function handleDisconnectTelegram(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  rt.secretStore.delete(TELEGRAM_TOKEN_SECRET);
+  rt.secretStore.delete(TELEGRAM_CHAT_ID_SECRET);
+  rt.secretStore.delete(TELEGRAM_META_BOT);
+  rt.secretStore.delete(TELEGRAM_META_CHAT);
   json(res, 200, { ok: true });
 }
 

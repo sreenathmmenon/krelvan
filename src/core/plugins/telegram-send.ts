@@ -25,6 +25,17 @@ import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("telegram-send");
 
+// ── secret resolver hook ────────────────────────────────────────────────────────
+// By default the token/chat come from env vars. The runtime overrides this at boot
+// (setTelegramSecretResolver) so a UI-saved secret in the encrypted SecretStore is
+// used automatically — no env var, no restart. The resolver still falls back to env.
+let secretResolver: (name: string) => string | undefined = (n) => process.env[n];
+
+/** Runtime wiring point: route KRELVAN_TELEGRAM_* lookups through the SecretStore. */
+export function setTelegramSecretResolver(fn: (name: string) => string | undefined): void {
+  secretResolver = fn;
+}
+
 // ── types ─────────────────────────────────────────────────────────────────────
 
 interface TelegramSendOutput {
@@ -54,7 +65,7 @@ export const telegramSendCapability: CapabilityPlugin = {
   estimateCents: () => 1,
 
   async invoke(call: EffectCall) {
-    const token = process.env["KRELVAN_TELEGRAM_TOKEN"];
+    const token = secretResolver("KRELVAN_TELEGRAM_TOKEN");
     if (!token) {
       log.warn({ nodeId: call.nodeId }, "telegram-send: KRELVAN_TELEGRAM_TOKEN not set");
       return {
@@ -75,7 +86,7 @@ export const telegramSendCapability: CapabilityPlugin = {
     }
 
     const chatIdInput = input["chat_id"];
-    const defaultChatId = process.env["KRELVAN_TELEGRAM_CHAT_ID"];
+    const defaultChatId = secretResolver("KRELVAN_TELEGRAM_CHAT_ID");
     const chatId: string | number | undefined =
       chatIdInput != null
         ? (typeof chatIdInput === "number" ? chatIdInput : String(chatIdInput))
