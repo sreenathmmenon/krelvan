@@ -126,8 +126,16 @@ function inputFor(channel: DeliveryChannel, p: DeliveryPayload, cfg: Record<stri
       return { to: cfg["to"] ?? "", subject: `${p.agentName} — ${p.title}`.slice(0, 120), body: p.body, from: cfg["from"] };
     case "slack":
       return { text: `*${p.agentName}*\n${p.body}`, ...(cfg["webhook_url"] ? { webhook_url: cfg["webhook_url"] } : {}), ...(cfg["channel"] ? { channel: cfg["channel"] } : {}) };
-    case "telegram":
-      return { text: `<b>${escapeHtml(p.agentName)}</b>\n${escapeHtml(p.body)}`, ...(cfg["chat_id"] ? { chat_id: cfg["chat_id"] } : {}) };
+    case "telegram": {
+      // Telegram hard-caps a message at 4096 chars — longer sends fail with "message is too long".
+      // Reserve room for the bold agent-name prefix + a truncation marker so long agent output
+      // (e.g. a full article) still delivers, trimmed, instead of failing.
+      const prefix = `<b>${escapeHtml(p.agentName)}</b>\n`;
+      const budget = 4096 - prefix.length - 2;
+      let bodyText = escapeHtml(p.body);
+      if (bodyText.length > budget) bodyText = bodyText.slice(0, budget - 1) + "…";
+      return { text: `${prefix}${bodyText}`, ...(cfg["chat_id"] ? { chat_id: cfg["chat_id"] } : {}) };
+    }
     case "webhook":
       // notify_webhook posts input.payload as the JSON body — put the full output there.
       return { url: cfg["url"] ?? "", payload: { agent: p.agentName, title: p.title, output: p.body, runId: p.runId } };

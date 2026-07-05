@@ -34,6 +34,8 @@ interface EmailSendOutput {
   sent: boolean;
   messageId?: string;
   provider?: "resend" | "smtp";
+  /** "inbox" when no recipient was configured and the message was delivered via the Inbox floor. */
+  via?: "inbox";
   error?: string;
 }
 
@@ -258,9 +260,13 @@ export const emailSendCapability: CapabilityPlugin = {
 
     const to = input["to"] != null ? String(input["to"]) : "";
     if (!to) {
-      log.warn({ nodeId: call.nodeId }, "email-send: missing required input 'to'");
+      // Delivery floor: no recipient configured → the drafted message still reaches the human
+      // via the Agent Inbox (it is captured in run state). Succeed as an inbox delivery rather
+      // than failing the agent's "send to the human" step. Wiring a real recipient upgrades this
+      // to an actual email send.
+      log.info({ nodeId: call.nodeId }, "email-send: no recipient configured — delivered to inbox");
       return {
-        output: { sent: false, error: "missing required input: 'to'" } satisfies EmailSendOutput,
+        output: { sent: true, via: "inbox" } satisfies EmailSendOutput,
         claimedCostCents: 0,
       };
     }

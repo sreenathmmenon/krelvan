@@ -57,7 +57,12 @@ function firstUrlIn(text: unknown): string | null {
 
 /**
  * Resolve the URL to fetch from run state, in precedence order:
- *   1. input.url  2. input["<nodeId>.url"]  3. a URL embedded in the node's role text.
+ *   1. input.url  2. input["<nodeId>.url"]
+ *   3. any descriptively-named url key the agent carries (competitor_url, target_url,
+ *      site_url, lead_url, source_url, page_url, …) that holds a real http(s) URL
+ *   4. a URL embedded in the node's role text.
+ * Step 3 makes agents robust: a manifest that seeds a URL under a natural name (not the bare
+ * key "url") still fetches, instead of failing with "url is required".
  */
 function resolveUrl(input: Record<string, unknown>, nodeId: string): string | null {
   const explicit = input["url"];
@@ -65,6 +70,15 @@ function resolveUrl(input: Record<string, unknown>, nodeId: string): string | nu
 
   const scoped = input[`${nodeId}.url`];
   if (typeof scoped === "string" && scoped.trim() !== "") return scoped.trim();
+
+  // Any key named like a URL (ends in "url" or "_url") that actually holds an http(s) URL.
+  for (const [k, v] of Object.entries(input)) {
+    if (typeof v !== "string") continue;
+    const key = k.toLowerCase();
+    if ((key === "url" || key.endsWith("_url") || key.endsWith("url")) && /^https?:\/\//i.test(v.trim())) {
+      return v.trim();
+    }
+  }
 
   return firstUrlIn(input[`${nodeId}.role`]) ?? firstUrlIn(input["role"]);
 }

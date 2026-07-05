@@ -11,9 +11,15 @@
  *             X-Krelvan-Signature header.
  *
  * Output:
- *   { notified, status, error? }
+ *   { notified, status, via, error? }
  *
- * Cost: 2 on success, 1 on failure, 0 on validation failure.
+ * Delivery floor: this is a "notify the human" step. When no webhook `url` is configured,
+ * it does NOT fail — the message is already captured in the run state and surfaces in the
+ * Agent Inbox (the always-available delivery floor). A webhook `url` is an optional upgrade
+ * that additionally POSTs the payload to an external endpoint. This guarantees an agent's
+ * work is never lost just because the human hasn't wired an external webhook.
+ *
+ * Cost: 2 on webhook POST, 1 on webhook failure, 0 on the inbox-only path.
  */
 
 import { createHmac } from "node:crypto";
@@ -49,10 +55,13 @@ export const notifyWebhookCapability: CapabilityPlugin = {
 
     // ── Input validation ──────────────────────────────────────────────────────
 
+    // Delivery floor: no webhook url configured → the message still reaches the human via the
+    // Agent Inbox (it is captured in run state). Succeed as an inbox notification rather than
+    // failing the agent's final "notify the human" step.
     const rawUrl = input["url"];
     if (!rawUrl || typeof rawUrl !== "string" || rawUrl.trim() === "") {
       return {
-        output: { notified: false, status: 0, error: "url is required" },
+        output: { notified: true, status: 0, via: "inbox" },
         claimedCostCents: 0,
       };
     }
@@ -61,8 +70,10 @@ export const notifyWebhookCapability: CapabilityPlugin = {
     try {
       parsed = new URL(rawUrl.trim());
     } catch {
+      // A malformed url is a misconfiguration, but the human is still reachable via the Inbox
+      // floor — don't lose the agent's work over a bad optional webhook. Surface it, don't fail.
       return {
-        output: { notified: false, status: 0, error: "url is required" },
+        output: { notified: true, status: 0, via: "inbox", note: "webhook url was invalid; delivered to inbox instead" },
         claimedCostCents: 0,
       };
     }
