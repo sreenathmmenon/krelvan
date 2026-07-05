@@ -126,11 +126,11 @@
     },
     {
       "id": "notify_human",
-      "role": "Notify the human support queue that a ticket needs attention, attaching the pre-investigated case file (escalate.brief). This MESSAGES A HUMAN operator; it pauses for confirmation so an escalation is never silently dropped.",
+      "role": "Notify the human support queue that a ticket needs attention by sending the pre-investigated case file (escalate.brief) to the team's notification endpoint. This MESSAGES A HUMAN operator, so the run pauses for approval first. Output object key: notified.",
       "autonomy": "suggest",
       "capabilities": [
         {
-          "name": "slack_send",
+          "name": "notify_webhook",
           "sideEffect": "message-human",
           "budgetCents": 5
         }
