@@ -128,13 +128,14 @@ export default function CapabilitiesPage() {
   return (
     <div className="container" style={{ paddingTop: "var(--s7)", paddingBottom: "var(--s9)" }}>
       {/* ── header ── */}
-      <p className="micro" style={{ marginBottom: "var(--s3)" }}>What your agents can do</p>
+      <p className="micro" style={{ marginBottom: "var(--s3)" }}>An open, forkable catalog</p>
       <div className="cap-head">
         <div style={{ minWidth: 0 }}>
           <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Marketplace</h1>
-          <p className="body-lg soft" style={{ margin: 0, maxWidth: "60ch" }}>
-            Whole agents, connectors, capabilities, and packs — install one in a click, clone
-            and customize it for your own use, or publish your own for others to build on.
+          <p className="body-lg soft" style={{ margin: 0, maxWidth: "62ch" }}>
+            Whole agents, connectors, and capabilities — install one in a click, clone and
+            customize it for your own use, or publish your own. It&apos;s a plain, open catalog
+            you can fork and host yourself: no gatekeeper, no lock-in.
           </p>
         </div>
         {/* Two clear, non-overlapping figures that match the tab counters exactly
