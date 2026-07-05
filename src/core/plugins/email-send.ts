@@ -281,7 +281,11 @@ export const emailSendCapability: CapabilityPlugin = {
     }
 
     const subject = input["subject"] != null ? String(input["subject"]) : "Message from Krelvan agent";
-    const from = input["from"] != null ? String(input["from"]) : "krelvan@agents.local";
+    // Sender precedence: explicit input.from → the install's configured KRELVAN_EMAIL_FROM →
+    // a safe placeholder. Reading the env default means email works out-of-the-box once a
+    // provider is configured, without every agent having to carry a valid 'from' itself
+    // (the delivery layer, for instance, doesn't set one).
+    const from = input["from"] != null ? String(input["from"]) : (process.env["KRELVAN_EMAIL_FROM"] ?? "krelvan@agents.local");
 
     // Path 1: Resend
     const resendKey = process.env["KRELVAN_RESEND_KEY"];
