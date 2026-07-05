@@ -71,15 +71,19 @@ function cosine(a: number[], b: number[]): number {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
-/** Resolve the text to ingest from run state — explicit input, a scoped key, or any *.body. */
+/** Resolve the text to ingest from run state — explicit input, a scoped key, or any *.body.
+ * Accepts the content under any natural name a manifest/customer might use (text, docs,
+ * document, content, corpus, knowledge, faq, body) so a support/knowledge agent works when
+ * the customer pastes their docs under an intuitive key instead of the bare "text". */
 function resolveText(input: Record<string, unknown>, nodeId: string): string {
-  for (const k of ["text", `${nodeId}.text`, "document", "body"]) {
+  const keys = ["text", `${nodeId}.text`, "docs", "document", "content", "corpus", "knowledge", "faq", "body"];
+  for (const k of keys) {
     const v = input[k];
     if (typeof v === "string" && v.trim()) return v;
   }
-  // Fall back to the first non-empty *.body produced by an upstream fetch/scrape node.
+  // Fall back to the first non-empty *.body (upstream fetch/scrape) or *.docs value in state.
   for (const [k, v] of Object.entries(input)) {
-    if (k.endsWith(".body") && typeof v === "string" && v.trim()) return v;
+    if ((k.endsWith(".body") || k.endsWith(".docs")) && typeof v === "string" && v.trim()) return v;
   }
   return "";
 }

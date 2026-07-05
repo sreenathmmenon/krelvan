@@ -439,6 +439,28 @@ class GeminiLLMClient implements LLMClient {
       outputTokens: json.usageMetadata?.candidatesTokenCount ?? 0,
     };
   }
+
+  /** Gemini embeddings via embedContent (gemini-embedding-001). Same X-goog-api-key auth as chat.
+   *  This makes RAG / knowledge-base agents work on Gemini — the most common free provider —
+   *  without requiring a separate Ollama or OpenAI embeddings setup. The API embeds one text per
+   *  call, so we issue the batch concurrently. */
+  async embed(texts: string[], model: string): Promise<EmbedResponse> {
+    const one = async (text: string): Promise<number[]> => {
+      const url = `${this.baseUrl}/v1beta/models/${encodeURIComponent(model)}:embedContent`;
+      const outcome = await fetchWithRetry(
+        url,
+        { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": this.apiKey }, body: JSON.stringify({ content: { parts: [{ text }] } }) },
+        { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
+      );
+      if (!outcome.ok) throw new Error(outcome.status === 0 ? `gemini embeddings network error: ${outcome.rawBody}` : `gemini embeddings API ${outcome.status}: ${outcome.rawBody}`);
+      const json = (await outcome.resp.json()) as { embedding?: { values: number[] } };
+      const values = json.embedding?.values;
+      if (!values || !values.length) throw new Error("gemini embeddings: empty vector in response");
+      return values;
+    };
+    const vectors = await Promise.all(texts.map(one));
+    return { vectors, inputTokens: 0 };
+  }
 }
 
 /**
@@ -521,7 +543,7 @@ export function getEmbeddingsClient(): { client: LLMClient & { embed: NonNullabl
 function defaultEmbedModel(provider: LLMProvider): string {
   switch (provider) {
     case "ollama": return "nomic-embed-text";          // 768-dim, local, free
-    case "gemini": return "text-embedding-004";        // 768-dim
+    case "gemini": return "gemini-embedding-001";      // current Gemini embeddings model
     default:       return "text-embedding-3-small";    // openai/compatible, 1536-dim
   }
 }

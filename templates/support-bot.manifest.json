@@ -81,8 +81,20 @@
       "rename": true,
       "default": "RAG Support Bot"
     },
+    "docs": {
+      "label": "Your support docs / FAQ (paste the content your agent should answer from)",
+      "type": "text",
+      "seedKey": "docs",
+      "default": "Q: What is Krelvan? A: Krelvan is a self-hostable, open-source platform for building and running AI agents you own."
+    },
+    "question": {
+      "label": "A question to test it with",
+      "type": "text",
+      "seedKey": "query",
+      "default": "Which LLM providers can I use, and can it run fully local?"
+    },
     "kb": {
-      "label": "Knowledge base",
+      "label": "Knowledge base name",
       "type": "text",
       "seedKey": "kb",
       "default": "support-kb"

@@ -21,9 +21,16 @@ for (const file of ["support-bot.manifest.json", "kb-ingest.manifest.json"]) {
   });
 }
 
-test("support-bot retrieves before it answers (rag.search before think)", () => {
+test("support-bot ingests then retrieves before it answers (rag.ingest → rag.search → think)", () => {
   const m = JSON.parse(readFileSync(join(here, "support-bot.manifest.json"), "utf8")) as Manifest;
   const order = m.nodes.map(n => n.capabilities[0]?.name);
-  assert.equal(order[0], "rag.search", "first node must retrieve");
-  assert.ok(order.includes("think"), "must have a think node to answer");
+  // A self-contained support bot loads its knowledge base first, then retrieves, then answers.
+  const iIngest = order.indexOf("rag.ingest");
+  const iSearch = order.indexOf("rag.search");
+  const iThink = order.indexOf("think");
+  assert.ok(iSearch >= 0, "must retrieve from the knowledge base");
+  assert.ok(iThink >= 0, "must have a think node to answer");
+  // The invariant that matters: retrieve BEFORE answering; and if it ingests, ingest first.
+  assert.ok(iSearch < iThink, "must retrieve before it answers");
+  if (iIngest >= 0) assert.ok(iIngest < iSearch, "if it ingests, it must ingest before it retrieves");
 });
