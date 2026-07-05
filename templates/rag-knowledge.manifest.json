@@ -3,7 +3,7 @@
   "name": "Self-Improving RAG Agent",
   "intent": "Answer my question strictly from my own knowledge base. If the knowledge base does NOT cover it, go find the missing information on the web, ingest it back into the knowledge base so the agent is permanently smarter, then re-answer — keeping a signed record of what it learned and why.",
   "entry": "recall_ctx",
-  "runBudgetCents": 300,
+  "runBudgetCents": 557,
   "maxNodeVisits": 2,
   "seed": {
     "query": "What is our refund window for enterprise customers?",
@@ -19,7 +19,7 @@
         {
           "name": "recall",
           "sideEffect": "read",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     },
@@ -31,7 +31,7 @@
         {
           "name": "rag.search",
           "sideEffect": "read",
-          "budgetCents": 15
+          "budgetCents": 20
         }
       ]
     },
@@ -43,7 +43,7 @@
         {
           "name": "think",
           "sideEffect": "read",
-          "budgetCents": 60
+          "budgetCents": 80
         }
       ]
     },
@@ -55,7 +55,7 @@
         {
           "name": "web_search",
           "sideEffect": "read",
-          "budgetCents": 16
+          "budgetCents": 40
         }
       ]
     },
@@ -79,7 +79,7 @@
         {
           "name": "think",
           "sideEffect": "read",
-          "budgetCents": 60
+          "budgetCents": 80
         }
       ]
     },
@@ -91,7 +91,7 @@
         {
           "name": "compose",
           "sideEffect": "read",
-          "budgetCents": 15
+          "budgetCents": 40
         }
       ]
     },
@@ -103,7 +103,7 @@
         {
           "name": "remember",
           "sideEffect": "write-reversible",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }

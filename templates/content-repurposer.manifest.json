@@ -3,7 +3,7 @@
   "name": "Content Repurposer",
   "intent": "Take one piece of source content, recall my brand voice, extract its core message, then spin it into two ready-to-publish formats — a short-form post and a thread — and push them to my publishing queue for a final human OK.",
   "entry": "recall_voice",
-  "runBudgetCents": 200,
+  "runBudgetCents": 370,
   "maxNodeVisits": 2,
   "seed": {
     "source": "Long-form blog post or transcript goes here.",
@@ -20,7 +20,7 @@
         {
           "name": "recall",
           "sideEffect": "read",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     },
@@ -32,7 +32,7 @@
         {
           "name": "think",
           "sideEffect": "read",
-          "budgetCents": 50
+          "budgetCents": 80
         }
       ]
     },
@@ -44,7 +44,7 @@
         {
           "name": "compose",
           "sideEffect": "read",
-          "budgetCents": 15
+          "budgetCents": 40
         }
       ]
     },
@@ -56,7 +56,7 @@
         {
           "name": "compose",
           "sideEffect": "read",
-          "budgetCents": 15
+          "budgetCents": 40
         }
       ]
     },
@@ -68,7 +68,7 @@
         {
           "name": "notify_webhook",
           "sideEffect": "write-reversible",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }

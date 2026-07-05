@@ -3,7 +3,7 @@
   "name": "RAG Support Bot",
   "intent": "Answer a question from my ingested knowledge base, grounded only in the retrieved documents, and cite the source — with a signed record of every answer.",
   "entry": "retrieve",
-  "runBudgetCents": 200,
+  "runBudgetCents": 265,
   "maxNodeVisits": 2,
   "seed": {
     "query": "How do I get a refund?",
@@ -18,7 +18,7 @@
         {
           "name": "rag.search",
           "sideEffect": "read",
-          "budgetCents": 10
+          "budgetCents": 20
         }
       ]
     },
@@ -42,7 +42,7 @@
         {
           "name": "remember",
           "sideEffect": "write-reversible",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }

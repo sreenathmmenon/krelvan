@@ -3,7 +3,7 @@
   "name": "Set Advisor Context",
   "intent": "Store my goals, principles, energy/capacity, and current situation as durable memory so my Personal Advisor can ground its advice in who I actually am.",
   "entry": "store",
-  "runBudgetCents": 50,
+  "runBudgetCents": 115,
   "maxNodeVisits": 2,
   "seed": {
     "goals": "Ship Krelvan's launch; protect deep-work mornings; stay healthy.",

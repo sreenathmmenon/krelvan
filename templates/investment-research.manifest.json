@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Investment Research Assistant",
-  "intent": "Answer a research question about a fund or holding with verifiable rigor: a supervisor decomposes the question, specialist workers pull the data record and the qualitative context, an analyst synthesizes an answer, an LLM judge validates it against the evidence and forces a retry if it is weak or ungrounded, and a human approves before the answer is delivered. Every step is a signed, replayable record.",
+  "intent": "Answer a research question about a fund or holding with verifiable rigor: a supervisor decomposes the question, specialist workers pull the data record and the qualitative context, an analyst synthesizes an answer, an LLM judge validates it against the evidence and forces a retry if it is weak or ungrounded, and a human approves before the answer is delivered. Every step is",
   "entry": "intake",
   "runBudgetCents": 900,
   "maxNodeVisits": 5,
@@ -19,7 +19,7 @@
         {
           "name": "think",
           "sideEffect": "read",
-          "budgetCents": 60
+          "budgetCents": 80
         }
       ]
     },
@@ -31,7 +31,7 @@
         {
           "name": "think",
           "sideEffect": "read",
-          "budgetCents": 60
+          "budgetCents": 80
         }
       ]
     },
@@ -43,7 +43,7 @@
         {
           "name": "think",
           "sideEffect": "read",
-          "budgetCents": 60
+          "budgetCents": 80
         }
       ]
     },
@@ -67,7 +67,7 @@
         {
           "name": "think",
           "sideEffect": "read",
-          "budgetCents": 70
+          "budgetCents": 80
         }
       ]
     },

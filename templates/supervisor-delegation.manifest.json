@@ -3,7 +3,7 @@
   "name": "Supervisor (Multi-Agent Delegation)",
   "intent": "Run a topic end-to-end under ONE authority ceiling: plan the work, delegate the research to a research sub-agent, hand its findings to a writer sub-agent, assemble the final brief, and keep a signed record. Requires two sub-agents installed: 'sub-research' and 'sub-writer'.",
   "entry": "plan",
-  "runBudgetCents": 500,
+  "runBudgetCents": 1225,
   "maxNodeVisits": 2,
   "seed": {
     "topic": "the economics of on-device LLM inference",
@@ -31,7 +31,7 @@
         {
           "name": "delegate",
           "sideEffect": "read",
-          "budgetCents": 200,
+          "budgetCents": 300,
           "subAgent": {
             "manifestId": "sub-research",
             "outputMapping": {
@@ -50,7 +50,7 @@
         {
           "name": "delegate",
           "sideEffect": "read",
-          "budgetCents": 150,
+          "budgetCents": 300,
           "subAgent": {
             "manifestId": "sub-writer",
             "outputMapping": {
@@ -81,7 +81,7 @@
         {
           "name": "remember",
           "sideEffect": "write-reversible",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }

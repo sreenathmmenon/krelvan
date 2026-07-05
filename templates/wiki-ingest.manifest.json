@@ -3,7 +3,7 @@
   "name": "Wiki Ingest",
   "intent": "Compile a source document into my persistent LLM-Wiki — the agent reads it, writes a clean entity page in my own words, links it to related concepts, and keeps a signed record of the edit. Knowledge accumulates across sources instead of being re-read every time.",
   "entry": "synthesize",
-  "runBudgetCents": 200,
+  "runBudgetCents": 310,
   "maxNodeVisits": 2,
   "seed": {
     "wiki": "my-wiki",
@@ -31,7 +31,7 @@
         {
           "name": "wiki.ingest",
           "sideEffect": "write-reversible",
-          "budgetCents": 10
+          "budgetCents": 20
         }
       ]
     }

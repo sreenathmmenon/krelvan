@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Publish & Deploy",
-  "intent": "Take a topic, research it, write a publishable post, commit it to a repo, then ship a production deploy — pausing for my approval before the irreversible deploy. A real build-and-ship agent: a sentence becomes a piece of content that goes live. Every step is a signed, replayable record.",
+  "intent": "Take a topic, research it, write a publishable post, commit it to a repo, then ship a production deploy — pausing for my approval before the irreversible deploy. A real build-and-ship agent: a sentence becomes a piece of content that goes live. Every step is",
   "entry": "research",
   "runBudgetCents": 400,
   "maxNodeVisits": 2,
@@ -19,7 +19,7 @@
         {
           "name": "web_search",
           "sideEffect": "read",
-          "budgetCents": 8
+          "budgetCents": 40
         }
       ]
     },
@@ -43,7 +43,7 @@
         {
           "name": "github.dispatch",
           "sideEffect": "write-reversible",
-          "budgetCents": 2
+          "budgetCents": 20
         }
       ]
     },
@@ -55,7 +55,7 @@
         {
           "name": "deploy.vercel",
           "sideEffect": "write-irreversible",
-          "budgetCents": 1
+          "budgetCents": 20
         }
       ]
     },

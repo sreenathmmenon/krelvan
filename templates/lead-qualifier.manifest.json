@@ -3,7 +3,7 @@
   "name": "Lead Qualifier & Outreach",
   "intent": "Take an inbound lead URL, enrich it, score how well the lead fits my ideal customer profile, and — only for strong fits — draft a personalized outreach email and send it after I approve. Weak fits are remembered so I never chase them again. Every decision is a signed record.",
   "entry": "recall_prior",
-  "runBudgetCents": 250,
+  "runBudgetCents": 347,
   "maxNodeVisits": 2,
   "seed": {
     "lead_url": "https://example.com/company/acme",
@@ -20,7 +20,7 @@
         {
           "name": "recall",
           "sideEffect": "read",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     },
@@ -32,7 +32,7 @@
         {
           "name": "http_get",
           "sideEffect": "read",
-          "budgetCents": 8
+          "budgetCents": 15
         }
       ]
     },
@@ -56,7 +56,7 @@
         {
           "name": "compose",
           "sideEffect": "read",
-          "budgetCents": 15
+          "budgetCents": 40
         }
       ]
     },
@@ -68,7 +68,7 @@
         {
           "name": "email_send",
           "sideEffect": "message-human",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     },
@@ -80,7 +80,7 @@
         {
           "name": "remember",
           "sideEffect": "write-reversible",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }

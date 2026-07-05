@@ -3,7 +3,7 @@
   "name": "Outreach Reply Handler",
   "intent": "A creator replied to my outreach — draft a grounded reply (e.g. negotiating rate or scheduling) that respects my budget and brand voice, then pause for my approval before it sends, with a signed record.",
   "entry": "recall_campaign",
-  "runBudgetCents": 250,
+  "runBudgetCents": 355,
   "maxNodeVisits": 2,
   "seed": {
     "agentId": "influencer-campaign",
@@ -21,7 +21,7 @@
         {
           "name": "recall",
           "sideEffect": "read",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     },
@@ -45,7 +45,7 @@
         {
           "name": "email_send",
           "sideEffect": "message-human",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }

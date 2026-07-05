@@ -3,7 +3,7 @@
   "name": "Competitive Intel Monitor",
   "intent": "Watch a competitor's page on a daily schedule, detect meaningful changes, decide (with an LLM router) whether a change warrants deeper research, optionally pull external context with a web search, then compose a digest and post it to my webhook — keeping a signed record of every check.",
   "entry": "fetch",
-  "runBudgetCents": 300,
+  "runBudgetCents": 497,
   "maxNodeVisits": 2,
   "seed": {
     "competitor_url": "https://example.com/pricing",
@@ -19,7 +19,7 @@
         {
           "name": "http_get",
           "sideEffect": "read",
-          "budgetCents": 10
+          "budgetCents": 15
         }
       ]
     },
@@ -43,7 +43,7 @@
         {
           "name": "web_search",
           "sideEffect": "read",
-          "budgetCents": 16
+          "budgetCents": 40
         }
       ]
     },
@@ -67,7 +67,7 @@
         {
           "name": "compose",
           "sideEffect": "read",
-          "budgetCents": 15
+          "budgetCents": 40
         }
       ]
     },
@@ -79,7 +79,7 @@
         {
           "name": "notify_webhook",
           "sideEffect": "write-reversible",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }

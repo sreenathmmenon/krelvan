@@ -3,7 +3,7 @@
   "name": "Incident Responder",
   "intent": "When an alerting webhook fires, triage the incident's severity with an LLM, decide whether to page the on-call engineer or just log it, post an update to the status channel, and keep a signed record of every decision.",
   "entry": "triage",
-  "runBudgetCents": 200,
+  "runBudgetCents": 385,
   "maxNodeVisits": 2,
   "seed": {
     "alert_source": "monitoring-webhook",
@@ -32,7 +32,7 @@
         {
           "name": "llm_route",
           "sideEffect": "read",
-          "budgetCents": 20
+          "budgetCents": 30
         }
       ]
     },
@@ -44,7 +44,7 @@
         {
           "name": "telegram_send",
           "sideEffect": "message-human",
-          "budgetCents": 5
+          "budgetCents": 20
         }
       ]
     },
@@ -56,7 +56,7 @@
         {
           "name": "compose",
           "sideEffect": "read",
-          "budgetCents": 15
+          "budgetCents": 40
         }
       ]
     },
@@ -80,7 +80,7 @@
         {
           "name": "remember",
           "sideEffect": "write-reversible",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }

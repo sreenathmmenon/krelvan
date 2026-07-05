@@ -1,15 +1,17 @@
 {
   "version": 1,
   "name": "Order to Refund",
-  "intent": "Handle a refund request: pull the order, decide if it qualifies under policy, and — only with my explicit approval — issue the refund and email the customer. The refund MOVES REAL MONEY, so it is the hardest-gated step in the system. Every decision and the money action are signed, replayable records.",
+  "intent": "Handle a refund request: pull the order, decide if it qualifies under policy, and — only with my explicit approval — issue the refund and email the customer. The refund MOVES REAL MONEY, so it is the hardest-gated step in the system",
   "entry": "lookup",
-  "runBudgetCents": 300,
+  "runBudgetCents": 437,
   "maxNodeVisits": 2,
   "seed": {
     "order_id": "A-2481",
     "order_record": "Order A-2481: $129.00, placed 9 days ago, status DELIVERED 2 days ago. Customer reports item arrived damaged, photo attached.",
     "refund_policy": "Full refund within 30 days if item is defective or damaged on arrival. No refund for buyer's remorse after delivery.",
-    "customer_email": "sam@example.com"
+    "customer_email": "sam@example.com",
+    "url": "https://postman-echo.com/post",
+    "refund_url": "https://postman-echo.com/post"
   },
   "nodes": [
     {
@@ -17,7 +19,11 @@
       "role": "Read the 'order_record' for order_id. Extract the hard facts a refund decision needs. This is a read. Output object keys: amount_cents (INTEGER), days_since_order (INTEGER), status, issue (one phrase for the reported problem).",
       "autonomy": "full",
       "capabilities": [
-        { "name": "think", "sideEffect": "read", "budgetCents": 40 }
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 80
+        }
       ]
     },
     {
@@ -25,15 +31,23 @@
       "role": "Decide the refund under 'refund_policy' using the lookup facts. Be strict — only approve what the policy allows. Output object keys: verdict (exactly 'refund' or 'deny'), amount_cents (INTEGER to refund, 0 if deny), reason (one sentence citing the policy).",
       "autonomy": "full",
       "capabilities": [
-        { "name": "think", "sideEffect": "read", "budgetCents": 40 }
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 80
+        }
       ]
     },
     {
       "id": "refund",
-      "role": "Issue the refund for decide.amount_cents. This MOVES REAL MONEY and is IRREVERSIBLE, so the run PAUSES here and shows me the exact amount and order to approve, edit, or reject. No money moves without my explicit go-ahead. Output object key: refund_id.",
+      "role": "Issue the refund for decide.amount_cents by POSTing it to {{input.url}}. This is irreversible, so the run PAUSES here and shows me the exact amount and order to approve, edit, or reject before any money moves. Output object key: refund_id.",
       "autonomy": "suggest",
       "capabilities": [
-        { "name": "http_post", "sideEffect": "write-irreversible", "budgetCents": 3 }
+        {
+          "name": "http_post",
+          "sideEffect": "write-irreversible",
+          "budgetCents": 15
+        }
       ]
     },
     {
@@ -41,7 +55,11 @@
       "role": "Email the customer (customer_email) that the refund was issued, with the amount and order id. This messages a human. Output object key: sent.",
       "autonomy": "suggest",
       "capabilities": [
-        { "name": "email_send", "sideEffect": "message-human", "budgetCents": 5 }
+        {
+          "name": "email_send",
+          "sideEffect": "message-human",
+          "budgetCents": 10
+        }
       ]
     },
     {
@@ -49,26 +67,66 @@
       "role": "The refund does not qualify under policy. Draft a clear, kind explanation for the customer using decide.reason — no money moves. Output object key: message.",
       "autonomy": "full",
       "capabilities": [
-        { "name": "compose", "sideEffect": "read", "budgetCents": 40 }
+        {
+          "name": "compose",
+          "sideEffect": "read",
+          "budgetCents": 40
+        }
       ]
     }
   ],
   "edges": [
-    { "from": "lookup", "to": "decide" },
+    {
+      "from": "lookup",
+      "to": "decide"
+    },
     {
       "from": "decide",
       "to": "refund",
-      "when": { "op": "eq", "left": { "op": "var", "key": "decide.verdict" }, "right": { "op": "const", "value": "refund" } }
+      "when": {
+        "op": "eq",
+        "left": {
+          "op": "var",
+          "key": "decide.verdict"
+        },
+        "right": {
+          "op": "const",
+          "value": "refund"
+        }
+      }
     },
     {
       "from": "decide",
       "to": "deny_note",
-      "when": { "op": "eq", "left": { "op": "var", "key": "decide.verdict" }, "right": { "op": "const", "value": "deny" } }
+      "when": {
+        "op": "eq",
+        "left": {
+          "op": "var",
+          "key": "decide.verdict"
+        },
+        "right": {
+          "op": "const",
+          "value": "deny"
+        }
+      }
     },
-    { "from": "refund", "to": "notify" }
+    {
+      "from": "refund",
+      "to": "notify"
+    }
   ],
   "customize": {
-    "agent_name": { "label": "Agent name", "type": "text", "rename": true, "default": "Order to Refund" },
-    "refund_policy": { "label": "Your refund policy", "type": "text", "seedKey": "refund_policy", "default": "Full refund within 30 days if item is defective or damaged on arrival. No refund for buyer's remorse after delivery." }
+    "agent_name": {
+      "label": "Agent name",
+      "type": "text",
+      "rename": true,
+      "default": "Order to Refund"
+    },
+    "refund_policy": {
+      "label": "Your refund policy",
+      "type": "text",
+      "seedKey": "refund_policy",
+      "default": "Full refund within 30 days if item is defective or damaged on arrival. No refund for buyer's remorse after delivery."
+    }
   }
 }

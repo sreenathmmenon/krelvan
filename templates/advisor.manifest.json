@@ -3,7 +3,7 @@
   "name": "Personal Advisor",
   "intent": "Give me honest, grounded advice on a decision — using my goals, principles, and current situation from memory — and remember what I learn so the advice gets sharper over time, with a signed record of every consultation.",
   "entry": "recall_context",
-  "runBudgetCents": 200,
+  "runBudgetCents": 310,
   "maxNodeVisits": 2,
   "seed": {
     "question": "Should I take on a second project this month?",
@@ -19,7 +19,7 @@
         {
           "name": "recall",
           "sideEffect": "read",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     },
@@ -43,7 +43,7 @@
         {
           "name": "remember",
           "sideEffect": "write-reversible",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }

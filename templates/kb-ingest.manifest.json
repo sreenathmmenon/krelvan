@@ -3,7 +3,7 @@
   "name": "Knowledge Base Ingest",
   "intent": "Add a document to a named knowledge base so a RAG agent can answer questions grounded in it.",
   "entry": "ingest",
-  "runBudgetCents": 100,
+  "runBudgetCents": 130,
   "maxNodeVisits": 2,
   "seed": {
     "kb": "support-kb"

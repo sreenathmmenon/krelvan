@@ -1,79 +1,113 @@
 {
   "version": 1,
   "name": "Autonomous Growth Team",
-  "intent": "Point it at a company's website and brand voice, and a team of specialist agents goes to work: it studies the site, researches the market and audience, audits SEO and finds keyword gaps, drafts channel-ready content in the brand's voice, prospects outreach targets, checks how the brand shows up in AI answers, and assembles a prioritized growth plan — pausing for your approval before anything is published or sent. Runs on a schedule so the work compounds. Every step is a signed, replayable record.",
+  "intent": "Point it at a company's website and brand voice, and a team of specialist agents goes to work: it studies the site, researches the market and audience, audits SEO and finds keyword gaps, drafts channel-ready content in the brand's voice, prospects outreach targets, checks how the brand shows up in AI answers, and assembles a prioritized growth plan — pausing for your approval before anything is published or sent. Runs on a schedule so the work compounds. Every step is",
   "entry": "study_site",
-  "runBudgetCents": 900,
+  "runBudgetCents": 902,
   "maxNodeVisits": 2,
   "seed": {
     "site_url": "https://example.com",
     "brand_voice": "clear, confident, technical but human — no hype, no buzzwords",
     "audience": "technical founders and engineering leaders evaluating developer tools",
-    "goal": "grow qualified sign-ups and become the obvious choice in our category"
+    "goal": "grow qualified sign-ups and become the obvious choice in our category",
+    "url": "https://example.com",
+    "notify_url": "https://postman-echo.com/post"
   },
   "nodes": [
     {
       "id": "study_site",
-      "role": "You are the brand analyst on a growth team. Fetch the company's 'site_url' and read what it says. Extract the real positioning. Output object keys: product (one sentence: what the company actually sells), positioning (its current angle/claims), signals (a tight list of concrete facts a marketer can use — features, proof points, audience cues).",
+      "role": "You are a senior brand strategist. Fetch the page at {{input.url}} and read the ACTUAL content carefully. Extract what is REALLY there — do not generalize. Output object keys: product (one precise sentence naming what this specific company sells, using their own words), positioning (their current angle in one sentence), signals (5-8 CONCRETE facts pulled verbatim or near-verbatim from the page: specific features, specific claims, specific audience cues, specific proof points). If a fact isn't on the page, do not invent it.",
       "autonomy": "full",
       "capabilities": [
-        { "name": "http_get", "sideEffect": "read", "budgetCents": 8 }
+        {
+          "name": "http_get",
+          "sideEffect": "read",
+          "budgetCents": 15
+        }
       ]
     },
     {
       "id": "market_research",
-      "role": "You are the market researcher. Using the 'audience', the 'goal', and the study_site 'product'/'signals', search the web for what this audience cares about, how the category talks, and where attention is. Ground everything in real findings — invent nothing. Output object keys: findings (the load-bearing market/audience insights as a tight list), themes (3-5 content themes that would resonate), angle (one sentence: the sharpest wedge for this brand).",
+      "role": "You are a market researcher. Using study_site.product and study_site.signals as ground truth, determine what this SPECIFIC product's buyers actually care about and how to win them. Be concrete — name real behaviors, real objections, real decision criteria for THIS product's category. Output object keys: findings (5-7 specific, non-generic insights about this exact audience and category — each a full sentence a strategist could act on), themes (3-5 specific content themes, each phrased as a concrete topic not a category), angle (one sharp sentence: the single wedge that would make THIS product the obvious choice).",
       "autonomy": "full",
       "capabilities": [
-        { "name": "web_search", "sideEffect": "read", "budgetCents": 40 }
+        {
+          "name": "web_search",
+          "sideEffect": "read",
+          "budgetCents": 40
+        }
       ]
     },
     {
       "id": "seo_audit",
-      "role": "You are the SEO strategist. Using study_site 'product'/'signals' and market_research 'findings'/'themes', identify the keyword and topic gaps this brand should own and the highest-leverage pieces to publish. Output object keys: keyword_gaps (the specific queries/topics to target, with why), content_priorities (a ranked short list of pieces to write, most valuable first), quick_wins (any on-site fixes worth flagging).",
+      "role": "You are an SEO strategist. Using study_site.product/signals and market_research.findings/themes, produce a SPECIFIC, actionable plan. Output object keys: keyword_gaps (6-10 ACTUAL search queries — real phrases people type, e.g. 'best X for Y', not vague categories), content_priorities (a ranked list of 3-5 SPECIFIC article titles to write — real headlines, not topics, each with one line on why it wins), quick_wins (2-4 concrete on-site fixes, each specific and actionable).",
       "autonomy": "full",
       "capabilities": [
-        { "name": "think", "sideEffect": "read", "budgetCents": 60 }
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 80
+        }
       ]
     },
     {
       "id": "draft_content",
-      "role": "You are the content lead. Write channel-ready drafts in the exact 'brand_voice', grounded ONLY in study_site 'signals' and market_research 'findings'/'themes' — no invented claims. Produce, for the single highest-priority item from seo_audit 'content_priorities': a blog/article draft AND short social posts adapted for the platforms this 'audience' uses. Output object keys: article (title + full draft), social (2-3 platform-ready posts), why (one line on why this piece first).",
+      "role": "You are the content lead. Take the #1 item from seo_audit.content_priorities and WRITE IT IN FULL — a complete, publishable article, not a description of one. Ground every claim in study_site.signals and market_research.findings. Match the exact brand_voice. NO placeholders, NO [brackets], NO 'insert X here'. Output object keys: article (the full article: a real headline followed by 250-400 words of finished, publishable prose), social (3 complete, ready-to-post messages — one for LinkedIn, one for X, one for a technical community — each fully written, no placeholders), why (one line: why this piece ships first). ABSOLUTE RULE: zero placeholders — no [brackets] of any kind anywhere in the article or social posts; write everything out in full.",
       "autonomy": "full",
       "capabilities": [
-        { "name": "compose", "sideEffect": "read", "budgetCents": 120 }
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 120
+        }
       ]
     },
     {
       "id": "prospect_outreach",
-      "role": "You are the outreach specialist. Using market_research 'findings' and the 'audience', identify the KINDS of people/communities/creators worth reaching (roles, communities, publications — described generically, not scraped contacts) and draft one warm, specific outreach message in the 'brand_voice' the team could adapt. Output object keys: targets (the target types/communities to pursue, with why each fits), outreach_draft (one ready-to-adapt message).",
+      "role": "You are the outreach lead. Using market_research.findings and study_site.signals, produce SPECIFIC targets and a COMPLETE, ready-to-send outreach message. ABSOLUTE RULE: the message must contain ZERO placeholders — no [brackets], no '[Name]', no '[Company]', no 'insert X'. Write it addressed to the AUDIENCE TYPE generically (e.g. 'Hi there,' or 'Hello,') so it can be sent as-is. Ground every claim in the real product facts. Output object keys: targets (5-7 specific target types/communities with why each fits), outreach_draft (a complete message, fully written, brand voice, one clear ask, and literally NO square brackets anywhere).",
       "autonomy": "full",
       "capabilities": [
-        { "name": "think", "sideEffect": "read", "budgetCents": 60 }
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 80
+        }
       ]
     },
     {
       "id": "ai_visibility",
-      "role": "You are the AI-answer-visibility analyst. Increasingly, buyers ask AI assistants (not just search engines) for recommendations. Using study_site 'product'/'positioning' and market_research 'findings', assess how likely this brand is to be surfaced as an answer to the questions this 'audience' would ask an AI assistant, and what to change to be cited. Output object keys: likely_prompts (the real questions this audience would ask an assistant), gaps (why the brand may not surface today), actions (concrete moves to become the cited answer).",
+      "role": "You are an AI-answer-visibility strategist. Using study_site.product/positioning and market_research.findings, assess and improve how this product surfaces when buyers ask AI assistants for recommendations. Output object keys: likely_prompts (5-7 EXACT questions a real buyer would type into an AI assistant that this product should be the answer to — real sentences), gaps (specific reasons this product may not be cited today), actions (4-6 concrete, specific moves to become the cited answer — each actionable this quarter).",
       "autonomy": "full",
       "capabilities": [
-        { "name": "think", "sideEffect": "read", "budgetCents": 60 }
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 80
+        }
       ]
     },
     {
       "id": "growth_plan",
-      "role": "You are the head of growth assembling the team's work into ONE prioritized plan for the 'goal'. Pull together: seo_audit content_priorities + quick_wins, draft_content (the ready piece), prospect_outreach targets + message, and ai_visibility actions. Output object keys: result (a crisp, prioritized growth plan — this week's actions first, then the backlog, each with the expected payoff and which draft/asset is already ready to ship), summary (a 2-3 sentence executive summary).",
+      "role": "You are the head of growth. Assemble the team's work into ONE concrete, prioritized plan. Reference the ACTUAL outputs: the specific article from draft_content, the specific keywords from seo_audit, the specific targets from prospect_outreach, the specific actions from ai_visibility. Output object keys: result (a prioritized plan with THIS WEEK's 3-5 specific actions first — each naming the exact asset/keyword/target and its expected payoff — then a short backlog; concrete, no filler, no 'sustained effort required' vagueness), summary (2-3 sentences a founder could act on Monday morning).",
       "autonomy": "full",
       "capabilities": [
-        { "name": "compose", "sideEffect": "read", "budgetCents": 100 }
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 100
+        }
       ]
     },
     {
       "id": "publish",
-      "role": "Publish/announce the ready content (draft_content 'article'/'social') to the brand's channels. This SENDS TO REAL PEOPLE / posts publicly, so the run PAUSES here and shows you exactly what will go out to approve, edit, or reject first. Nothing is published without your explicit go-ahead. Deliver the approved content to the notification target. Output object key: announced.",
+      "role": "Publish/announce the ready content (draft_content 'article'/'social') by POSTing it to the announce endpoint at {{input.notify_url}}. This SENDS TO REAL PEOPLE, so the run PAUSES here and shows you exactly what will go out to approve, edit, or reject first. Nothing is published without your explicit go-ahead. Output object key: announced.",
       "autonomy": "suggest",
       "capabilities": [
-        { "name": "notify_webhook", "sideEffect": "message-human", "budgetCents": 5 }
+        {
+          "name": "notify_webhook",
+          "sideEffect": "message-human",
+          "budgetCents": 10
+        }
       ]
     },
     {
@@ -81,19 +115,47 @@
       "role": "Persist what this cycle produced and decided so the next run builds on it instead of repeating — the growth_plan summary and which piece shipped. One line for the record.",
       "autonomy": "full",
       "capabilities": [
-        { "name": "remember", "sideEffect": "write-reversible", "budgetCents": 5 }
+        {
+          "name": "remember",
+          "sideEffect": "write-reversible",
+          "budgetCents": 10
+        }
       ]
     }
   ],
   "edges": [
-    { "from": "study_site", "to": "market_research" },
-    { "from": "market_research", "to": "seo_audit" },
-    { "from": "seo_audit", "to": "draft_content" },
-    { "from": "draft_content", "to": "prospect_outreach" },
-    { "from": "prospect_outreach", "to": "ai_visibility" },
-    { "from": "ai_visibility", "to": "growth_plan" },
-    { "from": "growth_plan", "to": "publish" },
-    { "from": "publish", "to": "remember_cycle" }
+    {
+      "from": "study_site",
+      "to": "market_research"
+    },
+    {
+      "from": "market_research",
+      "to": "seo_audit"
+    },
+    {
+      "from": "seo_audit",
+      "to": "draft_content"
+    },
+    {
+      "from": "draft_content",
+      "to": "prospect_outreach"
+    },
+    {
+      "from": "prospect_outreach",
+      "to": "ai_visibility"
+    },
+    {
+      "from": "ai_visibility",
+      "to": "growth_plan"
+    },
+    {
+      "from": "growth_plan",
+      "to": "publish"
+    },
+    {
+      "from": "publish",
+      "to": "remember_cycle"
+    }
   ],
   "customize": {
     "agent_name": {

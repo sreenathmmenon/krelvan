@@ -3,7 +3,7 @@
   "name": "Wiki Ask",
   "intent": "Answer a question from my LLM-Wiki, grounded only in the compiled wiki pages, citing which pages the answer came from — and keep a signed record of every answer. If the wiki has nothing on the topic, it says so instead of guessing.",
   "entry": "find",
-  "runBudgetCents": 200,
+  "runBudgetCents": 325,
   "maxNodeVisits": 2,
   "seed": {
     "wiki": "my-wiki",
@@ -18,7 +18,7 @@
         {
           "name": "wiki.query",
           "sideEffect": "read",
-          "budgetCents": 5
+          "budgetCents": 20
         }
       ]
     },
@@ -42,7 +42,7 @@
         {
           "name": "remember",
           "sideEffect": "write-reversible",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }

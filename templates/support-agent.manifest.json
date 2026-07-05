@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Support Resolution Agent",
-  "intent": "Resolve a customer support ticket the trustworthy way, with the best ideas from the leading support platforms — but made provable. Triage intent/sentiment/language at the door; screen distress and out-of-scope topics straight to a human; load this customer's own isolated history; ground every answer in the knowledge base and ask a clarifying question rather than guess on weak grounding; have a judge verify the draft before it goes out; resolve or escalate fail-closed; gate any consequential action behind human approval; hand off escalations with a pre-investigated case file (never a cold transfer); capture a tamper-evident QA score on every resolution; and log knowledge-base gaps for follow-up. Every step is a signed, replayable ledger record — so every resolution, escalation, and QA score is provable.",
+  "intent": "Resolve a customer support ticket the trustworthy way, with the best ideas from the leading support platforms — but made provable. Triage intent/sentiment/language at the door; screen distress and out-of-scope topics straight to a human; load this customer's own isolated history; ground every answer in the knowledge base and ask a clarifying question rather than guess on weak grounding; have a judge verify the draft before it goes out; resolve or escalate fail-closed; gate any consequential action behind human approval; hand off escalations with a pre-investigated case file (never a cold transfer); capture a tamper-evident QA score on every resolution; and log knowledge-base gaps for follow-up. Every step is a ledger record — so every resolution, escalation, and QA score is provable.",
   "entry": "triage",
   "runBudgetCents": 1000,
   "maxNodeVisits": 11,
@@ -24,7 +24,7 @@
         {
           "name": "think",
           "sideEffect": "read",
-          "budgetCents": 70
+          "budgetCents": 80
         }
       ]
     },
@@ -36,7 +36,7 @@
         {
           "name": "recall",
           "sideEffect": "read",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     },
@@ -48,7 +48,7 @@
         {
           "name": "rag.search",
           "sideEffect": "read",
-          "budgetCents": 15
+          "budgetCents": 20
         }
       ]
     },
@@ -84,7 +84,7 @@
         {
           "name": "think",
           "sideEffect": "read",
-          "budgetCents": 60
+          "budgetCents": 80
         }
       ]
     },
@@ -96,7 +96,7 @@
         {
           "name": "llm_route",
           "sideEffect": "read",
-          "budgetCents": 20
+          "budgetCents": 30
         }
       ]
     },
@@ -108,7 +108,7 @@
         {
           "name": "email_send",
           "sideEffect": "message-human",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     },
@@ -132,7 +132,7 @@
         {
           "name": "notify_webhook",
           "sideEffect": "message-human",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     },
@@ -144,7 +144,7 @@
         {
           "name": "think",
           "sideEffect": "read",
-          "budgetCents": 50
+          "budgetCents": 80
         }
       ]
     },
@@ -156,7 +156,7 @@
         {
           "name": "remember",
           "sideEffect": "write-reversible",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }

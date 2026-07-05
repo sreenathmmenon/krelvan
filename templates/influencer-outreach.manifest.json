@@ -3,7 +3,7 @@
   "name": "Influencer Outreach",
   "intent": "Given my product and a creator's handle and bio, write a campaign brief and a personalized outreach message grounded only in what I actually know about them — then pause for my approval before anything is sent, and keep a signed record of every pitch.",
   "entry": "recall_campaign",
-  "runBudgetCents": 250,
+  "runBudgetCents": 370,
   "maxNodeVisits": 2,
   "seed": {
     "agentId": "influencer-campaign",
@@ -23,7 +23,7 @@
         {
           "name": "recall",
           "sideEffect": "read",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     },
@@ -47,7 +47,7 @@
         {
           "name": "email_send",
           "sideEffect": "message-human",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     },
@@ -59,7 +59,7 @@
         {
           "name": "remember",
           "sideEffect": "write-reversible",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }

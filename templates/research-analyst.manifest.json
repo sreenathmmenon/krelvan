@@ -3,7 +3,7 @@
   "name": "Research Analyst",
   "intent": "Research a topic on the open web, reason over the findings to a confidence-scored synthesis, deepen the search if confidence is low, write a clean executive brief, and remember it — keeping a signed record of every step.",
   "entry": "search",
-  "runBudgetCents": 300,
+  "runBudgetCents": 355,
   "maxNodeVisits": 2,
   "seed": {
     "topic": "the current state of small open-weight language models",
@@ -19,7 +19,7 @@
         {
           "name": "web_search",
           "sideEffect": "read",
-          "budgetCents": 16
+          "budgetCents": 40
         }
       ]
     },
@@ -31,7 +31,7 @@
         {
           "name": "think",
           "sideEffect": "read",
-          "budgetCents": 60
+          "budgetCents": 80
         }
       ]
     },
@@ -43,7 +43,7 @@
         {
           "name": "compose",
           "sideEffect": "read",
-          "budgetCents": 30
+          "budgetCents": 40
         }
       ]
     },
@@ -55,7 +55,7 @@
         {
           "name": "remember",
           "sideEffect": "write-reversible",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }

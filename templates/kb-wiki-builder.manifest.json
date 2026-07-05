@@ -3,7 +3,7 @@
   "name": "Knowledge-Base Builder (Wiki)",
   "intent": "Grow an interlinked, citeable knowledge base over time: read what the wiki already knows about a topic, reason about what is missing or stale, and — only when an update is genuinely warranted — apply LLM-proposed page edits and notify me, keeping a signed record of every change.",
   "entry": "read_existing",
-  "runBudgetCents": 250,
+  "runBudgetCents": 340,
   "maxNodeVisits": 2,
   "seed": {
     "wiki": "team-kb",
@@ -20,7 +20,7 @@
         {
           "name": "wiki.query",
           "sideEffect": "read",
-          "budgetCents": 10
+          "budgetCents": 20
         }
       ]
     },
@@ -56,7 +56,7 @@
         {
           "name": "telegram_send",
           "sideEffect": "message-human",
-          "budgetCents": 5
+          "budgetCents": 20
         }
       ]
     },
@@ -68,7 +68,7 @@
         {
           "name": "remember",
           "sideEffect": "write-reversible",
-          "budgetCents": 5
+          "budgetCents": 10
         }
       ]
     }
