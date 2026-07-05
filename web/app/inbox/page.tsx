@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { listRuns, getRun, startRun, timeAgo, getCached, type RunRecord } from "../../lib/api";
@@ -10,11 +10,25 @@ import { listRuns, getRun, startRun, timeAgo, getCached, type RunRecord } from "
 // customer opens ONE place to see what their agents produced — instead of hunting
 // in the runs table. Works day-one with no external delivery key. Each card shows
 // the run's headline result; expand for the full output; copy / open / re-run.
+// As output piles up, the customer can search, filter by agent, and archive what
+// they've handled so the feed stays a live worklist, not an ever-growing dump.
 
 interface InboxItem {
   run: RunRecord;
   headline: string | null;    // one-line result (null = still loading)
   full: string | null;        // full output text (lazy, on expand)
+}
+
+// Read/archive state lives client-side (localStorage) — there is no per-run read flag on the
+// backend, and a run's read-ness is a per-viewer concern anyway. Keyed by runId.
+const READ_KEY = "krelvan_inbox_read";
+const ARCHIVED_KEY = "krelvan_inbox_archived";
+function loadSet(key: string): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try { return new Set(JSON.parse(localStorage.getItem(key) ?? "[]") as string[]); } catch { return new Set(); }
+}
+function persistSet(key: string, s: Set<string>): void {
+  try { localStorage.setItem(key, JSON.stringify([...s])); } catch { /* storage full / disabled — non-fatal */ }
 }
 
 /** Pull the human-facing output text out of a run's projection state. */
@@ -62,6 +76,16 @@ export default function InboxPage() {
   // reset a headline we've already loaded — it rehydrates from here instead of showing null again.
   const outputs = useRef<Map<string, { headline: string; full: string | null }>>(new Map());
 
+  // Worklist state: search query, agent filter, read/archived tracking, and whether to show archived.
+  const [query, setQuery] = useState("");
+  const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [read, setRead] = useState<Set<string>>(new Set());
+  const [archived, setArchived] = useState<Set<string>>(new Set());
+  const [showArchived, setShowArchived] = useState(false);
+
+  // Hydrate read/archived from localStorage once on mount (client-only).
+  useEffect(() => { setRead(loadSet(READ_KEY)); setArchived(loadSet(ARCHIVED_KEY)); }, []);
+
   // Keep the inbox glanceable: show the most recent PAGE by default, reveal the rest on demand.
   const PAGE = 12;
 
@@ -95,10 +119,32 @@ export default function InboxPage() {
     return () => clearInterval(t);
   }, [load]);
 
-  // Lazily fetch each completed run's output (headline) — only for the VISIBLE page, newest first.
-  const visibleCount = showAll ? items.length : PAGE;
+  // The agents present in the inbox, for the filter dropdown.
+  const agentNames = useMemo(
+    () => [...new Set(items.map(i => i.run.manifestName))].sort((a, b) => a.localeCompare(b)),
+    [items],
+  );
+
+  // Apply archive visibility, agent filter, and text search. Halted (awaiting) always show.
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter(({ run, headline, full }) => {
+      const isArchived = archived.has(run.runId);
+      if (isArchived !== showArchived && run.status !== "halted") return false;
+      if (agentFilter !== "all" && run.manifestName !== agentFilter) return false;
+      if (q) {
+        const hay = `${run.manifestName} ${headline ?? ""} ${full ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [items, query, agentFilter, archived, showArchived]);
+
+  const visibleCount = showAll ? filtered.length : PAGE;
+
+  // Lazily fetch each completed run's output (headline) — only for the VISIBLE, filtered page.
   useEffect(() => {
-    const pending = items
+    const pending = filtered
       .slice(0, visibleCount)
       .filter(i => i.run.status === "completed" && i.headline === null && !fetching.current.has(i.run.runId))
       .slice(0, 12);
@@ -111,7 +157,7 @@ export default function InboxPage() {
     Promise.all(pending.map(async (it) => {
       try {
         // Race the fetch against a timeout — a hung request must NOT leave the card stuck on
-        // "Loading result…" forever (the real bug). If it times out, we throw and retry next tick.
+        // "Loading result…" forever. If it times out, we throw and retry next tick.
         const detail = await Promise.race([
           getRun(it.run.runId),
           new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
@@ -138,10 +184,11 @@ export default function InboxPage() {
         if (!outputs.current.has(i.run.runId)) fetching.current.delete(i.run.runId);
       });
     };
-  }, [items, visibleCount]);
+  }, [filtered, visibleCount]);
 
   function toggle(id: string) {
     setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    markRead(id);
   }
   function copy(id: string, text: string) {
     void navigator.clipboard?.writeText(text).then(() => { setCopied(id); setTimeout(() => setCopied(null), 1500); }).catch(() => {});
@@ -149,14 +196,32 @@ export default function InboxPage() {
   async function rerun(agentId: string) {
     try { const r = await startRun(agentId); router.push(`/runs/${r.runId}`); } catch { /* surfaced by the run page */ }
   }
+  function markRead(id: string) {
+    setRead(prev => { if (prev.has(id)) return prev; const n = new Set(prev); n.add(id); persistSet(READ_KEY, n); return n; });
+  }
+  function toggleArchive(id: string) {
+    setArchived(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); persistSet(ARCHIVED_KEY, n); return n; });
+  }
+  function markAllRead() {
+    setRead(prev => {
+      const n = new Set(prev);
+      for (const i of items) if (i.run.status === "completed") n.add(i.run.runId);
+      persistSet(READ_KEY, n); return n;
+    });
+  }
 
   const halted = items.filter(i => i.run.status === "halted");
+  const unreadCount = items.filter(i => i.run.status === "completed" && !read.has(i.run.runId) && !archived.has(i.run.runId)).length;
+  const activeCount = items.filter(i => i.run.status === "completed" && !archived.has(i.run.runId)).length;
 
   return (
     <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s9)" }}>
       <div style={{ marginBottom: "var(--s6)" }}>
         <p className="micro" style={{ marginBottom: "var(--s2)" }}>Your agents&apos; output</p>
-        <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Inbox</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap", marginBottom: "var(--s2)" }}>
+          <h1 className="h1" style={{ margin: 0 }}>Inbox</h1>
+          {unreadCount > 0 && <span className="badge badge-info" aria-label={`${unreadCount} unread`}>{unreadCount} new</span>}
+        </div>
         <p className="soft body-lg" style={{ margin: 0, maxWidth: "58ch" }}>
           Everything your agents produced, newest first — read it here, copy it, or send it on.
           The one place to glance at what your agents did while you were away.
@@ -168,6 +233,39 @@ export default function InboxPage() {
           <span className="badge badge-paused">{halted.length} awaiting you</span>
           <span className="small soft">{halted.length === 1 ? "A run is" : `${halted.length} runs are`} paused for your approval before they can finish.</span>
           <Link href="/approvals" className="small" style={{ color: "var(--brand)", fontWeight: 600, marginLeft: "auto" }}>Review →</Link>
+        </div>
+      )}
+
+      {/* Worklist controls — only show once there's enough output to be worth filtering. */}
+      {items.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap", marginBottom: "var(--s4)" }}>
+          <div style={{ position: "relative", flex: "1 1 220px", minWidth: 180 }}>
+            <input
+              className="input"
+              type="search"
+              placeholder="Search output…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              aria-label="Search inbox output"
+              style={{ width: "100%" }}
+            />
+          </div>
+          {agentNames.length > 1 && (
+            <select className="input" value={agentFilter} onChange={e => setAgentFilter(e.target.value)} aria-label="Filter by agent" style={{ flex: "0 0 auto", maxWidth: 220 }}>
+              <option value="all">All agents</option>
+              {agentNames.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          )}
+          <button
+            className={`btn btn-sm ${showArchived ? "btn-secondary" : "btn-ghost"}`}
+            onClick={() => { setShowArchived(v => !v); setShowAll(false); }}
+            aria-pressed={showArchived}
+          >
+            {showArchived ? "← Back to inbox" : "Archived"}
+          </button>
+          {!showArchived && unreadCount > 0 && (
+            <button className="btn btn-sm btn-ghost" onClick={markAllRead}>Mark all read</button>
+          )}
         </div>
       )}
 
@@ -186,16 +284,35 @@ export default function InboxPage() {
           </p>
           <Link href="/dashboard" className="btn btn-primary">Build an agent →</Link>
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="state-empty">
+          <p className="h3">{showArchived ? "Nothing archived" : "Nothing matches"}</p>
+          <p className="small soft" style={{ maxWidth: "44ch", margin: "0 auto", lineHeight: 1.6 }}>
+            {showArchived
+              ? "Output you archive will collect here — out of your way, but never gone."
+              : "No output matches your search or filter. Clear them to see everything."}
+          </p>
+          {!showArchived && (query || agentFilter !== "all") && (
+            <button className="btn btn-sm btn-secondary" style={{ marginTop: "var(--s4)" }} onClick={() => { setQuery(""); setAgentFilter("all"); }}>Clear filters</button>
+          )}
+        </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
-          {items.slice(0, visibleCount).map(({ run, headline, full }) => {
+          {filtered.slice(0, visibleCount).map(({ run, headline, full }) => {
             const isOpen = expanded.has(run.runId);
             const isHalted = run.status === "halted";
+            const isArchived = archived.has(run.runId);
+            const isUnread = !isHalted && !read.has(run.runId) && !isArchived;
             return (
-              <article key={run.runId} className="card" style={{ padding: "var(--s5)" }}>
+              <article
+                key={run.runId}
+                className="card"
+                style={{ padding: "var(--s5)", borderLeft: isUnread ? "3px solid var(--brand)" : "3px solid transparent", opacity: isArchived ? 0.72 : 1 }}
+              >
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--s4)", flexWrap: "wrap" }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap", marginBottom: "var(--s1)" }}>
+                      {isUnread && <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--brand)", flex: "0 0 auto" }} />}
                       <span className="h3" style={{ margin: 0 }}>{run.manifestName}</span>
                       {isHalted
                         ? <span className="badge badge-paused">Awaiting approval</span>
@@ -222,19 +339,30 @@ export default function InboxPage() {
                       <button className="btn btn-sm btn-ghost" onClick={() => toggle(run.runId)}>{isOpen ? "Show less" : "Show full output"}</button>
                     )}
                     {full && (
-                      <button className="btn btn-sm btn-ghost" onClick={() => copy(run.runId, full)}>{copied === run.runId ? "Copied" : "Copy"}</button>
+                      <button className="btn btn-sm btn-ghost" onClick={() => { copy(run.runId, full); markRead(run.runId); }}>{copied === run.runId ? "Copied" : "Copy"}</button>
                     )}
-                    <Link href={`/runs/${run.runId}`} className="btn btn-sm btn-ghost">Open run</Link>
+                    <Link href={`/runs/${run.runId}`} className="btn btn-sm btn-ghost" onClick={() => markRead(run.runId)}>Open run</Link>
                     <button className="btn btn-sm btn-ghost" onClick={() => void rerun(run.agentId)}>Run again</button>
+                    <button className="btn btn-sm btn-ghost" style={{ marginLeft: "auto" }} onClick={() => toggleArchive(run.runId)}>
+                      {isArchived ? "Unarchive" : "Archive"}
+                    </button>
+                    {isUnread && (
+                      <button className="btn btn-sm btn-ghost" onClick={() => markRead(run.runId)}>Mark read</button>
+                    )}
                   </div>
                 )}
               </article>
             );
           })}
-          {items.length > visibleCount && (
+          {filtered.length > visibleCount && (
             <button className="btn btn-secondary" style={{ alignSelf: "center", marginTop: "var(--s2)" }} onClick={() => setShowAll(true)}>
-              Show {items.length - visibleCount} older
+              Show {filtered.length - visibleCount} older
             </button>
+          )}
+          {!showArchived && (
+            <p className="small muted" style={{ textAlign: "center", marginTop: "var(--s2)" }}>
+              {activeCount} in your inbox{archived.size > 0 ? ` · ${archived.size} archived` : ""}
+            </p>
           )}
         </div>
       )}
