@@ -1464,13 +1464,15 @@ export class KrelvanRuntime {
     const run = this.runRegistry.get(runId);
     if (!run) return { ok: false, error: "run not found" };
     if (run.status !== "halted") return { ok: false, error: `run is ${run.status}, not halted` };
+    // Look up the agent BEFORE claiming the concurrency guard. If we claimed the guard first and
+    // then early-returned here (e.g. the agent was deleted), the runId would stay in the set
+    // forever and permanently wedge every future resolve of this run ("already being resolved").
+    const agent = this.agentRegistry.get(run.agentId);
+    if (!agent) return { ok: false, error: "agent not found for this run" };
     // Guard against concurrent resolves — two simultaneous approvals for the same run
     // would both pass the status check above before either updates the registry.
     if (this._resolvingApprovals.has(runId)) return { ok: false, error: "approval already being resolved" };
     this._resolvingApprovals.add(runId);
-
-    const agent = this.agentRegistry.get(run.agentId);
-    if (!agent) return { ok: false, error: "agent not found for this run" };
 
     // Hold the guard across the ENTIRE resolution — the ledger append AND the status flip AND
     // the executeRun launch. Releasing it right after the append (in a finally) opened a window
