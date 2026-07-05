@@ -237,6 +237,23 @@ export async function explainBuild(agentId: string): Promise<{ rationale: string
   return apiFetch(`/api/agents/${encodeURIComponent(agentId)}/explain-build`);
 }
 
+/**
+ * Converse with an agent from the UI. Sends a message plus the prior thread history
+ * (a plain "User: …\nAgent: …" transcript) and returns the agent's reply. A run is
+ * executed server-side, so this takes a few seconds.
+ */
+export async function chatWithAgent(
+  agentId: string,
+  message: string,
+  threadId: string,
+  history: string,
+): Promise<{ reply: string; runId: string; status: string; threadId: string }> {
+  return apiFetch<{ reply: string; runId: string; status: string; threadId: string }>(
+    `/api/agents/${encodeURIComponent(agentId)}/chat`,
+    { method: "POST", body: JSON.stringify({ message, threadId, history }) },
+  );
+}
+
 export async function listRuns(): Promise<RunRecord[]> {
   const data = await apiFetch<{ runs: RunRecord[] }>("/api/runs");
   listCache.set("runs", data.runs);

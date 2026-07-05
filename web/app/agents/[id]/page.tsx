@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, use, useCallback } from "react";
+import { useState, useEffect, use, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   getAgent, getAgentRuns, startRun, deleteAgent, listSchedules, createSchedule, toggleSchedule, deleteSchedule,
   getTrigger, mintTrigger, revokeTrigger, listApprovals,
-  getDelivery, setDelivery,
+  getDelivery, setDelivery, chatWithAgent,
   timeAgo,
   type AgentRecord, type RunRecord, type ScheduleRecord, type ManifestNode, type ManifestEdge, type PendingApproval,
   type DeliveryChannel, type DeliveryTarget,
@@ -716,7 +716,7 @@ function SchedulePanel({ agentId, schedules, onRefresh }: { agentId: string; sch
   );
 }
 
-const TABS = ["graph", "runs", "schedules", "trigger", "delivery", "memory"] as const;
+const TABS = ["graph", "chat", "runs", "schedules", "trigger", "delivery", "memory"] as const;
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -738,7 +738,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
   // Toast for a failed primary action (run now) so the click isn't silently lost.
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [tab, setTab] = useState<"graph" | "runs" | "schedules" | "trigger" | "delivery" | "memory">("graph");
+  const [tab, setTab] = useState<"graph" | "chat" | "runs" | "schedules" | "trigger" | "delivery" | "memory">("graph");
   const [running, setRunning] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1001,7 +1001,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
           <div role="tablist" aria-label="Agent sections" style={{ display: "flex", gap: "var(--s5)" }}>
             {TABS.map((t, i) => {
               const active = tab === t;
-              const label = t === "graph" ? "Graph" : t === "runs" ? `Runs (${runs.length})` : t === "schedules" ? `Schedules${scheduleCount > 0 ? ` (${scheduleCount})` : ""}` : t === "trigger" ? "Trigger" : t === "delivery" ? "Delivery" : "Memory";
+              const label = t === "graph" ? "Graph" : t === "chat" ? "Chat" : t === "runs" ? `Runs (${runs.length})` : t === "schedules" ? `Schedules${scheduleCount > 0 ? ` (${scheduleCount})` : ""}` : t === "trigger" ? "Trigger" : t === "delivery" ? "Delivery" : "Memory";
               return (
                 <button
                   key={t}
@@ -1076,6 +1076,13 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                 <NodeDetailPanel node={selectedNodeObj} onClose={() => setSelectedNode(null)} />
               )}
             </div>
+          </div>
+        )}
+
+        {/* Chat tab — talk to this agent */}
+        {tab === "chat" && (
+          <div role="tabpanel" id="panel-chat" aria-labelledby="tab-chat">
+            <ChatPanel agentId={id} agentName={manifest.name} />
           </div>
         )}
 
@@ -1182,6 +1189,159 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
           />
         )}
 
+      </div>
+    </div>
+  );
+}
+
+// ── Chat panel: converse with this agent from the UI ──────────────────────────
+// The flagship "talk to your agents" surface. Each message runs the agent server-side
+// (a few seconds); we keep a stable per-mount threadId and hand the full prior
+// transcript back as `history` so the agent remembers the conversation.
+
+interface ChatMessage { role: "user" | "agent"; text: string; error?: boolean }
+
+function ChatPanel({ agentId, agentName }: { agentId: string; agentName: string }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  // One stable thread id for the life of this mounted panel.
+  const threadIdRef = useRef<string>(`thread-${agentId}-${Date.now()}`);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Auto-scroll to the newest message whenever the conversation changes.
+  useEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, sending]);
+
+  async function send() {
+    const text = draft.trim();
+    if (!text || sending) return;
+    // Build the history transcript from the conversation SO FAR (before this turn),
+    // skipping our inline error bubbles — they aren't real agent replies.
+    const history = messages
+      .filter(m => !m.error)
+      .map(m => `${m.role === "user" ? "User" : "Agent"}: ${m.text}`)
+      .join("\n");
+
+    setMessages(prev => [...prev, { role: "user", text }]);
+    setDraft("");
+    setSending(true);
+    try {
+      const res = await chatWithAgent(agentId, text, threadIdRef.current, history);
+      // Keep the server's thread id if it hands one back (some backends re-key threads).
+      if (res.threadId) threadIdRef.current = res.threadId;
+      const reply = res.reply?.trim() || "(the agent returned an empty reply)";
+      setMessages(prev => [...prev, { role: "agent", text: reply }]);
+    } catch (e) {
+      setMessages(prev => [...prev, { role: "agent", error: true, text: `Couldn't get a reply — ${(e as Error).message}. Your message is kept above; try again.` }]);
+    } finally {
+      setSending(false);
+      // Return focus to the input so the conversation flows.
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void send();
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <h2 className="h3" style={{ marginBottom: "var(--s2)" }}>Talk to this agent</h2>
+      <p className="small soft" style={{ marginBottom: "var(--s5)", lineHeight: 1.6, maxWidth: "60ch" }}>
+        Send a message, follow up, redirect it — it remembers the conversation.
+      </p>
+
+      <div className="card" style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", height: "min(62vh, 620px)" }}>
+        {/* message list */}
+        <div
+          ref={listRef}
+          role="log"
+          aria-live="polite"
+          aria-label={`Conversation with ${agentName}`}
+          style={{ flex: 1, overflowY: "auto", padding: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s3)", background: "var(--canvas)" }}
+        >
+          {messages.length === 0 && !sending ? (
+            <div style={{ margin: "auto", textAlign: "center", maxWidth: "40ch", display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--s3)", padding: "var(--s6) var(--s4)" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, borderRadius: "var(--r-lg)", background: "var(--brand-tint)", color: "var(--brand)" }}>
+                <svg width={22} height={22} viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ display: "block" }}>
+                  <path d="M2.6 4.4c0-.7.6-1.3 1.3-1.3h8.2c.7 0 1.3.6 1.3 1.3v5c0 .7-.6 1.3-1.3 1.3H6.6l-2.8 2.2V10.7h-.1c-.7 0-1.3-.6-1.3-1.3v-5z" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
+                  <circle cx="5.6" cy="6.9" r="0.75" fill="currentColor" />
+                  <circle cx="8" cy="6.9" r="0.75" fill="currentColor" />
+                  <circle cx="10.4" cy="6.9" r="0.75" fill="currentColor" />
+                </svg>
+              </span>
+              <p className="body-lg" style={{ color: "var(--ink-soft)", margin: 0, fontWeight: 500 }}>Talk to this agent</p>
+              <p className="small muted" style={{ margin: 0 }}>ask it anything, follow up, redirect it.</p>
+            </div>
+          ) : (
+            <>
+              {messages.map((m, i) => {
+                const isUser = m.role === "user";
+                return (
+                  <div key={i} style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start" }}>
+                    <div
+                      style={{
+                        maxWidth: "78%",
+                        padding: "var(--s3) var(--s4)",
+                        borderRadius: "var(--r-lg)",
+                        fontSize: 14,
+                        lineHeight: 1.55,
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                        background: isUser ? "var(--brand)" : m.error ? "var(--danger-tint, #FDECEC)" : "var(--surface)",
+                        color: isUser ? "var(--brand-ink)" : m.error ? "var(--danger)" : "var(--ink)",
+                        border: isUser ? "none" : `1px solid ${m.error ? "var(--danger)" : "var(--line)"}`,
+                        borderBottomRightRadius: isUser ? "var(--r-sm)" : "var(--r-lg)",
+                        borderBottomLeftRadius: isUser ? "var(--r-lg)" : "var(--r-sm)",
+                        boxShadow: "var(--shadow-sm)",
+                      }}
+                    >
+                      {m.text}
+                    </div>
+                  </div>
+                );
+              })}
+              {sending && (
+                <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)", padding: "var(--s3) var(--s4)", borderRadius: "var(--r-lg)", borderBottomLeftRadius: "var(--r-sm)", background: "var(--surface)", border: "1px solid var(--line)", boxShadow: "var(--shadow-sm)" }}>
+                    <span className="spinner" style={{ width: 14, height: 14 }} aria-hidden="true" />
+                    <span className="small muted">thinking…</span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* composer */}
+        <div style={{ borderTop: "1px solid var(--line)", background: "var(--surface)", padding: "var(--s3) var(--s4)", display: "flex", gap: "var(--s2)", alignItems: "center" }}>
+          <input
+            ref={inputRef}
+            className="input"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Message this agent…"
+            aria-label="Your message"
+            disabled={sending}
+            style={{ flex: 1, minWidth: 0 }}
+          />
+          <button
+            className="btn btn-primary"
+            onClick={() => void send()}
+            disabled={sending || !draft.trim()}
+            style={{ flexShrink: 0 }}
+          >
+            {sending ? "Sending…" : "Send"}
+          </button>
+        </div>
       </div>
     </div>
   );
