@@ -558,6 +558,30 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   overflow: hidden;
   isolation: isolate;
 }
+/* Hero eyebrow — pill with a live pulsing teal dot (replaces the plain micro line). */
+.hero-eyebrow-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 13px; margin-bottom: var(--s5);
+  border: 1px solid var(--dark-line-teal); border-radius: var(--r-pill, 999px);
+  background: rgba(26,163,154,0.06);
+  font: 500 12px var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.04em; color: var(--dark-ink-soft);
+}
+.hero-eyebrow-pill i {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--dark-brand-bright);
+  box-shadow: 0 0 0 0 rgba(26,163,154,0.5); animation: heroPulseDot 2.4s var(--ease) infinite;
+}
+@keyframes heroPulseDot {
+  0% { box-shadow: 0 0 0 0 rgba(26,163,154,0.5); }
+  70% { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .hero-eyebrow-pill i { animation: none; } }
+/* The one gradient-text moment on the dark hero — the word "system." */
+.hero-grad-word {
+  background: linear-gradient(100deg, #3ecfc0, #0C726B 62%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
 /* type colors on dark */
 .hero-dark .dark-ink       { color: var(--dark-ink); }
 .hero-dark .dark-ink-soft  { color: var(--dark-ink-soft); }
@@ -2671,3 +2695,25 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   .faq-item__body { padding: var(--s2) var(--s4) var(--s4); }
   .faq-item__body code { white-space: normal; word-break: break-word; }
 }
+
+/* ── Deliver-anywhere radial (homepage) — one result fans out to every channel ── */
+.deliver-radial { position: relative; height: 340px; max-width: 800px; margin: var(--s5) auto 0; }
+.deliver-radial svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+.deliver-radial path { stroke: rgba(26,163,154,0.42); stroke-width: 1.5; fill: none; stroke-dasharray: 5 7; animation: deliverFlow 2.6s linear infinite; }
+@keyframes deliverFlow { to { stroke-dashoffset: -24; } }
+@media (prefers-reduced-motion: reduce) { .deliver-radial path { animation: none; } }
+.deliver-core {
+  position: absolute; top: 46%; left: 50%; transform: translate(-50%,-50%); z-index: 3;
+  background: var(--dark-surface, #161f1e); border: 1px solid var(--dark-line-teal);
+  border-radius: 12px; padding: 0.85rem 1.3rem; font: 600 13px var(--font-mono, monospace);
+  color: var(--dark-ink); box-shadow: 0 0 44px rgba(26,163,154,0.28);
+}
+.deliver-node {
+  position: absolute; z-index: 2; display: inline-flex; align-items: center; gap: 0.45rem;
+  background: var(--dark-surface-2, #121a17); border: 1px solid var(--dark-line);
+  border-radius: 10px; padding: 0.5rem 0.9rem; font: 600 12px var(--font-mono, monospace);
+  color: var(--dark-ink-soft); white-space: nowrap;
+}
+.deliver-node--inbox { transform: translateX(-50%); }
+.deliver-node span { width: 7px; height: 7px; border-radius: 50%; background: var(--dark-brand-bright); }
+@media (max-width: 720px) { .deliver-radial { height: 420px; } .deliver-node { font-size: 11px; padding: 0.4rem 0.7rem; } }

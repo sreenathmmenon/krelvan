@@ -190,7 +190,7 @@ function HeroStatStrip() {
       </div>
       <span className="hero-statwrap__claim">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d={UI.check} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-        proofs verify offline
+        runs on any LLM, or fully local
       </span>
     </div>
   );
@@ -606,12 +606,13 @@ export default function Landing() {
           <div className="hero-grid">
             {/* left — payoff + CTAs (42%) */}
             <div>
-              <p className="micro" style={{ marginBottom: "var(--s4)" }}>Open-source · self-hosted</p>
+              <span className="hero-eyebrow-pill"><i aria-hidden="true" /> Open-source · self-hosted</span>
               <h1
-                className="display dark-ink"
-                style={{ fontSize: "clamp(38px, 4.8vw, 58px)", lineHeight: 1.06, fontWeight: 600, letterSpacing: "-0.03em", marginBottom: "var(--s5)", textWrap: "balance", maxWidth: "18ch" }}
+                className="display dark-ink hero-headline"
+                style={{ fontSize: "clamp(40px, 4.4vw, 62px)", lineHeight: 1.04, fontWeight: 500, letterSpacing: "-0.035em", marginBottom: "var(--s5)", textWrap: "balance", maxWidth: "19ch" }}
               >
-                Write a sentence. <span className="dark-teal" style={{ fontWeight: 800 }}>Get a working agent system.</span>
+                <span style={{ color: "#C8C4BC", fontWeight: 500 }}>Write a sentence.</span>{" "}
+                <span style={{ color: "#fff", fontWeight: 800 }}>Get a working agent <span className="hero-grad-word">system.</span></span>
               </h1>
               <p className="dark-ink-soft body-lg" style={{ maxWidth: "52ch", marginBottom: "var(--s5)" }}>
                 Krelvan turns plain English into real agents that act across your tools and run
@@ -628,15 +629,6 @@ export default function Landing() {
                   Star on GitHub
                   <GitHubStars />
                 </a>
-              </div>
-              <div className="hero-trustline">
-                <span className="hero-trustline__item">Open-source</span>
-                <span className="hero-trustline__sep" aria-hidden="true">·</span>
-                <span className="hero-trustline__item">Self-hosted</span>
-                <span className="hero-trustline__sep" aria-hidden="true">·</span>
-                <span className="hero-trustline__item">7 LLM providers</span>
-                <span className="hero-trustline__sep" aria-hidden="true">·</span>
-                <span className="hero-trustline__item">Open marketplace</span>
               </div>
               <HeroStatStrip />
             </div>
@@ -814,18 +806,41 @@ export default function Landing() {
       {/* ════════════ 3.5 · EXAMPLE-AGENT GALLERY (the marketplace — breadth) ════════════ */}
       <ExampleGallery />
 
-      {/* ════════════ 3.6 · ONE quiet proof beat (moved down from #2) ════════════ */}
-      {/* After a visitor has seen what they can BUILD and the marketplace they can EXTEND,
-          this is where the reproduce-it-yourself band earns its place — as one supporting
-          beat, not the second thing on the page. */}
-      <ProveItBand />
+      {/* ════════════ 3.6 · DELIVER ANYWHERE (the payoff, made literal) ════════════ */}
+      {/* Output isn't just produced — it's DELIVERED where you already are. One result fans
+          out to every channel. This turns the delivery differentiator into a moving diagram. */}
+      <section className="hero-dark deliver-band">
+        <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)", textAlign: "center" }}>
+          <p className="micro dark-teal" style={{ marginBottom: "var(--s3)" }}>Output where you live</p>
+          <h2 className="display dark-ink" style={{ fontSize: "clamp(1.9rem, 4vw, 2.9rem)", fontWeight: 780, letterSpacing: "-0.02em", marginBottom: "var(--s3)" }}>
+            One result. Every channel you already use.
+          </h2>
+          <p className="dark-ink-soft body-lg" style={{ maxWidth: "56ch", margin: "0 auto var(--s5)" }}>
+            Every agent&apos;s output lands in the Agent Inbox out of the box — then fans out to
+            Telegram, email, Slack, WhatsApp, and more. Encrypted, per-user, no lock-in.
+          </p>
+          <div className="deliver-radial">
+            <svg viewBox="0 0 800 340" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M400 175 C300 125 200 95 120 85" /><path d="M400 175 C320 95 260 65 200 45" />
+              <path d="M400 175 C500 125 600 95 680 85" /><path d="M400 175 C480 95 560 65 620 45" />
+              <path d="M400 175 C400 245 400 285 400 305" />
+            </svg>
+            <div className="deliver-core">✓ Agent output ready</div>
+            <div className="deliver-node" style={{ top: "60px", left: "8%" }}><span /> Telegram</div>
+            <div className="deliver-node" style={{ top: "18px", left: "22%" }}><span /> Email</div>
+            <div className="deliver-node" style={{ top: "60px", right: "8%" }}><span /> Slack</div>
+            <div className="deliver-node" style={{ top: "18px", right: "22%" }}><span /> WhatsApp</div>
+            <div className="deliver-node deliver-node--inbox" style={{ bottom: "6px", left: "50%" }}><span /> Agent Inbox</div>
+          </div>
+        </div>
+      </section>
 
       {/* ════════════ 3.7 · WHY NOT A RAW FRAMEWORK (the contrast) ════════════ */}
       <section style={{ background: "var(--canvas)", borderTop: "1px solid var(--line)" }}>
         <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
           <p className="micro" style={{ marginBottom: "var(--s3)" }}>Why Krelvan</p>
           <h2 className="display h1" style={{ marginBottom: "var(--s3)", maxWidth: "24ch" }}>
-            A framework gives you parts. Krelvan gives you the <span style={{ color: "var(--brand)" }}>whole thing — proven</span>.
+            A framework gives you parts. Krelvan gives you the <span style={{ color: "var(--brand)" }}>whole working system</span>.
           </h2>
           <p className="body-lg soft" style={{ maxWidth: "60ch", marginBottom: "var(--s7)" }}>
             You could wire this yourself in a raw agent framework. Then you own the hard parts forever.
@@ -833,7 +848,7 @@ export default function Landing() {
           <div className="contrast-grid">
             {[
               { a: "Write the graph, the runner, the retries", b: "Describe a goal — the agent is built and run for you" },
-              { a: "Bolt on your own audit log (and trust it)", b: "Every step is signed to a tamper-evident, replayable record" },
+              { a: "Wire up delivery to every channel yourself", b: "Output reaches you in the Inbox, email, Telegram, Slack — built in" },
               { a: "Hand-roll a human-in-the-loop gate", b: "Risky steps pause and show you exactly what they'll do" },
               { a: "Debug failures by reading logs", b: "It reasons about why a run failed — and rebuilds a fix" },
             ].map((r, i) => (
@@ -948,9 +963,9 @@ export default function Landing() {
             </div>
             <div className="cta-lane">
               <div className="cta-lane__time mono">~15 sec</div>
-              <div className="cta-lane__title">See a real run</div>
-              <p className="cta-lane__desc">Download a sample run and re-check it offline — no account, nothing to set up.</p>
-              <button type="button" className="btn btn-dark-ghost btn-sm" onClick={scrollToProveIt}>See it →</button>
+              <div className="cta-lane__title">See it work</div>
+              <p className="cta-lane__desc">Watch an agent answer real customer questions, grounded on real data.</p>
+              <button type="button" className="btn btn-dark-ghost btn-sm" onClick={focusBuilder}>Try it →</button>
             </div>
           </div>
         </div>
