@@ -128,11 +128,11 @@ function inputFor(channel: DeliveryChannel, p: DeliveryPayload, cfg: Record<stri
       return { text: `*${p.agentName}*\n${p.body}`, ...(cfg["webhook_url"] ? { webhook_url: cfg["webhook_url"] } : {}), ...(cfg["channel"] ? { channel: cfg["channel"] } : {}) };
     case "telegram": {
       // Telegram hard-caps a message at 4096 chars — longer sends fail with "message is too long".
-      // Reserve room for the bold agent-name prefix + a truncation marker so long agent output
-      // (e.g. a full article) still delivers, trimmed, instead of failing.
-      const prefix = `<b>${escapeHtml(p.agentName)}</b>\n`;
+      // Send PLAIN TEXT (telegram-send defaults to no parse_mode) so agent output containing
+      // <, >, & delivers instead of 400-ing. Reserve room for the agent-name prefix + truncation.
+      const prefix = `${p.agentName}\n`;
       const budget = 4096 - prefix.length - 2;
-      let bodyText = escapeHtml(p.body);
+      let bodyText = p.body;
       if (bodyText.length > budget) bodyText = bodyText.slice(0, budget - 1) + "…";
       return { text: `${prefix}${bodyText}`, ...(cfg["chat_id"] ? { chat_id: cfg["chat_id"] } : {}) };
     }

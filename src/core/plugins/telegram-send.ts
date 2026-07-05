@@ -100,12 +100,21 @@ export const telegramSendCapability: CapabilityPlugin = {
       };
     }
 
-    const rawParseMode = input["parse_mode"] != null ? String(input["parse_mode"]) : "HTML";
-    const parseMode: "HTML" | "Markdown" = rawParseMode === "Markdown" ? "Markdown" : "HTML";
+    // Parse mode: agent output is arbitrary prose (it routinely contains <, >, & — "P&L",
+    // "revenue > target", code). With parse_mode=HTML/Markdown, Telegram REJECTS unescaped
+    // markup with a 400, so the send silently fails. Default to PLAIN TEXT (no parse_mode) so
+    // any composed message always delivers. A caller can opt into HTML/Markdown explicitly, and
+    // when they do we HTML-escape the body so it can't 400 on stray angle brackets/ampersands.
+    const rawParseMode = input["parse_mode"] != null ? String(input["parse_mode"]) : "";
+    const parseMode: "HTML" | "Markdown" | null =
+      rawParseMode === "HTML" ? "HTML" : rawParseMode === "Markdown" ? "Markdown" : null;
+    const safeText = parseMode === "HTML"
+      ? text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      : text;
 
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
 
-    log.info({ nodeId: call.nodeId, chatId, parseMode }, "telegram-send: sending message");
+    log.info({ nodeId: call.nodeId, chatId, parseMode: parseMode ?? "plain" }, "telegram-send: sending message");
 
     const outcome = await fetchWithRetry(
       url,
@@ -114,7 +123,7 @@ export const telegramSendCapability: CapabilityPlugin = {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ chat_id: chatId, text, parse_mode: parseMode }),
+        body: JSON.stringify({ chat_id: chatId, text: safeText, ...(parseMode ? { parse_mode: parseMode } : {}) }),
       },
       { maxAttempts: 3, baseDelayMs: 500 },
     );
