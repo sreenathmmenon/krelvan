@@ -21,6 +21,7 @@
 
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
 import { fetchWithRetry } from "../../adapters/http-retry.js";
+import { assertPublicUrl } from "./ssrf-guard.js";
 import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("slack-send");
@@ -84,6 +85,19 @@ export const slackSendCapability: CapabilityPlugin = {
       } catch {
         log.warn({ nodeId: call.nodeId }, "slack-send: 'blocks' input is not valid JSON — ignoring");
       }
+    }
+
+    // SSRF guard: the webhook URL can be caller-supplied (per-call override), so it must be
+    // vetted against private/loopback/metadata ranges — same protection every sibling outbound
+    // plugin (notify_webhook, http_get/post) applies — before we ever fetch it.
+    try {
+      await assertPublicUrl(webhookUrl.trim());
+    } catch (e) {
+      log.warn({ nodeId: call.nodeId, err: (e as Error).message }, "slack-send: webhook URL rejected by SSRF guard");
+      return {
+        output: { sent: false, error: "webhook URL is not allowed (must be a public host)" } satisfies SlackSendOutput,
+        claimedCostCents: 0,
+      };
     }
 
     log.info({ nodeId: call.nodeId, channel: channel || "(default)" }, "slack-send: posting message");
