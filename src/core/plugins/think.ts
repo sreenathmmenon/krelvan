@@ -213,7 +213,10 @@ export const thinkCapability: CapabilityPlugin = {
               thought: { type: "string" },
               outputs: {
                 type: "object",
-                properties: Object.fromEntries(requiredOutputKeys.map(k => [k, {}])),
+                // Every property must declare a type — Gemini's responseSchema rejects untyped
+                // ({}) properties and returns an empty completion. "string" is the safe default
+                // for LLM-produced fields (numbers/bools still parse from a string value).
+                properties: Object.fromEntries(requiredOutputKeys.map(k => [k, { type: "string" }])),
                 required: requiredOutputKeys,
                 additionalProperties: false,
               },

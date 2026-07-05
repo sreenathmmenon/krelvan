@@ -388,15 +388,22 @@ class GeminiLLMClient implements LLMClient {
       parts: [{ text: m.content }],
     }));
 
+    // Gemini 2.5+ "flash"/"pro" are THINKING models: they spend output tokens on internal
+    // reasoning BEFORE the answer. If maxOutputTokens only covers the answer, the thinking
+    // starves it and the completion comes back near-empty. Give generous headroom (thinking +
+    // answer) and cap the thinking budget so the answer always has room. This keeps behaviour
+    // consistent with non-thinking providers, which is what a caller like `think` expects.
+    const answerBudget = req.maxTokens ?? 2048;
     const generationConfig: Record<string, unknown> = {
       temperature: req.temperature,
-      maxOutputTokens: req.maxTokens,
+      maxOutputTokens: answerBudget + 2048, // headroom for the model's internal reasoning
+      thinkingConfig: { thinkingBudget: 1024 }, // bound reasoning so the answer is never starved
     };
 
     if (req.schema) {
       generationConfig["responseMimeType"] = "application/json";
-      // Gemini accepts a JSON-Schema-like object; strip the unsupported
-      // additionalProperties key which the API rejects.
+      // Gemini accepts a JSON-Schema-like object; strip the keys the API rejects
+      // (additionalProperties, $schema) so the SAME schema works across all providers.
       generationConfig["responseSchema"] = stripUnsupportedSchemaKeys(req.schema.schema);
     }
 
@@ -406,12 +413,13 @@ class GeminiLLMClient implements LLMClient {
       generationConfig,
     };
 
-    // API key goes in a query param (?key=...) — Gemini's standard auth.
-    const url = `${this.baseUrl}/v1beta/models/${encodeURIComponent(req.model)}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
+    // Auth via the X-goog-api-key header — works for every Google API key format,
+    // including the newer AQ.* keys that the legacy ?key= query param rejects.
+    const url = `${this.baseUrl}/v1beta/models/${encodeURIComponent(req.model)}:generateContent`;
 
     const outcome = await fetchWithRetry(
       url,
-      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
+      { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": this.apiKey }, body: JSON.stringify(body) },
       { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
     );
 
