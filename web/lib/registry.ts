@@ -660,6 +660,146 @@ export const REGISTRY_SEED: CatalogEntry[] = [
       }
   },
   {
+    "name": "chief-of-staff",
+    "title": "Chief of Staff — Meeting Prep",
+    "oneLiner": "Your daily chief of staff: before your meetings it researches every person and company you are meeting, and delivers a sharp briefing per meeting — the one thing to know, the open loops, and the talking points.",
+    "category": "Templates",
+    "sideEffect": "message-human",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "slack-bot-token",
+      "resend-api-key"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+              "version": 1,
+              "name": "Chief of Staff — Meeting Prep",
+              "intent": "Your daily chief of staff. Before your meetings, it researches every person and company you're about to meet — who they are, their recent news, what you last discussed — and delivers a sharp briefing per meeting with the one thing you must know, the open loops, and the talking points. It remembers everyone, so every future meeting starts from everything it has ever learned.",
+              "entry": "load_context",
+              "runBudgetCents": 800,
+              "maxNodeVisits": 2,
+              "seed": {
+                      "meetings": "2:00pm — Priya Nair, VP Engineering at Corven Systems (technical evaluation of our platform). 4:00pm — Marcus Webb, CTO at Lumen Data (intro call, they build analytics infra).",
+                      "my_context": "I sell a self-hosted agentic-AI platform to engineering teams. My goal is to move deals forward and build real relationships.",
+                      "query": "Corven Systems company",
+                      "remember_map": "last_prep=brief.result"
+              },
+              "nodes": [
+                      {
+                              "id": "load_context",
+                              "role": "Load anything we already know about today's people from memory. Read recall of any prior interactions with the people in 'meetings'. Output object keys: prior (a summary of any prior context we have on these people/companies, or 'first contact'), meeting_list (restate the meetings clearly, one per line).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "recall",
+                                              "sideEffect": "read",
+                                              "budgetCents": 10
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "research_people",
+                              "role": "You are a research analyst prepping the user for their meetings. For the companies and people in 'meetings', search the web for who they are, what the company does, and any recent, real, notable developments (funding, launches, news, incidents). Ground everything in real results; invent nothing. Output object keys: findings (per company/person: the real facts and recent news you found, each a full sentence), signals (anything that changes the user's strategy for this meeting).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "web_search",
+                                              "sideEffect": "read",
+                                              "budgetCents": 40
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "assess_stakes",
+                              "role": "You are the chief of staff assessing today. Using research_people 'findings'/'signals', load_context 'prior', and 'my_context', for EACH meeting determine: the single most important thing the user must know, any open loops or unfinished business, and the 3 sharpest talking points that move it forward. Rank the meetings by importance. Output object keys: ranked (the meetings ranked by which matters most today, with one line why), per_meeting (for each meeting: must_know, open_loops, three talking points — as a clear block).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "think",
+                                              "sideEffect": "read",
+                                              "budgetCents": 120
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "brief",
+                              "role": "You are writing the morning briefing the user reads before their day. Assemble assess_stakes 'ranked' and 'per_meeting' into ONE crisp, scannable briefing — lead with the meeting that matters most, one clear section per meeting (who, the one thing to know, open loops, talking points), no filler. Write it so the user could walk into any meeting prepared. Output object keys: result (the full briefing, ready to read), headline (one line: the single most important thing about today).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "think",
+                                              "sideEffect": "read",
+                                              "budgetCents": 120
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "deliver",
+                              "role": "Deliver the briefing (brief.result) to the user's chosen destination. This is a reversible read-only delivery (a briefing to yourself), so it goes out without a gate. Output object key: delivered.",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "notify_webhook",
+                                              "sideEffect": "message-human",
+                                              "budgetCents": 10
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "remember_people",
+                              "role": "Persist what we learned about today's people so the next meeting with them starts smarter — the key facts and any commitments. One line for the record.",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "remember",
+                                              "sideEffect": "write-reversible",
+                                              "budgetCents": 10
+                                      }
+                              ]
+                      }
+              ],
+              "edges": [
+                      {
+                              "from": "load_context",
+                              "to": "research_people"
+                      },
+                      {
+                              "from": "research_people",
+                              "to": "assess_stakes"
+                      },
+                      {
+                              "from": "assess_stakes",
+                              "to": "brief"
+                      },
+                      {
+                              "from": "brief",
+                              "to": "deliver"
+                      },
+                      {
+                              "from": "deliver",
+                              "to": "remember_people"
+                      }
+              ],
+              "customize": {
+                      "agent_name": {
+                              "label": "Agent name",
+                              "type": "text",
+                              "rename": true,
+                              "default": "Chief of Staff — Meeting Prep"
+                      },
+                      "my_context": {
+                              "label": "Your context (what you do, your goal)",
+                              "type": "text",
+                              "seedKey": "my_context",
+                              "default": "I sell a self-hosted agentic-AI platform to engineering teams."
+                      }
+              }
+      }
+  },
+  {
     "name": "growth-team",
     "title": "Autonomous Growth Team",
     "oneLiner": "Point it at your site and brand voice — a team of specialist agents researches, audits SEO, drafts content, prospects outreach, checks AI-answer visibility, and ships a prioritized growth plan, with your approval before anything publishes.",
