@@ -36,6 +36,14 @@ interface BraveResponse {
   };
 }
 
+// A value is an "instruction" (a role/command prompt), not a search subject, if it reads
+// like a directive. Such text must never be used as a search query — it returns junk.
+function isInstruction(s: string): boolean {
+  if (s.length > 140) return true; // a real search subject is short; a prompt is long
+  return /^(you are|search|look up|find |retrieve|fetch|using |produce|output|write|draft|analyze|assess|identify|determine|gather)\b/i.test(s.trim())
+    || /\boutput object keys\b/i.test(s);
+}
+
 // Shape search hits into the output every downstream node can actually use: the raw
 // `results` array AND a readable `findings` text block (what LLM nodes read from context).
 // Agents reference either `results` (structured) or `findings` (prose) — both are populated.
@@ -108,34 +116,36 @@ export const webSearchCapability: CapabilityPlugin = {
   async invoke(call: EffectCall) {
     const input = call.input as Record<string, unknown>;
 
-    // The search query must be the actual TOPIC, not the node's instruction text. Prefer
-    // explicit/short topic signals from state; only fall back to the role, and when we do,
-    // extract the real subject (the phrase after "about/for/on") rather than the whole prompt
-    // — otherwise we search for "You are a research scout. Search the open web..." and get junk.
-    const topicKeys = ["query", "topic", "subject", "search_query", "q"];
+    // Build the search query from the real SUBJECT MATTER in state — never the node's role
+    // instruction (that's a command, not a query; searching it returns junk). Priority:
+    //   1. an explicit query/topic/subject value the agent set
+    //   2. a query composed from the concrete subject values in state (product, company,
+    //      topic, audience) — this is what makes any research node search for the right thing
+    //   3. the agent intent
+    const explicitKeys = ["query", "topic", "subject", "search_query", "q"];
     let query = "";
-    for (const k of topicKeys) {
+    for (const k of explicitKeys) {
       const v = String(input[k] ?? "").trim();
-      if (v) { query = v; break; }
+      if (v && !isInstruction(v)) { query = v; break; }
     }
     if (!query) {
-      const role = String(input["role"] ?? input[`${call.nodeId}.role`] ?? "").trim();
-      if (role) {
-        // Pull the subject out of an instruction: the phrase after "about/for/on/regarding".
-        const m = role.match(/\b(?:about|for|on|regarding|into)\s+(?:the\s+)?['"]?([^'".\n]{4,120})/i);
-        query = (m?.[1] ?? role.replace(/^[\s\S]*?(?:search|look up|find|research)\s+/i, "")).trim().slice(0, 160);
+      // Compose from the subject-matter fields agents carry, in priority order. Values that
+      // look like instructions/roles or are too long to be a subject are skipped.
+      const subjectKeys = ["product", "company", "brand", "site_url", "topic", "audience", "goal", "watch_label"];
+      const parts: string[] = [];
+      for (const k of subjectKeys) {
+        const v = String(input[k] ?? "").trim();
+        if (v && v.length <= 120 && !isInstruction(v) && !/^https?:\/\//i.test(v)) parts.push(v);
+        if (parts.length >= 2) break;
       }
+      query = parts.join(" — ").slice(0, 160);
     }
     if (!query) {
       query = String(input["intent"] ?? "").slice(0, 160).trim();
-    }
-    // Guard: if the "query" is still an instruction (starts like a role), it's unusable as a search.
-    if (/^you are\b/i.test(query)) {
-      const m = query.match(/\b(?:about|for|on|regarding)\s+(?:the\s+)?['"]?([^'".\n]{4,120})/i);
-      query = (m?.[1] ?? "").trim();
+      if (isInstruction(query)) query = "";
     }
     if (!query) {
-      log.warn({ nodeId: call.nodeId }, "web_search: no query in state — set 'query' in manifest seed");
+      log.warn({ nodeId: call.nodeId }, "web_search: no usable subject in state — set 'query' or 'topic' in the manifest seed");
     }
 
     // Guard: if still no query after all fallbacks, return early with a clear error.

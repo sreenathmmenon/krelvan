@@ -27,16 +27,15 @@ test("web_search derives the query from the topic state value, not the role inst
   assert.equal(out.query, "on-device LLM inference economics", "query must be the topic, not the role text");
 });
 
-test("web_search extracts the subject from a role instruction when no topic key is present", async () => {
+test("web_search composes the query from subject-matter state, never the role instruction", async () => {
   const res = await webSearchCapability.invoke({
-    nodeId: "search",
+    nodeId: "market_research",
     capability: "web_search",
-    input: { role: "You are a research scout. Search the open web for sources about quantum error correction." },
+    input: { role: "You are a market researcher. Determine what buyers care about and how to win them.", product: "PostgreSQL production database", audience: "engineering teams" },
   } as Parameters<typeof webSearchCapability.invoke>[0]);
   const out = res.output as { query?: string };
-  // Must NOT be the whole "You are a research scout..." instruction.
   assert.ok(out.query && !/^you are/i.test(out.query), `query must not be the instruction: got "${out.query}"`);
-  assert.match(out.query!, /quantum error correction/i, "should extract the subject after 'about'");
+  assert.match(out.query!, /PostgreSQL/i, "query should be built from the product subject");
 });
 
 test("web_search returns a soft error (never throws) when there is no query at all", async () => {
