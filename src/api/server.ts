@@ -237,6 +237,9 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "GET",    pattern: ["api", "connections", "telegram"], handler: (q, r) => handleGetTelegramConnection(q, r, runtime) },
     { method: "POST",   pattern: ["api", "connections", "telegram"], handler: (q, r) => handleConnectTelegram(q, r, runtime) },
     { method: "DELETE", pattern: ["api", "connections", "telegram"], handler: (q, r) => handleDisconnectTelegram(q, r, runtime) },
+    { method: "GET",    pattern: ["api", "connections", "email"],    handler: (q, r) => handleGetEmailConnection(q, r, runtime) },
+    { method: "POST",   pattern: ["api", "connections", "email"],    handler: (q, r) => handleConnectEmail(q, r, runtime) },
+    { method: "DELETE", pattern: ["api", "connections", "email"],    handler: (q, r) => handleDisconnectEmail(q, r, runtime) },
     { method: "GET",    pattern: ["api", "mcp"],                     handler: (q, r) => handleListMcp(q, r, runtime) },
     { method: "POST",   pattern: ["api", "mcp"],                     handler: (q, r) => handleConnectMcp(q, r, runtime) },
     { method: "DELETE", pattern: ["api", "mcp", ":name"],            handler: (q, r, p) => handleDisconnectMcp(q, r, p, runtime) },
@@ -1382,6 +1385,11 @@ const TELEGRAM_CHAT_ID_SECRET = "KRELVAN_TELEGRAM_CHAT_ID";
 const TELEGRAM_META_BOT = "TELEGRAM_META_BOT_USERNAME";
 const TELEGRAM_META_CHAT = "TELEGRAM_META_CHAT_NAME";
 
+// Email connection secrets (Resend). Stored encrypted in the SecretStore; the email_send
+// plugin resolves them (per-user UI connection → instance env fallback).
+const EMAIL_RESEND_SECRET = "KRELVAN_RESEND_KEY";
+const EMAIL_FROM_SECRET = "KRELVAN_EMAIL_FROM";
+
 interface TelegramGetMe {
   ok: boolean;
   result?: { id: number; is_bot: boolean; first_name: string; username?: string };
@@ -1498,6 +1506,60 @@ async function handleDisconnectTelegram(_req: IncomingMessage, res: ServerRespon
   rt.secretStore.delete(TELEGRAM_CHAT_ID_SECRET);
   rt.secretStore.delete(TELEGRAM_META_BOT);
   rt.secretStore.delete(TELEGRAM_META_CHAT);
+  json(res, 200, { ok: true });
+}
+
+// ── Email (Resend) connection ───────────────────────────────────────────────────
+async function handleGetEmailConnection(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  const connected = rt.secretStore.has(EMAIL_RESEND_SECRET);
+  const from = rt.secretStore.resolve(EMAIL_FROM_SECRET);
+  json(res, 200, { connected, ...(from ? { from } : {}) });
+}
+
+async function handleConnectEmail(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  let body: { apiKey?: string; from?: string };
+  try { body = JSON.parse(await readBody(req)); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+  const from = typeof body.from === "string" ? body.from.trim() : "";
+  if (!apiKey) { jsonError(res, 400, "apiKey is required"); return; }
+  if (!apiKey.startsWith("re_")) { json(res, 400, { error: "That doesn't look like a Resend API key (they start with re_). Get one at resend.com." }); return; }
+
+  // Validate the key against the Resend API (list domains — cheap, read-only, no email sent).
+  try {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 10_000);
+    const resp = await fetch("https://api.resend.com/domains", {
+      headers: { authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+    });
+    clearTimeout(t);
+    // Resend authenticates a valid key with 2xx. An invalid key returns 400/401/403 with an
+    // "API key is invalid" body — reject anything that isn't a clean 2xx.
+    if (!resp.ok) {
+      json(res, 400, { error: "That Resend API key was rejected. Check it at resend.com." });
+      return;
+    }
+  } catch {
+    log.warn({}, "email connect: Resend validation request failed");
+    json(res, 502, { error: "Couldn't reach Resend to validate the key. Try again in a moment." });
+    return;
+  }
+
+  // A sender is required for delivery. Default to Resend's shared onboarding address, which
+  // works immediately with no domain setup (the user can set their own verified domain later).
+  const sender = from || "Krelvan <onboarding@resend.dev>";
+
+  const setKey = rt.secretStore.set(EMAIL_RESEND_SECRET, apiKey);
+  if (!setKey.ok) { jsonError(res, 400, setKey.error); return; }
+  rt.secretStore.set(EMAIL_FROM_SECRET, sender);
+
+  log.info({ from: sender }, "email connected via UI (Resend key stored encrypted, never logged)");
+  json(res, 200, { ok: true, from: sender });
+}
+
+async function handleDisconnectEmail(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  rt.secretStore.delete(EMAIL_RESEND_SECRET);
+  rt.secretStore.delete(EMAIL_FROM_SECRET);
   json(res, 200, { ok: true });
 }
 

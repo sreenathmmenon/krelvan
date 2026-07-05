@@ -680,6 +680,33 @@ export async function disconnectTelegram(): Promise<void> {
   await apiFetch("/api/connections/telegram", { method: "DELETE" });
 }
 
+export interface EmailConnection {
+  connected: boolean;
+  from?: string;
+}
+
+/** Whether this instance has email (Resend) connected, plus the sender address. */
+export async function getEmailConnection(): Promise<EmailConnection> {
+  return apiFetch<EmailConnection>("/api/connections/email");
+}
+
+/**
+ * Connect email delivery with the customer's own Resend API key. Validates the key against
+ * Resend, then stores it encrypted server-side (never echoed back). `from` is optional — if
+ * omitted, Resend's shared onboarding sender is used so email works with no domain setup.
+ */
+export async function connectEmail(apiKey: string, from?: string): Promise<{ ok: true; from: string }> {
+  return apiFetch<{ ok: true; from: string }>("/api/connections/email", {
+    method: "POST",
+    body: JSON.stringify({ apiKey, ...(from ? { from } : {}) }),
+  });
+}
+
+/** Disconnect email — removes the stored Resend key and sender. */
+export async function disconnectEmail(): Promise<void> {
+  await apiFetch("/api/connections/email", { method: "DELETE" });
+}
+
 // ── Agent Memory ──────────────────────────────────────────────────────────────
 
 export type Provenance = "owner" | "tool-observed" | "channel" | "agent" | "memory";

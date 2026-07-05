@@ -61,6 +61,7 @@ const MORE: NavItem[] = [
   { label: "Schedules",       href: "/schedules",             glyph: "schedules" },
   { label: "Connectors",      href: "/capabilities#connectors", glyph: "connectors" },
   { label: "Connect Telegram", href: "/connections/telegram",  glyph: "connectors" },
+  { label: "Connect Email",    href: "/connections/email",     glyph: "connectors" },
   { label: "Secrets",         href: "/secrets",               glyph: "secrets" },
   { label: "Approvals",       href: "/approvals",             glyph: "approvals" },
 ];

@@ -41,7 +41,7 @@ import { wikiIngestCapability, wikiQueryCapability } from "../core/plugins/wiki-
 import { llmRouteCapability } from "../core/plugins/llm-route.js";
 import { webSearchCapability } from "../core/plugins/web-search.js";
 import { composeCapability } from "../core/plugins/compose.js";
-import { emailSendCapability } from "../core/plugins/email-send.js";
+import { emailSendCapability, setEmailSecretResolver } from "../core/plugins/email-send.js";
 import { telegramSendCapability, setTelegramSecretResolver } from "../core/plugins/telegram-send.js";
 import { slackSendCapability } from "../core/plugins/slack-send.js";
 import { httpGetCapability } from "../core/plugins/http-get.js";
@@ -651,6 +651,7 @@ export class KrelvanRuntime {
     // The telegram_send builtin reads KRELVAN_TELEGRAM_TOKEN/CHAT_ID; route those through
     // the encrypted SecretStore so a UI-connected Telegram works with no env var / restart.
     setTelegramSecretResolver((name) => this.secretStore.resolve(name));
+    setEmailSecretResolver((name) => this.secretStore.resolve(name));
     this.scheduler = new Scheduler(this.scheduleRegistry, (agentId, scheduleId) =>
       this.startScheduledRun(agentId, scheduleId),
     );

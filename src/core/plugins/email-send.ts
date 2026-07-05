@@ -28,6 +28,20 @@ import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("email-send");
 
+// ── secret resolver hook ────────────────────────────────────────────────────────
+// By default the Resend key / SMTP creds / sender come from env vars (the instance-wide,
+// super-admin path). The runtime overrides this at boot (setEmailSecretResolver) so a
+// UI-saved secret in the encrypted SecretStore is used automatically — no env var, no
+// restart — giving each user their own sender. The resolver still falls back to env, so
+// the precedence is: per-user UI connection → instance-wide env default.
+let secretResolver: (name: string) => string | undefined = (n) => process.env[n];
+
+/** Runtime wiring point: route KRELVAN_RESEND_KEY / KRELVAN_SMTP_* / KRELVAN_EMAIL_FROM
+ *  lookups through the SecretStore (UI-saved secret first, env fallback). */
+export function setEmailSecretResolver(fn: (name: string) => string | undefined): void {
+  secretResolver = fn;
+}
+
 // ── types ─────────────────────────────────────────────────────────────────────
 
 interface EmailSendOutput {
@@ -285,10 +299,10 @@ export const emailSendCapability: CapabilityPlugin = {
     // a safe placeholder. Reading the env default means email works out-of-the-box once a
     // provider is configured, without every agent having to carry a valid 'from' itself
     // (the delivery layer, for instance, doesn't set one).
-    const from = input["from"] != null ? String(input["from"]) : (process.env["KRELVAN_EMAIL_FROM"] ?? "krelvan@agents.local");
+    const from = input["from"] != null ? String(input["from"]) : (secretResolver("KRELVAN_EMAIL_FROM") ?? "krelvan@agents.local");
 
     // Path 1: Resend
-    const resendKey = process.env["KRELVAN_RESEND_KEY"];
+    const resendKey = secretResolver("KRELVAN_RESEND_KEY");
     if (resendKey) {
       const result = await sendViaResend(resendKey, from, to, subject, body);
       return {
@@ -298,13 +312,13 @@ export const emailSendCapability: CapabilityPlugin = {
     }
 
     // Path 2: SMTP
-    const smtpHost = process.env["KRELVAN_SMTP_HOST"];
-    const smtpUser = process.env["KRELVAN_SMTP_USER"];
-    const smtpPass = process.env["KRELVAN_SMTP_PASS"];
+    const smtpHost = secretResolver("KRELVAN_SMTP_HOST");
+    const smtpUser = secretResolver("KRELVAN_SMTP_USER");
+    const smtpPass = secretResolver("KRELVAN_SMTP_PASS");
 
     if (smtpHost && smtpUser && smtpPass) {
-      const smtpPort = parseInt(process.env["KRELVAN_SMTP_PORT"] ?? "587", 10);
-      const smtpFrom = process.env["KRELVAN_SMTP_FROM"] ?? from;
+      const smtpPort = parseInt(secretResolver("KRELVAN_SMTP_PORT") ?? "587", 10);
+      const smtpFrom = secretResolver("KRELVAN_SMTP_FROM") ?? from;
       const result = await sendViaSMTP(smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, to, subject, body);
       return {
         output: result satisfies EmailSendOutput,
