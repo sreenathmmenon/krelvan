@@ -287,6 +287,9 @@ export interface RunRecord {
   finishedAt?: number;
   spentCents?: number;
   reason?: string;
+  /** How the run was started. "chat" runs are conversation turns — they must NOT appear in
+   *  the Inbox (which shows deliverable agent output, not chat replies). Default: a normal run. */
+  kind?: "run" | "chat";
 }
 
 export class RunRegistry {
@@ -312,13 +315,14 @@ export class RunRegistry {
     atomicWrite(this.path, JSON.stringify([...this.runs.values()], null, 2));
   }
 
-  create(opts: { agentId: string; runId: string; manifestName: string }): RunRecord {
+  create(opts: { agentId: string; runId: string; manifestName: string; kind?: "run" | "chat" }): RunRecord {
     const record: RunRecord = {
       runId: opts.runId,
       agentId: opts.agentId,
       manifestName: opts.manifestName,
       status: "pending",
       createdAt: Date.now(),
+      kind: opts.kind ?? "run",
     };
     this.runs.set(record.runId, record);
     this.persist();
@@ -329,8 +333,10 @@ export class RunRegistry {
     return this.runs.get(runId);
   }
 
+  /** All runs, newest first. Chat runs (conversation turns) are excluded — they are not
+   *  deliverable output and must not pollute the Inbox / runs list. */
   list(): RunRecord[] {
-    return [...this.runs.values()].sort((a, b) => b.createdAt - a.createdAt);
+    return [...this.runs.values()].filter(r => r.kind !== "chat").sort((a, b) => b.createdAt - a.createdAt);
   }
 
   update(runId: string, patch: Partial<RunRecord>): void {
@@ -1786,7 +1792,8 @@ export class KrelvanRuntime {
     const agent = this.agentRegistry.get(agentId);
     if (!agent) return { ok: false, error: "agent not found" };
     const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    this.runRegistry.create({ agentId, runId, manifestName: agent.signed.manifest.name });
+    // Mark as a chat turn so it does NOT appear in the Inbox / runs list.
+    this.runRegistry.create({ agentId, runId, manifestName: agent.signed.manifest.name, kind: "chat" });
     // Pass the message + prior thread as run input. `sender_id` scopes memory to this thread so
     // each conversation is isolated and compounds. The manifest's nodes read `message`/`history`.
     const initialState: Record<string, string | number | boolean | null> = {

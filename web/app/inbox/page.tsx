@@ -58,6 +58,9 @@ export default function InboxPage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const fetching = useRef<Set<string>>(new Set());
+  // Persistent cache of already-fetched outputs, keyed by runId. The 4s list refresh must NEVER
+  // reset a headline we've already loaded — it rehydrates from here instead of showing null again.
+  const outputs = useRef<Map<string, { headline: string; full: string | null }>>(new Map());
 
   // Keep the inbox glanceable: show the most recent PAGE by default, reveal the rest on demand.
   const PAGE = 12;
@@ -69,7 +72,14 @@ export default function InboxPage() {
       const relevant = runs.filter(r => r.status === "completed" || r.status === "halted");
       setItems(prev => {
         const byId = new Map(prev.map(i => [i.run.runId, i]));
-        return relevant.map(r => byId.get(r.runId) ?? { run: r, headline: null, full: null });
+        return relevant.map(r => {
+          const existing = byId.get(r.runId);
+          if (existing && existing.headline !== null) return { ...existing, run: r };
+          // Rehydrate from the persistent output cache so a loaded result is never reset to null.
+          const cachedOut = outputs.current.get(r.runId);
+          if (cachedOut) return { run: r, headline: cachedOut.headline, full: cachedOut.full };
+          return existing ?? { run: r, headline: null, full: null };
+        });
       });
       setError(null);
     } catch (e) {
@@ -95,20 +105,39 @@ export default function InboxPage() {
     if (pending.length === 0) return;
     pending.forEach(i => fetching.current.add(i.run.runId));
     let cancelled = false;
-    // Fetch the visible page's outputs concurrently so the inbox fills fast.
+    // Fetch each visible run's output. On failure, RELEASE the fetching lock so the next tick
+    // retries instead of leaving the card stuck on "Loading result…" forever (the real bug a
+    // user hit — most cards never resolved because a slow/failed fetch was never retried).
     Promise.all(pending.map(async (it) => {
       try {
-        const detail = await getRun(it.run.runId);
+        // Race the fetch against a timeout — a hung request must NOT leave the card stuck on
+        // "Loading result…" forever (the real bug). If it times out, we throw and retry next tick.
+        const detail = await Promise.race([
+          getRun(it.run.runId),
+          new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+        ]);
         if (cancelled) return;
         const out = extractOutput((detail.projection?.state ?? {}) as Record<string, unknown>);
-        setItems(prev => prev.map(x => x.run.runId === it.run.runId
-          ? { ...x, headline: out?.headline ?? "No text result — open the run for the full record.", full: out?.full ?? null }
-          : x));
+        const headline = out?.headline ?? "No text output — open the run for the full record.";
+        const full = out?.full ?? null;
+        // Persist so the periodic list refresh rehydrates instead of resetting to "Loading…".
+        outputs.current.set(it.run.runId, { headline, full });
+        setItems(prev => prev.map(x => x.run.runId === it.run.runId ? { ...x, headline, full } : x));
       } catch {
-        setItems(prev => prev.map(x => x.run.runId === it.run.runId ? { ...x, headline: "Could not load this result." } : x));
+        if (cancelled) return;
+        // Release the lock so the next tick retries the fetch instead of hanging forever.
+        fetching.current.delete(it.run.runId);
       }
     })).catch(() => {});
-    return () => { cancelled = true; };
+    // On cleanup (the 4s list refresh re-runs this effect), release the locks for any run that
+    // did NOT get a headline yet. Otherwise a fetch cancelled mid-flight stays locked forever and
+    // its card is stuck on "Loading result…" — the exact bug a user hit. Releasing lets it retry.
+    return () => {
+      cancelled = true;
+      pending.forEach(i => {
+        if (!outputs.current.has(i.run.runId)) fetching.current.delete(i.run.runId);
+      });
+    };
   }, [items, visibleCount]);
 
   function toggle(id: string) {
@@ -180,7 +209,9 @@ export default function InboxPage() {
                       </p>
                     ) : (
                       <p className="body" style={{ margin: "var(--s2) 0 0", color: "var(--ink-soft)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                        {headline === null ? <span className="muted">Loading result…</span> : (isOpen && full ? full : headline)}
+                        {headline === null
+                          ? <span className="muted" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)" }}><span className="spinner" aria-hidden="true" style={{ width: 12, height: 12 }} /> Loading result…</span>
+                          : (isOpen && full ? full : headline)}
                       </p>
                     )}
                   </div>
