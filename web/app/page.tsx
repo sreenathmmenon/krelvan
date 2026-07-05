@@ -902,16 +902,16 @@ export default function Landing() {
             <div className="isisnt__col isisnt__col--is">
               <div className="isisnt__head">What it is</div>
               <ul>
-                <li>A self-hostable, open-source agent platform whose runs are Ed25519-signed and offline-verifiable.</li>
-                <li>A real proof core — the ledger, the signing, the export, and <code className="mono">npx krelvan verify</code> are the load-bearing, adversarially-tested parts.</li>
-                <li>Infrastructure you own: your keys, your data, your machine. The cloud is optional, not the product.</li>
+                <li>A self-hostable, open-source platform for real agents that research, draft, and act across your tools — describe an outcome, get a working multi-agent system.</li>
+                <li>Output that reaches you where you live: the Agent Inbox out of the box, or delivered to email, Telegram, Slack, and more. Runs on any LLM provider, or fully local.</li>
+                <li>Infrastructure you own: your data, your machine, an auditable record of every run. The cloud is optional, not the product.</li>
               </ul>
             </div>
             <div className="isisnt__col isisnt__col--isnt">
               <div className="isisnt__head">What it isn&apos;t</div>
               <ul>
                 <li>Not a hosted SaaS with an open-source husk — the whole thing runs on your box.</li>
-                <li>Not magic. An agent can still be wrong; that&apos;s why every step is signed, gated, and replayable.</li>
+                <li>Not magic. An agent can still be wrong; that&apos;s why the risky steps pause for your approval and every run keeps an auditable record you can replay.</li>
                 <li>Not finished. This is an early release — we mark exactly which parts are battle-tested so you can judge the rest for yourself.</li>
               </ul>
             </div>

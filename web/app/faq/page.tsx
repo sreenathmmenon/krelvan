@@ -12,7 +12,7 @@ import { glyphFor, UI } from "../../lib/glyphs";
 export const metadata: Metadata = {
   title: "FAQ — Krelvan",
   description:
-    "Straight answers about Krelvan: the signed ledger, self-hosting, supported models, autonomy and approvals, budgets, security, and today's honest limits.",
+    "Straight answers about Krelvan: building agents that research, draft, and act, self-hosting, supported models, delivery to your inbox and channels, autonomy and approvals, budgets, security, and today's honest limits.",
 };
 
 type QA = { q: string; a: string[] };
