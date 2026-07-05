@@ -214,6 +214,7 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     // Inbound/interactive: a public, token-authenticated webhook that starts an agent run.
     { method: "POST",   pattern: ["api", "triggers", ":agentId"],     handler: (q, r, p) => handleWebhookTrigger(q, r, p, runtime) },
     // Admin (session-gated): mint / view-status / revoke an agent's webhook trigger token.
+    { method: "POST",   pattern: ["api", "agents", ":id", "chat"],     handler: (q, r, p) => handleChat(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "agents", ":id", "delivery"], handler: (q, r, p) => handleGetDelivery(q, r, p, runtime) },
     { method: "PUT",    pattern: ["api", "agents", ":id", "delivery"], handler: (q, r, p) => handleSetDelivery(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleGetTrigger(q, r, p, runtime) },
@@ -656,6 +657,21 @@ async function handleWebhookTrigger(req: IncomingMessage, res: ServerResponse, p
   const result = rt.triggerRun(agentId, initialState);
   if (!result.ok) { jsonError(res, 404, result.error); return; }
   json(res, 202, { run: result.run, triggered: true });
+}
+
+/** POST /api/agents/:id/chat — talk to an agent. Body: { message, threadId?, history? }. */
+async function handleChat(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const agentId = params["id"] ?? "";
+  if (!rt.agentRegistry.get(agentId)) { jsonError(res, 404, "agent not found"); return; }
+  let body: { message?: string; threadId?: string; history?: string };
+  try { body = JSON.parse(await readBody(req)); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  const message = String(body.message ?? "").trim();
+  if (!message) { jsonError(res, 400, "message is required"); return; }
+  const threadId = String(body.threadId ?? `thread-${agentId}`).slice(0, 120);
+  const history = String(body.history ?? "").slice(0, 8000);
+  const result = await rt.chatWithAgent(agentId, message, threadId, history);
+  if (!result.ok) { jsonError(res, 500, result.error); return; }
+  json(res, 200, { reply: result.reply, runId: result.runId, status: result.status, threadId });
 }
 
 async function handleGetDelivery(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {

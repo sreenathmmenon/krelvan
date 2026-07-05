@@ -1771,6 +1771,50 @@ export class KrelvanRuntime {
     return { ok: true, run };
   }
 
+  /**
+   * Talk to an agent conversationally. Runs the agent with the user's message (and the thread
+   * history, so it remembers the conversation) as input, waits for it to finish, and returns
+   * the agent's reply — the human-facing output of the run. This turns a scheduled runner into
+   * something you can actually converse with and redirect.
+   */
+  async chatWithAgent(
+    agentId: string,
+    message: string,
+    threadId: string,
+    history: string,
+  ): Promise<{ ok: true; reply: string; runId: string; status: string } | { ok: false; error: string }> {
+    const agent = this.agentRegistry.get(agentId);
+    if (!agent) return { ok: false, error: "agent not found" };
+    const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    this.runRegistry.create({ agentId, runId, manifestName: agent.signed.manifest.name });
+    // Pass the message + prior thread as run input. `sender_id` scopes memory to this thread so
+    // each conversation is isolated and compounds. The manifest's nodes read `message`/`history`.
+    const initialState: Record<string, string | number | boolean | null> = {
+      message,
+      history,
+      sender_id: threadId,
+    };
+    await this.executeRun(runId, agent.signed.manifest, initialState, agentId);
+    const rec = this.runRegistry.get(runId);
+    const status = rec?.status ?? "unknown";
+    // Extract the reply: the run's human-facing output text.
+    const { project } = await import("../core/kernel/project.js");
+    const events = await this.store.readRun("default", runId);
+    const state = project(events).state as Record<string, unknown>;
+    // Prefer a prose reply field; fall back to the first substantial text output.
+    const suffixes = [".reply", ".result", ".answer", ".response", ".message", ".body", ".text"];
+    let reply = "";
+    for (const suf of suffixes) {
+      const hit = Object.entries(state).find(([k, v]) => k.endsWith(suf) && typeof v === "string" && (v as string).trim().length > 0);
+      if (hit) { reply = String(hit[1]).trim(); break; }
+    }
+    if (!reply) {
+      const first = Object.entries(state).find(([k, v]) => typeof v === "string" && (v as string).trim().length > 20 && !k.startsWith("_"));
+      reply = first ? String(first[1]).trim() : "(the agent produced no text reply)";
+    }
+    return { ok: true, reply, runId, status };
+  }
+
   async executeRun(runId: string, manifest: Manifest, initialState: Record<string, string | number | boolean | null>, agentId?: string): Promise<void> {
     this.runRegistry.update(runId, { status: "running" });
     // Use the live supervisor — reflects any runtime enable/disable of plugins.

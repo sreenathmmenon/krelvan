@@ -800,6 +800,114 @@ export const REGISTRY_SEED: CatalogEntry[] = [
       }
   },
   {
+    "name": "assistant",
+    "title": "Assistant — Talk to Your Agent",
+    "oneLiner": "A conversational agent you can actually talk to — send it a message and it responds, remembers the thread, and researches the web when a question needs real facts.",
+    "category": "Templates",
+    "sideEffect": "message-human",
+    "tier": "official",
+    "author": "Krelvan",
+    "kind": "template",
+    "secretRefs": [
+      "slack-bot-token",
+      "resend-api-key"
+    ],
+    "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
+    "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+    "manifest": {
+              "version": 1,
+              "name": "Assistant — Talk to Your Agent",
+              "intent": "A conversational agent you can actually talk to. Send it a message and it responds — it remembers your conversation, researches the web when a question needs current facts, and reasons through what you ask. Redirect it, follow up, ask why: it holds the thread.",
+              "entry": "recall_thread",
+              "runBudgetCents": 500,
+              "maxNodeVisits": 2,
+              "seed": {
+                      "message": "Hello — what can you help me with?",
+                      "history": "",
+                      "persona": "a sharp, helpful assistant — direct, specific, honest. You reason before answering and say when you're unsure.",
+                      "sender_id": "default-thread"
+              },
+              "nodes": [
+                      {
+                              "id": "recall_thread",
+                              "role": "Load anything you remember from this conversation thread (recall). Combine it with the 'history' passed in so you have the full context of what we've been discussing. Output object keys: context (a short summary of the conversation so far, or 'new conversation' if none).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "recall",
+                                              "sideEffect": "read",
+                                              "budgetCents": 10
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "maybe_research",
+                              "role": "Decide if answering the user's 'message' well needs current, real-world facts (news, prices, recent developments, specific data). If it does, search the web for them. If the message is conversational or you already know the answer, return an empty result — do not force a search. Output object keys: found (the real facts you found if you searched, or 'no research needed'), used_web (true only if you actually searched and found something).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "web_search",
+                                              "sideEffect": "read",
+                                              "budgetCents": 40
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "respond",
+                              "role": "You are the assistant with this 'persona'. Respond to the user's 'message' directly and helpfully, using recall_thread 'context' (what we've discussed) and maybe_research 'found' (real facts, if any were gathered). Be specific and honest — if you're unsure or lack data, say so. Match the conversation's tone. Do not invent facts; ground claims in the research when you have it. Output object keys: reply (your full response to the user, ready to show them).",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "think",
+                                              "sideEffect": "read",
+                                              "budgetCents": 120
+                                      }
+                              ]
+                      },
+                      {
+                              "id": "remember_turn",
+                              "role": "Persist this exchange to memory so the next message in this thread has the context: what the user asked and the gist of your reply. One line for the record.",
+                              "autonomy": "full",
+                              "capabilities": [
+                                      {
+                                              "name": "remember",
+                                              "sideEffect": "write-reversible",
+                                              "budgetCents": 10
+                                      }
+                              ]
+                      }
+              ],
+              "edges": [
+                      {
+                              "from": "recall_thread",
+                              "to": "maybe_research"
+                      },
+                      {
+                              "from": "maybe_research",
+                              "to": "respond"
+                      },
+                      {
+                              "from": "respond",
+                              "to": "remember_turn"
+                      }
+              ],
+              "customize": {
+                      "agent_name": {
+                              "label": "Agent name",
+                              "type": "text",
+                              "rename": true,
+                              "default": "Assistant — Talk to Your Agent"
+                      },
+                      "persona": {
+                              "label": "How should it behave?",
+                              "type": "text",
+                              "seedKey": "persona",
+                              "default": "a sharp, helpful assistant — direct, specific, honest."
+                      }
+              }
+      }
+  },
+  {
     "name": "growth-team",
     "title": "Autonomous Growth Team",
     "oneLiner": "Point it at your site and brand voice — a team of specialist agents researches, audits SEO, drafts content, prospects outreach, checks AI-answer visibility, and ships a prioritized growth plan, with your approval before anything publishes.",
