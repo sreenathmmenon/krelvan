@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Influencer Outreach",
-  "intent": "Given my product and a creator's handle and bio, write a campaign brief and a personalized outreach message grounded only in what I actually know about them — then pause for my approval before anything is sent, and keep a signed record of every pitch.",
+  "intent": "Given my product and a creator's handle and bio, write a campaign brief and a personalized outreach message grounded only in what I actually know about them — then pause for my approval before anything is sent.",
   "entry": "recall_campaign",
   "runBudgetCents": 370,
   "maxNodeVisits": 2,
@@ -53,7 +53,7 @@
     },
     {
       "id": "log_outreach",
-      "role": "Record this outreach to memory — who we pitched and the message — so we don't pitch them twice and there is a signed audit trail of every pitch sent.",
+      "role": "Record this outreach to memory — who we pitched and the message — so we don't pitch them twice.",
       "autonomy": "full",
       "capabilities": [
         {

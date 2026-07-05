@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Outreach Reply Handler",
-  "intent": "A creator replied to my outreach — draft a grounded reply (e.g. negotiating rate or scheduling) that respects my budget and brand voice, then pause for my approval before it sends, with a signed record.",
+  "intent": "A creator replied to my outreach — draft a grounded reply (e.g. negotiating rate or scheduling) that respects my budget and brand voice, then pause for my approval before it sends.",
   "entry": "recall_campaign",
   "runBudgetCents": 355,
   "maxNodeVisits": 2,

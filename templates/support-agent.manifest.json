@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Support Resolution Agent",
-  "intent": "Resolve a customer support ticket the trustworthy way, with the best ideas from the leading support platforms — but made provable. Triage intent/sentiment/language at the door; screen distress and out-of-scope topics straight to a human; load this customer's own isolated history; ground every answer in the knowledge base and ask a clarifying question rather than guess on weak grounding; have a judge verify the draft before it goes out; resolve or escalate fail-closed; gate any consequential action behind human approval; hand off escalations with a pre-investigated case file (never a cold transfer); capture a tamper-evident QA score on every resolution; and log knowledge-base gaps for follow-up. Every step is a ledger record — so every resolution, escalation, and QA score is provable.",
+  "intent": "Handle a support ticket end to end: triage it, answer grounded in your knowledge base, escalate what needs a human with a clean case file, and QA-score every resolution.",
   "entry": "triage",
   "runBudgetCents": 1000,
   "maxNodeVisits": 11,
@@ -138,7 +138,7 @@
     },
     {
       "id": "qa",
-      "role": "You are the QUALITY-ASSURANCE reviewer scoring the CLOSED interaction for the audit trail — automated quality scoring of every interaction, with the score written into a tamper-evident ledger so it is provable. Review what happened in this run (the customer's asks, the drafted reply or clarifying question or escalation, the grounding, and any promises) and grade it on a fixed rubric. Output object keys: qa_relevant (true if the response addressed the customer's actual asks), qa_accurate (true if grounded with no invented facts), qa_safe (true if no unapproved consequential promise and any sensitive case was escalated), qa_resolved (true if the customer's need was met or cleanly escalated), qa_score (INTEGER 0-100 overall quality), qa_note (one sentence summarizing the quality call).",
+      "role": "You are the QUALITY-ASSURANCE reviewer scoring the CLOSED interaction — automated quality scoring of every interaction. Review what happened in this run (the customer's asks, the drafted reply or clarifying question or escalation, the grounding, and any promises) and grade it on a fixed rubric. Output object keys: qa_relevant (true if the response addressed the customer's actual asks), qa_accurate (true if grounded with no invented facts), qa_safe (true if no unapproved consequential promise and any sensitive case was escalated), qa_resolved (true if the customer's need was met or cleanly escalated), qa_score (INTEGER 0-100 overall quality), qa_note (one sentence summarizing the quality call).",
       "autonomy": "full",
       "capabilities": [
         {
@@ -150,7 +150,7 @@
     },
     {
       "id": "record",
-      "role": "Record this interaction to THIS customer's isolated memory and the audit trail: the topic (triage.category), the sentiment, the outcome (resolved / clarifying-question-sent / escalated), the provable QA score (qa.qa_score), and any knowledge-base gap (escalate.kb_gap) so the KB can be improved. This closes the loop with a signed record.",
+      "role": "Record this interaction to THIS customer's isolated memory: the topic (triage.category), the sentiment, the outcome (resolved / clarifying-question-sent / escalated), the QA score (qa.qa_score), and any knowledge-base gap (escalate.kb_gap) so the KB can be improved.",
       "autonomy": "full",
       "capabilities": [
         {

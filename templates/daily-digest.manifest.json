@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Daily Digest",
-  "intent": "Every morning, read a couple of sources, rank and summarize what's new versus what I already saw yesterday, format a tight digest, and post it to my Slack — keeping a signed record of every run. Set it and forget it.",
+  "intent": "Every morning, read a couple of sources, rank and summarize what's new versus what I already saw yesterday, format a tight digest, and post it to my Slack. Set it and forget it.",
   "entry": "recall_seen",
   "runBudgetCents": 370,
   "maxNodeVisits": 2,
@@ -50,7 +50,7 @@
     },
     {
       "id": "rank",
-      "role": "You are a sharp news editor building a morning digest. INPUTS: the CURRENT DATA TO ANALYZE section contains the freshly-fetched text from BOTH sources (keys ending in .body). The MEMORY section may contain 'last_top (from a PREVIOUS run)' — the headline you led with YESTERDAY. STEPS: 1) Extract the distinct, newsworthy items across both sources. 2) DEDUPE against MEMORY: if an item is essentially the same story as last_top, DROP it (do not lead with yesterday's news again). 3) Rank the remaining items by importance/relevance and keep the best 3–5. 4) Write a crisp one-line summary for each ranked item. OUTPUT object keys: digest (a short ranked list as a single string, each item on its own line prefixed '• '), top_item (the single best NEW headline as a plain string — this becomes tomorrow's last_top), item_count (the number of items in the digest as an integer; 0 if nothing new is worth sending). Rules: never invent items not present in the fetched text; if both sources failed or there is nothing new versus MEMORY, set item_count to 0, digest to '' and top_item to ''.",
+      "role": "You are a sharp news editor building a morning digest. INPUTS: the CURRENT DATA TO ANALYZE section contains the freshly-fetched text from BOTH sources (keys ending in.body). The MEMORY section may contain 'last_top (from a PREVIOUS run)' — the headline you led with YESTERDAY. STEPS: 1) Extract the distinct, newsworthy items across both sources. 2) DEDUPE against MEMORY: if an item is essentially the same story as last_top, DROP it (do not lead with yesterday's news again). 3) Rank the remaining items by importance/relevance and keep the best 3–5. 4) Write a crisp one-line summary for each ranked item. OUTPUT object keys: digest (a short ranked list as a single string, each item on its own line prefixed '• '), top_item (the single best NEW headline as a plain string — this becomes tomorrow's last_top), item_count (the number of items in the digest as an integer; 0 if nothing new is worth sending). Rules: never invent items not present in the fetched text; if both sources failed or there is nothing new versus MEMORY, set item_count to 0, digest to '' and top_item to ''.",
       "autonomy": "full",
       "capabilities": [
         {

@@ -50,7 +50,7 @@
     },
     {
       "id": "compose_thread",
-      "role": "Write a DIFFERENT format: a THREAD. Take the SAME core message (extract.core) but expand it across a numbered thread of 4-6 short posts that each stand alone, opening with a strong hook post and closing with a takeaway/CTA. Use a different angle from compose_short so the two outputs do not read identically. Match the recalled brand voice. Number each post (1/ 2/ 3/ ...). Output object key: result (the finished thread, one post per line).",
+      "role": "Write a DIFFERENT format: a THREAD. Take the SAME core message (extract.core) but expand it across a numbered thread of 4-6 short posts that each stand alone, opening with a strong hook post and closing with a takeaway/CTA. Use a different angle from compose_short so the two outputs do not read identically. Match the recalled brand voice. Number each post (1/ 2/ 3/.). Output object key: result (the finished thread, one post per line).",
       "autonomy": "full",
       "capabilities": [
         {

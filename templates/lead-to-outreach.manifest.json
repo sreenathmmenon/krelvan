@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Lead to Outreach",
-  "intent": "Take an inbound lead, enrich it, decide if it fits our ICP, write it into the CRM, and send a personalized outreach email — pausing for my approval before the email actually goes out. A full sales-agent chain across enrichment, CRM, and email. Every step is",
+  "intent": "A full sales-agent chain: enrich an inbound lead, qualify it against your ICP, write it to your CRM, and send personalized outreach — with your approval before anything goes out.",
   "entry": "enrich",
   "runBudgetCents": 400,
   "maxNodeVisits": 2,

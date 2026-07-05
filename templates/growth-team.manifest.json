@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Autonomous Growth Team",
-  "intent": "Point it at a company's website and brand voice, and a team of specialist agents goes to work: it studies the site, researches the market and audience, audits SEO and finds keyword gaps, drafts channel-ready content in the brand's voice, prospects outreach targets, checks how the brand shows up in AI answers, and assembles a prioritized growth plan — pausing for your approval before anything is published or sent. Runs on a schedule so the work compounds. Every step is",
+  "intent": "Point it at your site and brand voice — a team of specialist agents researches your market, audits SEO, drafts content and outreach, and shows you a growth plan before anything is published or sent. Runs on a schedule so the work compounds.",
   "entry": "study_site",
   "runBudgetCents": 902,
   "maxNodeVisits": 2,

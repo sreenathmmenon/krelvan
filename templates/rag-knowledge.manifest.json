@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Self-Improving RAG Agent",
-  "intent": "Answer my question strictly from my own knowledge base. If the knowledge base does NOT cover it, go find the missing information on the web, ingest it back into the knowledge base so the agent is permanently smarter, then re-answer — keeping a signed record of what it learned and why.",
+  "intent": "Answer my question strictly from my own knowledge base. If the knowledge base does NOT cover it, go find the missing information on the web, ingest it back into the knowledge base so the agent is permanently smarter, then re-answer.",
   "entry": "recall_ctx",
   "runBudgetCents": 557,
   "maxNodeVisits": 2,
@@ -37,7 +37,7 @@
     },
     {
       "id": "reason",
-      "role": "You are a grounded research analyst. The user's question is in the 'query' state value. The retrieved knowledge-base passages are in the CURRENT DATA TO ANALYZE section (key ending in .body) — each chunk is tagged with its source like [1] (source: handbook). Decide whether the retrieved passages CONTAIN the answer. Rules: answer ONLY from the passages; never invent facts; if the passages do not actually answer the question, that is a KNOWLEDGE GAP. Output object keys: result (your best grounded answer in one or two sentences, or a short note that the KB does not cover this); grounded (true ONLY if the answer is fully supported by the retrieved passages, else false); gap (true if the knowledge base is MISSING the information needed to answer — i.e. the agent must go learn it from the web — else false); gap_topic (if gap is true, a short web-search query string that would find the missing information, e.g. 'enterprise refund window policy 2026'; otherwise an empty string).",
+      "role": "You are a grounded research analyst. The user's question is in the 'query' state value. The retrieved knowledge-base passages are in the CURRENT DATA TO ANALYZE section (key ending in.body) — each chunk is tagged with its source like [1] (source: handbook). Decide whether the retrieved passages CONTAIN the answer. Rules: answer ONLY from the passages; never invent facts; if the passages do not actually answer the question, that is a KNOWLEDGE GAP. Output object keys: result (your best grounded answer in one or two sentences, or a short note that the KB does not cover this); grounded (true ONLY if the answer is fully supported by the retrieved passages, else false); gap (true if the knowledge base is MISSING the information needed to answer — i.e. the agent must go learn it from the web — else false); gap_topic (if gap is true, a short web-search query string that would find the missing information, e.g. 'enterprise refund window policy 2026'; otherwise an empty string).",
       "autonomy": "full",
       "capabilities": [
         {
@@ -97,7 +97,7 @@
     },
     {
       "id": "save",
-      "role": "Save the final answer to memory as the audit trail and as context for future, similar questions (remember last_answer).",
+      "role": "Save the final answer to memoryas context and as context for future, similar questions (remember last_answer).",
       "autonomy": "full",
       "capabilities": [
         {

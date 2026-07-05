@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Supervisor (Multi-Agent Delegation)",
-  "intent": "Run a topic end-to-end under ONE authority ceiling: plan the work, delegate the research to a research sub-agent, hand its findings to a writer sub-agent, assemble the final brief, and keep a signed record. Requires two sub-agents installed: 'sub-research' and 'sub-writer'.",
+  "intent": "Run a topic end-to-end under ONE authority ceiling: plan the work, delegate the research to a research sub-agent, hand its findings to a writer sub-agent, assemble the final brief. Requires two sub-agents installed: 'sub-research' and 'sub-writer'.",
   "entry": "plan",
   "runBudgetCents": 1225,
   "maxNodeVisits": 2,

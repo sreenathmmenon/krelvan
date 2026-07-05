@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Incident Responder",
-  "intent": "When an alerting webhook fires, triage the incident's severity with an LLM, decide whether to page the on-call engineer or just log it, post an update to the status channel, and keep a signed record of every decision.",
+  "intent": "When an alerting webhook fires, triage the incident's severity with an LLM, decide whether to page the on-call engineer or just log it, post an update to the status channel.",
   "entry": "triage",
   "runBudgetCents": 385,
   "maxNodeVisits": 2,
@@ -50,7 +50,7 @@
     },
     {
       "id": "log_only",
-      "role": "Quietly note that this incident was triaged below the paging threshold and is being recorded for the audit trail without waking anyone. No human is messaged on this path.",
+      "role": "Quietly note that this incident was triaged below the paging threshold without waking anyone. No human is messaged on this path.",
       "autonomy": "full",
       "capabilities": [
         {
@@ -74,7 +74,7 @@
     },
     {
       "id": "record",
-      "role": "Persist this incident (severity + summary) to memory so the next run has the prior incident as context and there is a durable, signed audit trail of every triage decision.",
+      "role": "Persist this incident (severity + summary) to memory so the next run has the prior incident as context.",
       "autonomy": "full",
       "capabilities": [
         {

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Competitive Intel Monitor",
-  "intent": "Watch a competitor's page on a daily schedule, detect meaningful changes, decide (with an LLM router) whether a change warrants deeper research, optionally pull external context with a web search, then compose a digest and post it to my webhook — keeping a signed record of every check.",
+  "intent": "Watch a competitor's page on a daily schedule, detect meaningful changes, decide (with an LLM router) whether a change warrants deeper research, optionally pull external context with a web search, then compose a digest and post it to my webhook.",
   "entry": "fetch",
   "runBudgetCents": 497,
   "maxNodeVisits": 2,

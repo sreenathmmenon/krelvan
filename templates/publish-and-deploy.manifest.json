@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Publish & Deploy",
-  "intent": "Take a topic, research it, write a publishable post, commit it to a repo, then ship a production deploy — pausing for my approval before the irreversible deploy. A real build-and-ship agent: a sentence becomes a piece of content that goes live. Every step is",
+  "intent": "A ship agent: a sentence becomes a piece of content that goes live — it drafts, commits, and deploys, pausing for your approval before anything is published.",
   "entry": "research",
   "runBudgetCents": 400,
   "maxNodeVisits": 2,
@@ -61,7 +61,7 @@
     },
     {
       "id": "record",
-      "role": "Note the outcome: the post title that shipped and the deploy job. One line for the audit trail.",
+      "role": "Note the outcome: the post title that shipped and the deploy job.One line for the record.",
       "autonomy": "full",
       "capabilities": [
         {

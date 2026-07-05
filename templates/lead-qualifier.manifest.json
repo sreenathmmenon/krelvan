@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Lead Qualifier & Outreach",
-  "intent": "Take an inbound lead URL, enrich it, score how well the lead fits my ideal customer profile, and — only for strong fits — draft a personalized outreach email and send it after I approve. Weak fits are remembered so I never chase them again. Every decision is a signed record.",
+  "intent": "Take an inbound lead URL, enrich it, score how well the lead fits my ideal customer profile, and — only for strong fits — draft a personalized outreach email and send it after I approve. Weak fits are remembered so I never chase them again.",
   "entry": "recall_prior",
   "runBudgetCents": 347,
   "maxNodeVisits": 2,
@@ -39,7 +39,7 @@
     },
     {
       "id": "score",
-      "role": "You are a senior SDR qualifying an inbound lead against an Ideal Customer Profile. The ICP is in the 'icp' state value. The freshly-fetched company page text is in the CURRENT DATA TO ANALYZE section (key ending in .body). FIRST: if that section is empty/missing or is clearly an error page, set score to 0 and reason to 'Could not read the lead page'. OTHERWISE read ONLY that page text and judge fit against the ICP. Extract who they are. Output object keys: company (the company/brand name as a quoted string, or \"\" if unclear); contact_email (a contact or sales email visible on the page as a quoted string, or \"\" if none is shown — do NOT invent one); score (an INTEGER 0-100 for how well this lead matches the ICP, where 70+ means a strong fit worth outreach); reason (one sentence justifying the score, citing a concrete signal from the page).",
+      "role": "You are a senior SDR qualifying an inbound lead against an Ideal Customer Profile. The ICP is in the 'icp' state value. The freshly-fetched company page text is in the CURRENT DATA TO ANALYZE section (key ending in.body). FIRST: if that section is empty/missing or is clearly an error page, set score to 0 and reason to 'Could not read the lead page'. OTHERWISE read ONLY that page text and judge fit against the ICP. Extract who they are. Output object keys: company (the company/brand name as a quoted string, or \"\" if unclear); contact_email (a contact or sales email visible on the page as a quoted string, or \"\" if none is shown — do NOT invent one); score (an INTEGER 0-100 for how well this lead matches the ICP, where 70+ means a strong fit worth outreach); reason (one sentence justifying the score, citing a concrete signal from the page).",
       "autonomy": "full",
       "capabilities": [
         {
@@ -75,7 +75,7 @@
     },
     {
       "id": "record",
-      "role": "Persist this lead's final disposition to memory — the analyst's score-based reason (score.reason), with the score itself (score.score) telling us pursue (>= 70) vs archive — so we keep an audit trail and never re-chase a lead we already archived. Reversible write.",
+      "role": "Persist this lead's final disposition to memory — the analyst's score-based reason (score.reason), with the score itself (score.score) telling us pursue (>= 70) vs archive — so we never re-chase a lead we already archived. Reversible write.",
       "autonomy": "full",
       "capabilities": [
         {

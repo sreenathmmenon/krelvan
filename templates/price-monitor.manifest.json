@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Price Monitor",
-  "intent": "Watch a product/price page on a schedule, detect when the price changes versus the last run, and alert me — keeping a signed record of every check.",
+  "intent": "Watch a product/price page on a schedule, detect when the price changes versus the last run, and alert me.",
   "entry": "recall_baseline",
   "runBudgetCents": 287,
   "maxNodeVisits": 2,

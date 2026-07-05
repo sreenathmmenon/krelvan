@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Investment Research Assistant",
-  "intent": "Answer a research question about a fund or holding with verifiable rigor: a supervisor decomposes the question, specialist workers pull the data record and the qualitative context, an analyst synthesizes an answer, an LLM judge validates it against the evidence and forces a retry if it is weak or ungrounded, and a human approves before the answer is delivered. Every step is",
+  "intent": "Research an investment question end to end — gather sources, analyze them, flag anything unsupported or ungrounded, and get a clear, cited brief with a human approving before the answer is delivered.",
   "entry": "intake",
   "runBudgetCents": 900,
   "maxNodeVisits": 5,

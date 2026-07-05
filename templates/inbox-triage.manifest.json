@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Inbox Triage & Reply",
-  "intent": "Triage an incoming email: recall what I know about this sender, classify its intent and urgency, decide whether it deserves a reply, draft one for me, and send it ONLY after I approve — archiving the rest. Every decision and send is a signed ledger record.",
+  "intent": "Triage an incoming email: recall what I know about this sender, classify its intent and urgency, decide whether it deserves a reply, draft one for me, and send it ONLY after I approve — archiving the rest.",
   "entry": "recall_sender",
   "runBudgetCents": 385,
   "maxNodeVisits": 2,
@@ -75,7 +75,7 @@
     },
     {
       "id": "remember",
-      "role": "Persist the category of this interaction as last_contact for this sender, so the next email from from_address is triaged with full history. This closes the loop for the audit trail.",
+      "role": "Persist the category of this interaction as last_contact for this sender, so the next email from from_address is triaged with full history.",
       "autonomy": "full",
       "capabilities": [
         {

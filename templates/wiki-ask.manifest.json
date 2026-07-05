@@ -62,7 +62,7 @@
     },
     {
       "id": "record",
-      "role": "Record this question and answer to memory so there is a signed audit trail of what the wiki was asked and what it answered.",
+      "role": "Record this question and answer to memory.",
       "autonomy": "full",
       "capabilities": [
         {

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Research Analyst",
-  "intent": "Research a topic on the open web, reason over the findings to a confidence-scored synthesis, deepen the search if confidence is low, write a clean executive brief, and remember it — keeping a signed record of every step.",
+  "intent": "Research a topic on the open web, reason over the findings to a confidence-scored synthesis, deepen the search if confidence is low, write a clean executive brief, and remember it.",
   "entry": "search",
   "runBudgetCents": 355,
   "maxNodeVisits": 2,
@@ -49,7 +49,7 @@
     },
     {
       "id": "remember",
-      "role": "Persist the finished brief to memory as 'last_brief' so it can be recalled, compared against future runs, and used as an audit trail.",
+      "role": "Persist the finished brief to memory as 'last_brief' so it can be recalled, compared against future runs,.",
       "autonomy": "full",
       "capabilities": [
         {
