@@ -314,7 +314,11 @@ function ModelSection() {
             <select className="input" value={provider} onChange={e => setProvider(e.target.value)} style={{ maxWidth: 280 }}>
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="groq">Groq</option>
+              <option value="mistral">Mistral</option>
               <option value="ollama">Ollama (local, no key)</option>
+              <option value="compatible">OpenAI-compatible endpoint</option>
             </select>
           </label>
 
@@ -324,16 +328,16 @@ function ModelSection() {
               <input
                 type="password" className="input input-mono" value={apiKey}
                 onChange={e => setApiKey(e.target.value)} autoComplete="off"
-                placeholder={provider === "anthropic" ? "sk-ant-…" : "sk-…"}
+                placeholder={provider === "anthropic" ? "sk-ant-…" : provider === "gemini" ? "AIza… or AQ.…" : provider === "groq" ? "gsk_…" : "sk-…"}
               />
               <span className="small muted">Sent once over your local connection, then encrypted. Never shown again.</span>
             </label>
           )}
 
-          {provider === "ollama" && (
+          {(provider === "ollama" || provider === "compatible") && (
             <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
-              <span className="label" style={{ marginBottom: 0 }}>Base URL (optional)</span>
-              <input className="input input-mono" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="http://localhost:11434" />
+              <span className="label" style={{ marginBottom: 0 }}>Base URL {provider === "compatible" ? "(required)" : "(optional)"}</span>
+              <input className="input input-mono" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder={provider === "compatible" ? "https://your-gateway.example/v1" : "http://localhost:11434"} />
             </label>
           )}
 
@@ -341,7 +345,14 @@ function ModelSection() {
             <span className="label" style={{ marginBottom: 0 }}>Model (optional)</span>
             <input
               className="input input-mono" value={model} onChange={e => setModelName(e.target.value)}
-              placeholder={provider === "anthropic" ? "claude-sonnet-4-6" : provider === "ollama" ? "qwen2.5:14b" : "gpt-4o"}
+              placeholder={
+                provider === "anthropic" ? "claude-sonnet-4-6"
+                : provider === "gemini" ? "gemini-2.0-flash"
+                : provider === "groq" ? "llama-3.3-70b-versatile"
+                : provider === "mistral" ? "mistral-large-latest"
+                : provider === "ollama" ? "llama3.2"
+                : "gpt-4o"
+              }
             />
             <span className="small muted">Leave blank to use the provider&apos;s default.</span>
           </label>
