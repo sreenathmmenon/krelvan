@@ -9,7 +9,8 @@
     "lead_url": "https://example.com/company/acme",
     "icp": "B2B SaaS companies, 50-500 employees, with an engineering org and a public careers page",
     "from_name": "Alex from Krelvan",
-    "remember_map": "verdict=score.reason"
+    "remember_map": "verdict=score.reason",
+    "url": "https://example.com/company/acme"
   },
   "nodes": [
     {
@@ -26,7 +27,7 @@
     },
     {
       "id": "enrich",
-      "role": "Fetch the lead's web page at the 'lead_url' state value so we have real, current context (the company, what they do, size signals, hiring signals) to score against. Read-only.",
+      "role": "Fetch the lead company web page at {{input.url}} so we have real, current context about them. Output object keys: page (the key facts from the page), fetched (true if content was retrieved).",
       "autonomy": "full",
       "capabilities": [
         {
@@ -54,9 +55,9 @@
       "autonomy": "full",
       "capabilities": [
         {
-          "name": "compose",
+          "name": "think",
           "sideEffect": "read",
-          "budgetCents": 40
+          "budgetCents": 80
         }
       ]
     },

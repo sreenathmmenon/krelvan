@@ -41,9 +41,9 @@
       "autonomy": "full",
       "capabilities": [
         {
-          "name": "compose",
+          "name": "think",
           "sideEffect": "read",
-          "budgetCents": 40
+          "budgetCents": 80
         }
       ]
     },

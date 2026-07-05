@@ -77,9 +77,9 @@
       "autonomy": "suggest",
       "capabilities": [
         {
-          "name": "compose",
+          "name": "think",
           "sideEffect": "message-human",
-          "budgetCents": 40
+          "budgetCents": 80
         }
       ]
     }
