@@ -1093,7 +1093,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               <div>
                 <h2 className="h2" style={{ marginBottom: "var(--s1)" }}>Run history</h2>
                 <p className="small muted" style={{ margin: 0 }}>
-                  Every execution is recorded to a signed, replayable record. Select a run to open it.
+                  Every execution is recorded to a complete, replayable record. Select a run to open it.
                 </p>
               </div>
               {runs.length > 0 && (

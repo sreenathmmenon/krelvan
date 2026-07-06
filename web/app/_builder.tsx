@@ -792,7 +792,7 @@ const HERO_SCENES: HeroScene[] = [
       { hash: "9f31d", action: "node.search" },
       { hash: "4b08a", action: "node.reason" },
       { hash: "c1e6f", action: "node.compose" },
-      { hash: "2da90", action: "event.sign" },
+      { hash: "2da90", action: "event.record" },
     ],
   },
   {
@@ -803,7 +803,7 @@ const HERO_SCENES: HeroScene[] = [
       { hash: "6b2c0", action: "node.fetch_pr" },
       { hash: "f90e3", action: "node.analyze" },
       { hash: "3c7a1", action: "node.flag_risk" },
-      { hash: "88b4e", action: "event.sign" },
+      { hash: "88b4e", action: "event.record" },
     ],
   },
   {
@@ -814,7 +814,7 @@ const HERO_SCENES: HeroScene[] = [
       { hash: "11ace", action: "node.read_alert" },
       { hash: "7e0b6", action: "node.correlate" },
       { hash: "c44d2", action: "node.diagnose" },
-      { hash: "9a18f", action: "event.sign" },
+      { hash: "9a18f", action: "event.record" },
     ],
   },
   {
@@ -827,7 +827,7 @@ const HERO_SCENES: HeroScene[] = [
       { hash: "b803e", action: "node.draft" },
       { hash: "f27d4", action: "await.approval", gate: true },
       { hash: "a6e9b", action: "node.send" },
-      { hash: "30cf2", action: "event.sign" },
+      { hash: "30cf2", action: "event.record" },
     ],
   },
 ];
@@ -906,7 +906,7 @@ export function HeroAnimation() {
             <span className="heroanim__hash">{r.hash}</span>
             <span className="heroanim__sep">::</span>
             <span className="heroanim__action">{r.action}</span>
-            <span className={r.gate ? "heroanim__gate-tag" : "heroanim__cost"}>{r.gate ? "waiting on you" : "signed"}</span>
+            <span className={r.gate ? "heroanim__gate-tag" : "heroanim__cost"}>{r.gate ? "waiting on you" : "recorded"}</span>
           </div>
         ))}
       </div>
@@ -935,7 +935,7 @@ export function HeroArtifact({ run }: { run: RunRecord | null }) {
           <div className="dark-ink" style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-0.01em" }}>{run.manifestName}</div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap" }}>
             <span className="dark-verify-seal__mark" aria-hidden="true"><CheckMark size={12} /></span>
-            <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>signed</span>
+            <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>recorded</span>
             <span className="dark-ink-muted" aria-hidden="true">·</span>
             <span className="dark-ink-soft mono" style={{ fontSize: 13 }}>{run.status === "completed" ? "finished" : run.status}</span>
           </div>
@@ -954,7 +954,7 @@ export function HeroArtifact({ run }: { run: RunRecord | null }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap" }}>
           <span className="dark-verify-seal__mark" aria-hidden="true"><CheckMark size={12} /></span>
-          <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>signed</span>
+          <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>recorded</span>
           <span className="dark-ink-muted" aria-hidden="true">·</span>
           <span className="dark-ink-soft mono" style={{ fontSize: 13 }}>3 steps</span>
         </div>

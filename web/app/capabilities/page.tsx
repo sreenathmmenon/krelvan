@@ -16,7 +16,7 @@ import { glyphFor, UI } from "../../lib/glyphs";
 // INSTALLED (control panel). Research-backed (Raycast Store + Glama): icon-led
 // cards, kind facets + category chips + sort, a per-item detail drawer, one-click
 // install with INLINE secret setup, and "add your own". Krelvan's wedge — the
-// side-effect/permission model + signed trust — is on every card and in the
+// side-effect/permission model — is on every card and in the
 // approval simulator (no other marketplace can show what a tool can touch).
 
 // ── SVG glyph helper ─────────────────────────────────────────────────────────
@@ -813,7 +813,7 @@ function CustomizeDrawer({ e, onClose, onInstalled, flash }: {
             <button className="btn btn-primary" disabled={busy} onClick={submit}>
               {busy ? "Creating…" : "Create my agent"}
             </button>
-            <span className="micro muted">Installs as your own signed agent</span>
+            <span className="micro muted">Installs as your own private agent</span>
           </div>
         </div>
       </aside>

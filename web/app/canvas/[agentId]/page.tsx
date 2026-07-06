@@ -924,7 +924,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
           <Link
             href={selectedRunId ? `/runs/${selectedRunId}#timeline` : `/agents/${agentId}`}
             title={verification?.ok
-              ? `Verified: ${verification.signedEvents}/${verification.runEvents} events signed, full ${verification.ledgerEvents}-event chain intact (${verification.algorithm})`
+              ? `Recorded: ${verification.signedEvents}/${verification.runEvents} steps, ${verification.ledgerEvents} events in order`
               : "Every step of a run is recorded, so you can replay exactly what happened"}
             className="canvas-verify-pill"
             data-state={verification?.ok ? "ok" : verification && !verification.ok ? "fail" : "pending"}

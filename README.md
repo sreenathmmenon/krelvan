@@ -22,7 +22,7 @@ _Watch an agent run live — each step lights up on the canvas as it executes._
 
 _A real Research Analyst run — every step recorded, so you can replay exactly what happened._
 
-![A completed run with a full, replayable record](docs/images/run-signed-ledger.png)
+![A completed run with a full, replayable record](docs/images/run-record.png)
 
 _The agent canvas maps 1:1 to what executed — nodes are real steps, the dashed arc is a real retry loop._
 
@@ -167,7 +167,7 @@ Point an install at your own fork with
 
 ## Architecture — 3 strict layers
 
-1. **UI** — Next.js 15 web app: NL builder, interactive signed-graph canvas (pan/zoom/replay), runs, capabilities marketplace, MCP, approvals, schedules.
+1. **UI** — Next.js 15 web app: NL builder, interactive agent canvas (pan/zoom/replay), runs, capabilities marketplace, MCP, approvals, schedules.
 2. **API + Runtime** — `node:http` server + the pure kernel / impure engine + the capability plane + the NL→manifest compiler.
 3. **Persistence** — SQLite ledger (via `node:sqlite`), zero third-party runtime deps in core.
 
@@ -245,7 +245,7 @@ Snapshot the whole directory atomically (stop the process or use a consistent vo
 Do **not** back up `ledger.db` alone — without `secret.key` and the signing keys it is unusable.
 
 **Not yet built:** PostgreSQL multi-tenant store adapter; asymmetric *publisher* signing for
-third-party marketplace trust (distinct from ledger signing above). Tracked in `docs/PREMORTEM.md`.
+third-party marketplace trust. Tracked in `docs/PREMORTEM.md`.
 
 ---
 
