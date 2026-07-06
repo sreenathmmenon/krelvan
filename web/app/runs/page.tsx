@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { listRuns, autoSummarizeRuns, timeAgo, getCached, type RunRecord } from "../../lib/api";
+import { listRuns, clearRuns, autoSummarizeRuns, timeAgo, getCached, type RunRecord } from "../../lib/api";
 
 type Filter = "all" | "running" | "halted" | "completed" | "failed";
 
@@ -161,14 +161,24 @@ export default function RunsPage() {
         }}
       >
         <div style={{ minWidth: 0 }}>
-          <p className="micro" style={{ marginBottom: "var(--s2)" }}>Audit trail</p>
+          <p className="micro" style={{ marginBottom: "var(--s2)" }}>Run history</p>
           <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Runs</h1>
           <p className="soft body-lg" style={{ margin: 0, maxWidth: "56ch" }}>
             Every run is a complete, replayable record of exactly what your agent did —
             each step and decision, in order.
           </p>
         </div>
-        {/* no header CTA — the global nav already has "Build agent"; the empty state carries the hero action */}
+        {runs.some(r => r.status === "completed" || r.status === "failed" || r.status === "halted") && (
+          <button
+            className="btn btn-sm"
+            onClick={async () => {
+              if (!confirm("Clear all finished runs? This removes their records from this list (active runs are kept).")) return;
+              try { await clearRuns(); await load(); } catch { /* surfaced via list reload */ }
+            }}
+          >
+            Clear finished runs
+          </button>
+        )}
       </div>
 
       {/* ── summary strip: only when runs exist ── */}

@@ -215,6 +215,8 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "GET",    pattern: ["api", "agents", ":id", "memory"], handler: (q, r, p) => handleGetAgentMemory(q, r, p, runtime) },
     { method: "DELETE", pattern: ["api", "agents", ":id", "memory"], handler: (q, r, p) => handleClearAgentMemory(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs"],                    handler: (q, r) => handleListRuns(q, r, runtime) },
+    { method: "POST",   pattern: ["api", "runs", "clear"],           handler: (q, r) => handleClearRuns(q, r, runtime) },
+    { method: "DELETE", pattern: ["api", "runs", ":id"],             handler: (q, r, p) => handleDeleteRun(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "runs"],                    handler: (q, r) => handleStartRun(q, r, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id"],             handler: (q, r, p) => handleGetRun(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "stream"],   handler: (q, r, p) => handleRunStream(q, r, p, runtime) },
@@ -610,6 +612,24 @@ async function handleListRuns(_req: IncomingMessage, res: ServerResponse, rt: Kr
     return { ...r, agentName: name, manifestName: name };
   });
   json(res, 200, { runs });
+}
+
+/** DELETE /api/runs/:id — remove one run's record (only when it's not active). */
+async function handleDeleteRun(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const runId = params["id"] ?? "";
+  const run = rt.runRegistry.get(runId);
+  if (!run) { jsonError(res, 404, "run not found"); return; }
+  if (run.status === "pending" || run.status === "running") { jsonError(res, 409, "cannot delete an active run"); return; }
+  rt.runRegistry.delete(runId);
+  json(res, 200, { deleted: runId });
+}
+
+/** POST /api/runs/clear — remove all terminal runs (optionally { agentId } to scope to one agent). */
+async function handleClearRuns(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  let body: { agentId?: string } = {};
+  try { const raw = await readBody(req); if (raw.trim()) body = JSON.parse(raw); } catch { /* empty body = clear all */ }
+  const removed = rt.runRegistry.clearTerminal(body.agentId);
+  json(res, 200, { removed });
 }
 
 async function handleStartRun(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {

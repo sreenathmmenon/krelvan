@@ -343,6 +343,25 @@ export class RunRegistry {
     const r = this.runs.get(runId);
     if (r) { Object.assign(r, patch); this.persist(); }
   }
+
+  /** Remove a run record. Returns true if it existed. */
+  delete(runId: string): boolean {
+    const existed = this.runs.delete(runId);
+    if (existed) this.persist();
+    return existed;
+  }
+
+  /** Remove all terminal runs (completed / failed / halted), optionally only for one agent.
+   *  Active runs (pending / running) are left untouched. Returns how many were removed. */
+  clearTerminal(agentId?: string): number {
+    let n = 0;
+    for (const [id, r] of this.runs) {
+      const terminal = r.status === "completed" || r.status === "failed" || r.status === "halted";
+      if (terminal && (!agentId || r.agentId === agentId)) { this.runs.delete(id); n++; }
+    }
+    if (n > 0) this.persist();
+    return n;
+  }
 }
 
 // ── Capability registry ────────────────────────────────────────────────────────

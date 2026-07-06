@@ -233,6 +233,17 @@ export async function deleteAgent(id: string): Promise<void> {
   await apiFetch(`/api/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+export async function deleteRun(runId: string): Promise<void> {
+  await apiFetch(`/api/runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
+}
+
+export async function clearRuns(agentId?: string): Promise<{ removed: number }> {
+  return apiFetch<{ removed: number }>("/api/runs/clear", {
+    method: "POST",
+    body: JSON.stringify(agentId ? { agentId } : {}),
+  });
+}
+
 export async function explainBuild(agentId: string): Promise<{ rationale: string; generatedAt: number; agentId: string }> {
   return apiFetch(`/api/agents/${encodeURIComponent(agentId)}/explain-build`);
 }
