@@ -1946,8 +1946,23 @@ export class KrelvanRuntime {
         body = notable.join("\n") || "Run completed with no text output.";
       }
       const title = body.length > 90 ? body.slice(0, 88).trimEnd() + "…" : body;
+      // Resolve any *_ref delivery secrets (stored encrypted, never in plaintext on the record)
+      // back into their plaintext values only at send time, in memory, for this one delivery.
+      const resolvedTargets = targets.map((t) => {
+        if (!t.config) return t;
+        const config: Record<string, string> = {};
+        for (const [k, v] of Object.entries(t.config)) {
+          if (k.endsWith("_ref")) {
+            const val = this.secretStore.resolve(v);
+            if (val) config[k.slice(0, -"_ref".length)] = val;
+          } else {
+            config[k] = v;
+          }
+        }
+        return { ...t, config };
+      });
       const { deliver } = await import("./delivery.js");
-      await deliver(targets, { agentName, runId, title, body });
+      await deliver(resolvedTargets, { agentName, runId, title, body });
     } catch (err) {
       log.warn({ runId, error: (err as Error)?.message }, "output delivery failed (run unaffected)");
     }

@@ -702,7 +702,18 @@ async function handleGetDelivery(_req: IncomingMessage, res: ServerResponse, par
   const agentId = params["id"] ?? "";
   const agent = rt.agentRegistry.get(agentId);
   if (!agent) { jsonError(res, 404, "agent not found"); return; }
-  json(res, 200, { deliverTo: agent.deliverTo ?? [] });
+  // Never return secret refs to the client. Replace each `<field>_ref` with a `<field>_saved: true`
+  // flag so the UI can show "saved" without the secret name or value leaving the server.
+  const masked = (agent.deliverTo ?? []).map((t) => {
+    if (!t.config) return t;
+    const config: Record<string, string | boolean> = {};
+    for (const [k, v] of Object.entries(t.config)) {
+      if (k.endsWith("_ref")) config[`${k.slice(0, -"_ref".length)}_saved`] = true;
+      else config[k] = v;
+    }
+    return { ...t, config };
+  });
+  json(res, 200, { deliverTo: masked });
 }
 
 async function handleSetDelivery(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
@@ -712,6 +723,23 @@ async function handleSetDelivery(req: IncomingMessage, res: ServerResponse, para
   try { body = JSON.parse(await readBody(req)); } catch { jsonError(res, 400, "invalid JSON"); return; }
   const { sanitizeTargets } = await import("./delivery.js");
   const targets = sanitizeTargets((body as { deliverTo?: unknown })?.deliverTo);
+  // Secrets in a delivery config (Twilio auth_token, X/LinkedIn bearer_token) must NOT be persisted
+  // in plaintext in the agent record on disk. Move each secret-like field into the encrypted
+  // SecretStore under a per-agent/channel name and leave only a reference the delivery layer resolves.
+  const SECRET_FIELDS = new Set(["bearer_token", "auth_token", "account_sid"]);
+  for (const t of targets) {
+    if (!t.config) continue;
+    for (const [k, v] of Object.entries(t.config)) {
+      if (SECRET_FIELDS.has(k) && v && !k.endsWith("_ref")) {
+        // Secret names allow only [a-zA-Z0-9_.-] — sanitize the agentId (sha256:…) and channel
+        // into that charset so the store accepts the name and the field is actually extracted.
+        const safe = (s: string) => s.replace(/[^a-zA-Z0-9_.-]/g, "_");
+        const secretName = `delivery.${safe(agentId)}.${safe(t.channel)}.${k}`;
+        const r = rt.secretStore.set(secretName, v);
+        if (r.ok) { t.config[`${k}_ref`] = secretName; delete t.config[k]; }
+      }
+    }
+  }
   rt.agentRegistry.setDeliverTo(agentId, targets);
   json(res, 200, { deliverTo: targets });
 }
