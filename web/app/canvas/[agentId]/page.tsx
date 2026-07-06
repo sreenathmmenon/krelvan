@@ -493,6 +493,8 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
   const [events, setEvents]     = useState<LedgerEvent[]>([]);
   const [verification, setVerification] = useState<RunVerification | null>(null);
   const [loading, setLoading]   = useState(true);
+  const [loadError, setLoadError] = useState<"notfound" | "transient" | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [mode, setMode]         = useState<"blueprint" | "live">("blueprint");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [showHeat, setShowHeat] = useState(false);
@@ -526,14 +528,20 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
         const [a, r] = await Promise.all([getAgent(agentId), getAgentRuns(agentId)]);
         setAgent(a);
         setRuns(r);
+        setLoadError(null);
         // Pre-select run from URL param, else default to most recent
         const initial = runFromUrl ?? (r.length > 0 ? r[0]!.runId : null);
         setSelectedRunId(initial);
-      } catch { /* agent not found */ }
+      } catch (e) {
+        // Distinguish a genuine 404 (agent really gone) from a transient network/API failure so we
+        // don't show a terminal "not found" for a blip the user can just retry. (M9)
+        const msg = (e as Error)?.message ?? "";
+        setLoadError(/not found|404/i.test(msg) ? "notfound" : "transient");
+      }
       setLoading(false);
     }
     void load();
-  }, [agentId]);
+  }, [agentId, reloadKey]);
 
   // ── Load run detail + events when run selected ────────────────────────────
 
@@ -760,11 +768,26 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
     <div style={{ height: "calc(100vh - 56px)", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--graph-bg)", padding: "var(--s6)" }}>
       <div className="state-empty" style={{ maxWidth: 380, boxShadow: "var(--shadow-md)" }}>
         <div style={{ marginBottom: "var(--s2)" }}><GlyphGraphEmpty /></div>
-        <p className="h3" style={{ color: "var(--ink)" }}>Agent not found</p>
-        <p className="small muted" style={{ maxWidth: "34ch", lineHeight: 1.6 }}>
-          This agent may have been deleted, or the link is incorrect.
-        </p>
-        <Link href="/agents" className="btn btn-secondary btn-sm" style={{ marginTop: "var(--s2)" }}>← Back to agents</Link>
+        {loadError === "transient" ? (
+          <>
+            <p className="h3" style={{ color: "var(--ink)" }}>Couldn&apos;t load the agent</p>
+            <p className="small muted" style={{ maxWidth: "34ch", lineHeight: 1.6 }}>
+              A network or server hiccup — the agent may still be there.
+            </p>
+            <div style={{ display: "flex", gap: "var(--s2)", marginTop: "var(--s2)" }}>
+              <button className="btn btn-primary btn-sm" onClick={() => { setLoading(true); setReloadKey(k => k + 1); }}>Retry</button>
+              <Link href="/agents" className="btn btn-secondary btn-sm">← Back to agents</Link>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="h3" style={{ color: "var(--ink)" }}>Agent not found</p>
+            <p className="small muted" style={{ maxWidth: "34ch", lineHeight: 1.6 }}>
+              This agent may have been deleted, or the link is incorrect.
+            </p>
+            <Link href="/agents" className="btn btn-secondary btn-sm" style={{ marginTop: "var(--s2)" }}>← Back to agents</Link>
+          </>
+        )}
       </div>
     </div>
   );
