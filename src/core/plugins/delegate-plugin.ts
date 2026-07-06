@@ -105,7 +105,17 @@ export class DelegatePlugin implements CapabilityPlugin {
       now: this.deps.now,
     });
 
-    const result = await engine.run({ approve: () => true });
+    // A delegated sub-run must NOT silently auto-approve consequential actions. Delegation is for
+    // bounded research/drafting; approve only non-consequential effects (read / reversible writes)
+    // and DENY anything irreversible, outbound-to-a-human, spend, or identity-mutating — the sub-run
+    // halts at that gate rather than taking an unsupervised consequential action on the user's behalf.
+    const CONSEQUENTIAL = new Set(["write-irreversible", "spend", "identity-mutation", "message-human"]);
+    const approve = (subCall: EffectCall): boolean => {
+      const plugin = this.deps.plugins.get(subCall.capability);
+      const effect = plugin?.sideEffect;
+      return !effect || !CONSEQUENTIAL.has(effect);
+    };
+    const result = await engine.run({ approve });
 
     const out: DelegateOutput = {
       status: result.status,

@@ -290,7 +290,14 @@ export class Engine {
     call: EffectCall,
     idem: string,
   ): Promise<Awaited<ReturnType<typeof this.deps.supervisor.run>>> {
-    const maxAttempts = 1 + this.effectRetries;
+    // Retry ONLY effects that are safe to re-run. A consequential effect (an irreversible write,
+    // a spend, a message to a human, an identity mutation) may have ALREADY taken effect on the
+    // remote side before it threw — re-running it would double-charge / double-send / double-post.
+    // For those, a single attempt: surface the error rather than risk a duplicate side effect.
+    const effect = this.deps.supervisor.sideEffectOf(call);
+    const CONSEQUENTIAL = new Set(["write-irreversible", "spend", "message-human", "identity-mutation"]);
+    const safeToRetry = !effect || !CONSEQUENTIAL.has(effect);
+    const maxAttempts = safeToRetry ? 1 + this.effectRetries : 1;
     let lastErr: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {

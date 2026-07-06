@@ -225,19 +225,19 @@ test("engine: a run past its deadline fails cleanly with a signed RunFailed (nev
 });
 
 test("engine: a transient capability failure is retried with backoff, then succeeds", async () => {
-  // toolA throws twice then succeeds. With effectRetries:2 (3 attempts total) the run
-  // should complete. A no-op sleep keeps the test fast and deterministic.
+  // toolA (a READ — safe to re-run) throws twice then succeeds. With effectRetries:2 (3 attempts
+  // total) the run should complete. A no-op sleep keeps the test fast and deterministic.
   const m = twoNodeManifest({
     nodes: [
-      { id: "a", role: "first", autonomy: "full", capabilities: [{ name: "toolA", sideEffect: "write-irreversible", budgetCents: 500 }] },
-      { id: "b", role: "second", autonomy: "full", capabilities: [{ name: "toolB", sideEffect: "message-human", budgetCents: 500 }] },
+      { id: "a", role: "first", autonomy: "full", capabilities: [{ name: "toolA", sideEffect: "read", budgetCents: 500 }] },
+      { id: "b", role: "second", autonomy: "full", capabilities: [{ name: "toolB", sideEffect: "read", budgetCents: 500 }] },
     ],
   });
   const counters: Record<string, { n: number }> = { a: { n: 0 }, b: { n: 0 } };
   const r = rig();
   const plugins = new Map<string, CapabilityPlugin>();
-  plugins.set("toolA", flakyPlugin("toolA", "write-irreversible", 99, 2, counters.a!));
-  plugins.set("toolB", countingPlugin("toolB", "message-human", 1, counters.b!));
+  plugins.set("toolA", flakyPlugin("toolA", "read", 99, 2, counters.a!));
+  plugins.set("toolB", countingPlugin("toolB", "read", 1, counters.b!));
   const engine = new Engine(m, "t1", "run1", {
     store: r.store, owner: r.owner, supervisor: new Supervisor(plugins),
     supervisorSigner: r.supervisorSigner, now: r.now, sleep: async () => {},
@@ -248,7 +248,10 @@ test("engine: a transient capability failure is retried with backoff, then succe
   assert.equal(counters.b!.n, 1, "run proceeded to toolB after the retry");
 });
 
-test("engine: a capability that exhausts retries fails the run (does not hang)", async () => {
+test("engine: a consequential effect is NOT auto-retried (no duplicate side effect)", async () => {
+  // A write-irreversible / message-human effect may have already taken effect before it threw;
+  // re-running it would double-charge/double-send. It must get exactly ONE attempt regardless
+  // of effectRetries, and the run fails rather than risking a duplicate.
   const m = twoNodeManifest({
     nodes: [
       { id: "a", role: "first", autonomy: "full", capabilities: [{ name: "toolA", sideEffect: "write-irreversible", budgetCents: 500 }] },
@@ -258,8 +261,30 @@ test("engine: a capability that exhausts retries fails the run (does not hang)",
   const counters: Record<string, { n: number }> = { a: { n: 0 }, b: { n: 0 } };
   const r = rig();
   const plugins = new Map<string, CapabilityPlugin>();
-  plugins.set("toolA", flakyPlugin("toolA", "write-irreversible", 99, 99, counters.a!)); // always throws
+  // Throws on the first attempt; if retried it would eventually "succeed" — but it must NOT be retried.
+  const attempts = { n: 0 };
+  plugins.set("toolA", flakyPlugin("toolA", "write-irreversible", 99, 1, attempts));
   plugins.set("toolB", countingPlugin("toolB", "message-human", 1, counters.b!));
+  const engine = new Engine(m, "t1", "run1", {
+    store: r.store, owner: r.owner, supervisor: new Supervisor(plugins),
+    supervisorSigner: r.supervisorSigner, now: r.now, sleep: async () => {},
+  });
+  await assert.rejects(() => engine.run({ effectRetries: 2 }), /transient failure/);
+  assert.equal(counters.b!.n, 0, "run never reached toolB — the single consequential attempt failed it");
+});
+
+test("engine: a capability that exhausts retries fails the run (does not hang)", async () => {
+  const m = twoNodeManifest({
+    nodes: [
+      { id: "a", role: "first", autonomy: "full", capabilities: [{ name: "toolA", sideEffect: "read", budgetCents: 500 }] },
+      { id: "b", role: "second", autonomy: "full", capabilities: [{ name: "toolB", sideEffect: "read", budgetCents: 500 }] },
+    ],
+  });
+  const counters: Record<string, { n: number }> = { a: { n: 0 }, b: { n: 0 } };
+  const r = rig();
+  const plugins = new Map<string, CapabilityPlugin>();
+  plugins.set("toolA", flakyPlugin("toolA", "read", 99, 99, counters.a!)); // always throws
+  plugins.set("toolB", countingPlugin("toolB", "read", 1, counters.b!));
   const engine = new Engine(m, "t1", "run1", {
     store: r.store, owner: r.owner, supervisor: new Supervisor(plugins),
     supervisorSigner: r.supervisorSigner, now: r.now, sleep: async () => {},

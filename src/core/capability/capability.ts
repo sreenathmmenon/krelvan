@@ -227,6 +227,11 @@ export class Supervisor {
     return p.estimateCents(call);
   }
 
+  /** The declared side-effect class of a call's capability (null if not installed). */
+  sideEffectOf(call: EffectCall): CapabilityPlugin["sideEffect"] | null {
+    return this.#plugins.get(call.capability)?.sideEffect ?? null;
+  }
+
   async run(call: EffectCall, idem: string): Promise<ObservedEffect> {
     const p = this.#plugins.get(call.capability);
     if (!p) throw new Error(`no plugin for capability '${call.capability}'`);

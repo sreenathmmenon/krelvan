@@ -622,9 +622,13 @@ export function estimateCostCents(
 
   // Gemini public pricing (approximate, per million tokens).
   const geminiRates: Record<string, [number, number]> = {
+    "gemini-2.5-pro":    [125, 1000],
+    "gemini-2.5-flash":  [15,  60],
     "gemini-2.0-flash":  [10,  40],
     "gemini-1.5-flash":  [7,   30],
     "gemini-1.5-pro":    [125, 500],
+    "gemini-flash-latest": [10, 40],
+    "gemini-pro-latest": [125, 500],
   };
 
   // Groq / Mistral are cheap and price-volatile; left at 0 (no reliable per-model map).
@@ -634,8 +638,11 @@ export function estimateCostCents(
   else if (provider === "openai") rateMap = openaiRates;
   else return 0;
 
-  // Find the first matching key (model slugs may have suffixes/prefixes).
-  const entry = Object.entries(rateMap).find(([k]) => model.startsWith(k));
+  // Match the LONGEST matching key first — a prefix match alone mis-prices "gpt-4o-mini" as
+  // "gpt-4o" (16x too high) because "gpt-4o-mini".startsWith("gpt-4o") is true. Most-specific wins.
+  const entry = Object.entries(rateMap)
+    .filter(([k]) => model.startsWith(k))
+    .sort((a, b) => b[0].length - a[0].length)[0];
   if (!entry) return 0;
 
   const [inRate, outRate] = entry[1];
