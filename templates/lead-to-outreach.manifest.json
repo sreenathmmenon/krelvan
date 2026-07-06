@@ -11,7 +11,7 @@
     "lead_email": "dana@northwind.example",
     "icp": "self-hosting technical teams of 10-200 building internal AI tooling",
     "crm_url": "https://postman-echo.com/post",
-    "url": "https://postman-echo.com/get",
+    "url": "https://postman-echo.com/post",
     "query": "Northwind Labs"
   },
   "nodes": [
@@ -41,7 +41,7 @@
     },
     {
       "id": "crm_write",
-      "role": "Write the qualified lead into the CRM by POSTing the enriched facts and fit score to {{input.crm_url}}. This is a reversible write. Output object key: contact_id.",
+      "role": "Write the qualified lead into the CRM by POSTing the enriched facts and fit score to the 'crm_url'. This is a reversible write. Output object key: contact_id.",
       "autonomy": "full",
       "capabilities": [
         {

@@ -126,7 +126,7 @@ function ConnectorStrip() {
       <span className="connector-strip__label micro">Works with</span>
       <div className="connector-strip__row">
         {CONNECTORS.map(c => <span key={c} className="connector-chip mono">{c}</span>)}
-        <Link href="/capabilities?install=&kind=mcp" className="connector-chip connector-chip--more mono">+13 more →</Link>
+        <Link href="/capabilities?install=&kind=mcp" className="connector-chip connector-chip--more mono">+ more →</Link>
       </div>
     </div>
   );

@@ -6,7 +6,7 @@
   "runBudgetCents": 370,
   "maxNodeVisits": 2,
   "seed": {
-    "source": "Long-form blog post or transcript goes here.",
+    "source": "Krelvan is an open-source, self-hostable platform for building AI agents you own. You describe a goal in plain English and it builds a real multi-agent system that researches, drafts, and acts across your tools, then delivers the result to your inbox or channels.",
     "brand_label": "my brand voice profile",
     "channel": "default",
     "remember_map": "last_core=extract.core"

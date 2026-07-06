@@ -10,13 +10,13 @@
     "brand_voice": "clear, confident, technical but human — no hype, no buzzwords",
     "audience": "technical founders and engineering leaders evaluating developer tools",
     "goal": "grow qualified sign-ups and become the obvious choice in our category",
-    "url": "https://example.com",
+    "url": "https://postman-echo.com/post",
     "notify_url": "https://postman-echo.com/post"
   },
   "nodes": [
     {
       "id": "study_site",
-      "role": "You are a senior brand strategist. Fetch the page at {{input.url}} and read the ACTUAL content carefully. Extract what is REALLY there — do not generalize. Output object keys: product (one precise sentence naming what this specific company sells, using their own words), positioning (their current angle in one sentence), signals (5-8 CONCRETE facts pulled verbatim or near-verbatim from the page: specific features, specific claims, specific audience cues, specific proof points). If a fact isn't on the page, do not invent it.",
+      "role": "You are a senior brand strategist. Fetch the page at the 'url' and read the ACTUAL content carefully. Extract what is REALLY there — do not generalize. Output object keys: product (one precise sentence naming what this specific company sells, using their own words), positioning (their current angle in one sentence), signals (5-8 CONCRETE facts pulled verbatim or near-verbatim from the page: specific features, specific claims, specific audience cues, specific proof points). If a fact isn't on the page, do not invent it.",
       "autonomy": "full",
       "capabilities": [
         {
@@ -100,7 +100,7 @@
     },
     {
       "id": "publish",
-      "role": "Publish/announce the ready content (draft_content 'article'/'social') by POSTing it to the announce endpoint at {{input.notify_url}}. This SENDS TO REAL PEOPLE, so the run PAUSES here and shows you exactly what will go out to approve, edit, or reject first. Nothing is published without your explicit go-ahead. Output object key: announced.",
+      "role": "Publish/announce the ready content (draft_content 'article'/'social') by POSTing it to the announce endpoint at the 'notify_url'. This SENDS TO REAL PEOPLE, so the run PAUSES here and shows you exactly what will go out to approve, edit, or reject first. Nothing is published without your explicit go-ahead. Output object key: announced.",
       "autonomy": "suggest",
       "capabilities": [
         {

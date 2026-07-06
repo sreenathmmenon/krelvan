@@ -9,7 +9,9 @@
     "source_a_label": "primary news source",
     "source_b_label": "secondary blog source",
     "slack_channel": "#daily-digest",
-    "remember_map": "last_top=rank.top_item"
+    "remember_map": "last_top=rank.top_item",
+    "source_a": "https://hn.algolia.com/api/v1/search?tags=front_page",
+    "source_b": "https://hn.algolia.com/api/v1/search?query=AI&tags=story"
   },
   "nodes": [
     {
@@ -26,7 +28,7 @@
     },
     {
       "id": "fetch_a",
-      "role": "Fetch the primary source ({{seed.source_a_label}}) so its latest items can be read.",
+      "role": "Fetch the primary source (the 'source_a_label') so its latest items can be read.",
       "autonomy": "full",
       "capabilities": [
         {
@@ -38,7 +40,7 @@
     },
     {
       "id": "fetch_b",
-      "role": "Fetch the secondary source ({{seed.source_b_label}}) so its latest items can be read.",
+      "role": "Fetch the secondary source (the 'source_b_label') so its latest items can be read.",
       "autonomy": "full",
       "capabilities": [
         {
@@ -74,7 +76,7 @@
     },
     {
       "id": "post",
-      "role": "Post the formatted digest (format.message) to the configured Slack channel ({{seed.slack_channel}}). This reaches a human, so it pauses for approval before sending.",
+      "role": "Post the formatted digest (format.message) to the configured Slack channel (the 'slack_channel'). This reaches a human, so it pauses for approval before sending.",
       "autonomy": "suggest",
       "capabilities": [
         {

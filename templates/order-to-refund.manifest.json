@@ -40,7 +40,7 @@
     },
     {
       "id": "refund",
-      "role": "Issue the refund for decide.amount_cents by POSTing it to {{input.url}}. This is irreversible, so the run PAUSES here and shows me the exact amount and order to approve, edit, or reject before any money moves. Output object key: refund_id.",
+      "role": "Issue the refund for decide.amount_cents by POSTing it to the 'url'. This is irreversible, so the run PAUSES here and shows me the exact amount and order to approve, edit, or reject before any money moves. Output object key: refund_id.",
       "autonomy": "suggest",
       "capabilities": [
         {

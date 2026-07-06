@@ -6,9 +6,10 @@
   "runBudgetCents": 287,
   "maxNodeVisits": 2,
   "seed": {
-    "url": "https://example.com",
+    "url": "https://postman-echo.com/get",
     "watch_label": "the watched page",
-    "remember_map": "last_price=analyze.current_price"
+    "remember_map": "last_price=analyze.current_price",
+    "alert_url": "https://postman-echo.com/post"
   },
   "nodes": [
     {
@@ -25,7 +26,7 @@
     },
     {
       "id": "fetch_page",
-      "role": "Fetch the current contents of {{input.target_url}} so the price can be read.",
+      "role": "Fetch the current contents of the 'target_url' so the price can be read.",
       "autonomy": "full",
       "capabilities": [
         {

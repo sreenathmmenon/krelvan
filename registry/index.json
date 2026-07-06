@@ -25,7 +25,7 @@
         "resend-api-key"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Assistant — Talk to Your Agent",
@@ -133,7 +133,7 @@
         "resend-api-key"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Chief of Staff — Meeting Prep",
@@ -273,7 +273,7 @@
         "intel-webhook-url"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Competitive Intel Monitor",
@@ -441,7 +441,7 @@
         "publishing-queue-webhook-url"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Content Repurposer",
@@ -585,7 +585,7 @@
         "slack-bot-token"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Daily Digest",
@@ -770,7 +770,7 @@
         "resend-api-key"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Autonomous Growth Team",
@@ -969,7 +969,7 @@
         "smtp-credentials"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Inbox Triage & Reply",
@@ -1190,7 +1190,7 @@
         "incident-webhook-url"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Incident Responder",
@@ -1357,7 +1357,7 @@
       "kind": "template",
       "secretRefs": [],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Influencer Outreach",
@@ -1529,7 +1529,7 @@
         "telegram-bot-token"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Knowledge-Base Builder (Wiki)",
@@ -1680,7 +1680,7 @@
         "firecrawl-api-key"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Lead Qualifier & Outreach",
@@ -1846,7 +1846,7 @@
         "resend-api-key"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Lead to Outreach",
@@ -2009,7 +2009,7 @@
         "resend-api-key"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Order to Refund",
@@ -2152,7 +2152,7 @@
       "kind": "template",
       "secretRefs": [],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Personal Advisor",
@@ -2229,7 +2229,7 @@
         "firecrawl-api-key"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Price Monitor",
@@ -2419,7 +2419,7 @@
         "resend-api-key"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Publish & Deploy",
@@ -2552,7 +2552,7 @@
         "qdrant-api-key"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Self-Improving RAG Agent",
@@ -2735,7 +2735,7 @@
       "kind": "template",
       "secretRefs": [],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Outreach Reply Handler",
@@ -2821,7 +2821,7 @@
         "tavily-api-key"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Research Analyst",
@@ -2980,7 +2980,7 @@
         "resend-api-key"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Voice — Social Thought-Leadership",
@@ -3141,7 +3141,7 @@
       "kind": "template",
       "secretRefs": [],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Supervisor (Multi-Agent Delegation)",
@@ -3305,7 +3305,7 @@
         "resend-api-key"
       ],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Support Resolution Agent",
@@ -3720,7 +3720,7 @@
       "author": "Krelvan",
       "kind": "template",
       "secretRefs": [],
-      "recommendedModel": "a capable model (claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama) + an embeddings model (OpenAI text-embedding-3-small or Ollama nomic-embed-text)",
+      "recommendedModel": "a capable model (claude-sonnet, gpt-4o, or a strong local model on Ollama) + an embeddings model (OpenAI text-embedding-3-small or Ollama nomic-embed-text)",
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
       "manifest": {
         "version": 1,
@@ -3809,7 +3809,7 @@
       "kind": "template",
       "secretRefs": [],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Wiki Ask",
@@ -3890,7 +3890,7 @@
       "kind": "template",
       "secretRefs": [],
       "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
-      "recommendedModel": "a capable model (e.g. claude-sonnet, gpt-4o, or qwen2.5:14b on Ollama)",
+      "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
       "manifest": {
         "version": 1,
         "name": "Wiki Ingest",

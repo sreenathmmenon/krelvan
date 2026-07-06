@@ -50,7 +50,7 @@ export default function AgentsPage() {
             Every agent you own, in one place. Run one, open it to edit or watch it work, or remove it.
           </p>
         </div>
-        <Link href="/#build" className="btn btn-primary">Build agent</Link>
+        <Link href="/#builder" className="btn btn-primary">Build agent</Link>
       </div>
 
       {agents !== null && agents.length > 6 && (
@@ -81,7 +81,7 @@ export default function AgentsPage() {
             Describe an outcome in plain English and Krelvan builds the agent for you — or install one from the Marketplace.
           </p>
           <div style={{ display: "flex", gap: "var(--s3)", marginTop: "var(--s2)" }}>
-            <Link href="/#build" className="btn btn-primary">Build an agent</Link>
+            <Link href="/#builder" className="btn btn-primary">Build an agent</Link>
             <Link href="/capabilities" className="btn">Browse Marketplace</Link>
           </div>
         </div>
