@@ -622,7 +622,7 @@ export default function Landing() {
           <div className="container" style={{ paddingTop: "var(--s4)", paddingBottom: "var(--s9)" }}>
             <Link
               href={`/runs/${latestCompleted.runId}`}
-              className="card card-hover ledger-artifact"
+              className="card card-hover record-artifact"
               style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
                 gap: "var(--s5)", padding: "var(--s5) var(--s6)", maxWidth: 720, margin: "0 auto",

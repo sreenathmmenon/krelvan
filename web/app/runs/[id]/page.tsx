@@ -713,7 +713,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         <div role="tabpanel" id="panel-timeline" aria-labelledby="tab-timeline" className="card" style={{ padding: 0, overflow: "hidden" }}>
           {events.length === 0 && (
             <div className="state-empty" style={{ border: "none" }}>
-              <div style={{ color: "var(--ink-muted)" }}><Glyph kind="ledger" size={28} /></div>
+              <div style={{ color: "var(--ink-muted)" }}><Glyph kind="record" size={28} /></div>
               <p className="h3" style={{ color: "var(--ink)" }}>No events recorded yet</p>
               <p className="small soft" style={{ maxWidth: "42ch", lineHeight: 1.6 }}>
                 Once this run starts, every step the agent takes is recorded here in order.
@@ -990,7 +990,7 @@ function OutputPanel({ projection, manifest, run }: {
     const missingSecret = (run.reason ?? "").match(/secret '([^']+)' is not registered/)?.[1];
     if (missingSecret) {
       return (
-        <div className="card ledger-artifact" style={{ padding: "var(--s5)", borderColor: "var(--brand-ring)", background: "var(--brand-tint)" }}>
+        <div className="card record-artifact" style={{ padding: "var(--s5)", borderColor: "var(--brand-ring)", background: "var(--brand-tint)" }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--brand)", marginBottom: "var(--s2)" }}>
             Needs a secret to continue
           </p>
@@ -1761,7 +1761,7 @@ function capGlyphPaths(name: string): React.ReactNode {
 }
 
 // ── Inline glyphs for empty/labels (currentColor, 14×14 viewBox) ───────────────
-function Glyph({ kind, size = 28, color }: { kind: "spark" | "ledger" | "state" | "output" | "search" | "warn" | "check" | "cross" | "pause" | "play" | "seal"; size?: number; color?: string }) {
+function Glyph({ kind, size = 28, color }: { kind: "spark" | "record" | "state" | "output" | "search" | "warn" | "check" | "cross" | "pause" | "play" | "seal"; size?: number; color?: string }) {
   const stroke = color ?? "currentColor";
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", "aria-hidden": true as const };
   switch (kind) {
@@ -1780,7 +1780,7 @@ function Glyph({ kind, size = 28, color }: { kind: "spark" | "ledger" | "state" 
           <circle cx="12" cy="12" r="2.4" fill={stroke} />
         </svg>
       );
-    case "ledger":
+    case "record":
       return (
         <svg {...common}>
           <rect x="4" y="3.5" width="16" height="17" rx="2" stroke={stroke} strokeWidth="1.5" />

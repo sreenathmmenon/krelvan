@@ -769,7 +769,7 @@ const EXAMPLE_EDGES: ManifestEdge[] = [
   { from: "reason", to: "compose" },
 ];
 
-// ── Animated hero: a self-running "agent runs → ledger signs it" loop ─────────
+// ── Animated hero: a self-running "agent runs, each step recorded" loop ──────────
 // Pure SVG + CSS keyframes (defined in globals.css, .heroanim-*), no GIF/image, no
 // libs. Nodes light in sequence; as each executes, its ledger row writes in; a
 // "VERIFIED" seal lands; then we rotate to the NEXT agentic use case and replay.

@@ -564,10 +564,10 @@ export default function Dashboard() {
                             )}
                           </div>
                           {(r.status === "completed" || r.status === "failed") && (
-                            <div className="run-ledger-strip">
-                              <span className="run-ledger-strip__seal" style={{ display: "inline-flex" }}><SealGlyph size={11} /></span>
-                              <span className="run-ledger-strip__tag">complete · replayable</span>
-                              <span className="run-ledger-strip__hash mono">{r.runId.replace(/^run-/, "").slice(-6)}</span>
+                            <div className="run-record-strip">
+                              <span className="run-record-strip__seal" style={{ display: "inline-flex" }}><SealGlyph size={11} /></span>
+                              <span className="run-record-strip__tag">complete · replayable</span>
+                              <span className="run-record-strip__hash mono">{r.runId.replace(/^run-/, "").slice(-6)}</span>
                             </div>
                           )}
                         </div>

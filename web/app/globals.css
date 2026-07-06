@@ -1052,12 +1052,12 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
 }
 
 /* the example signed-ledger artifact (light section) gets a teal seal edge */
-.ledger-artifact { position: relative; border-left: 3px solid var(--brand); }
+.record-artifact { position: relative; border-left: 3px solid var(--brand); }
 
 /* recent-runs mini ledger strip — a tiny teal-tinted monospace line under each
  * run that re-states the signed total, keeping the ledger metaphor alive in the
  * live demo. Honest fields only (real signed total + "signed"); no fake steps. */
-.run-ledger-strip {
+.run-record-strip {
   display: inline-flex; align-items: center; gap: 6px;
   margin-top: 6px; padding: 3px 9px;
   border-radius: var(--r-pill);
@@ -1067,12 +1067,12 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   font-size: 11px; line-height: 1.4; color: var(--ok);
   max-width: 100%;
 }
-.run-ledger-strip__tag { font-weight: 700; letter-spacing: .02em; }
-.run-ledger-strip__hash { color: var(--ink-muted); padding-left: 6px; border-left: 1px solid color-mix(in srgb, var(--ok) 22%, transparent); }
-.run-ledger-strip__seal { color: var(--ok); font-weight: 700; flex-shrink: 0; }
-.run-ledger-strip__cost { color: var(--brand); font-weight: 600; }
-.run-ledger-strip__sep  { color: var(--ink-muted); }
-.run-ledger-strip__tag {
+.run-record-strip__tag { font-weight: 700; letter-spacing: .02em; }
+.run-record-strip__hash { color: var(--ink-muted); padding-left: 6px; border-left: 1px solid color-mix(in srgb, var(--ok) 22%, transparent); }
+.run-record-strip__seal { color: var(--ok); font-weight: 700; flex-shrink: 0; }
+.run-record-strip__cost { color: var(--brand); font-weight: 600; }
+.run-record-strip__sep  { color: var(--ink-muted); }
+.run-record-strip__tag {
   color: var(--brand); font-weight: 600;
   letter-spacing: .04em; text-transform: uppercase; font-size: 11px;
 }
