@@ -294,7 +294,7 @@ export default function FaqPage() {
             <div style={{ display: "flex", gap: "var(--s3)", justifyContent: "center", flexWrap: "wrap" }}>
               <Link href="/dashboard" className="btn btn-primary">Build an agent</Link>
               <a href="https://github.com/sreenathmmenon/krelvan" className="btn btn-secondary">Read the source</a>
-              <a href="mailto:hello@krelvan.com" className="btn btn-ghost">Ask us directly</a>
+              <a href="mailto:zreenathmenon@gmail.com" className="btn btn-ghost">Ask us directly</a>
             </div>
           </div>
         </div>

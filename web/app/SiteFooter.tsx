@@ -59,7 +59,7 @@ export default function SiteFooter() {
               <li><a href="https://github.com/sreenathmmenon/krelvan" className="small" style={{ color: "var(--ink-soft)" }}>GitHub</a></li>
               <li><a href="https://x.com/sreenathmmenon" className="small" style={{ color: "var(--ink-soft)" }}>Twitter / X</a></li>
               <li><a href="https://github.com/sreenathmmenon/krelvan#readme" className="small" style={{ color: "var(--ink-soft)" }}>Docs</a></li>
-              <li><a href="mailto:hello@krelvan.com" className="small" style={{ color: "var(--ink-soft)" }}>Email</a></li>
+              <li><a href="mailto:zreenathmenon@gmail.com" className="small" style={{ color: "var(--ink-soft)" }}>Email</a></li>
             </ul>
           </nav>
         </div>
