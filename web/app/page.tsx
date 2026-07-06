@@ -138,10 +138,14 @@ function ConnectorStrip() {
 function GitHubStars() {
   const [stars, setStars] = useState<number | null>(null);
   useEffect(() => {
-    void fetch("https://api.github.com/repos/sreenathmmenon/krelvan")
+    // Best-effort star count. If the repo is private/unpublished the API returns 404 — we swallow
+    // it silently and simply render nothing, so the "Star on GitHub" button stays clean either way.
+    const ctrl = new AbortController();
+    void fetch("https://api.github.com/repos/sreenathmmenon/krelvan", { signal: ctrl.signal })
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d && typeof d.stargazers_count === "number" && d.stargazers_count > 0) setStars(d.stargazers_count); })
       .catch(() => {});
+    return () => ctrl.abort();
   }, []);
   if (stars === null) return null;
   const label = stars >= 1000 ? `${(stars / 1000).toFixed(1)}k` : String(stars);

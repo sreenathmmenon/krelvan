@@ -602,7 +602,13 @@ async function handleAgentRuns(_req: IncomingMessage, res: ServerResponse, param
 }
 
 async function handleListRuns(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
-  const runs = rt.runRegistry.list();
+  // The UI reads `agentName`; run records store it as `manifestName`. Map it, and if a record's
+  // name is missing (an early-failed run from before the name was captured), resolve it live from
+  // the agent registry by agentId — so the runs list never shows a bare "?".
+  const runs = rt.runRegistry.list().map((r) => {
+    const name = r.manifestName || rt.agentRegistry.get(r.agentId)?.signed.manifest.name || "Untitled agent";
+    return { ...r, agentName: name, manifestName: name };
+  });
   json(res, 200, { runs });
 }
 
