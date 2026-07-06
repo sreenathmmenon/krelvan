@@ -1417,7 +1417,7 @@ export class KrelvanRuntime {
               correlationId: cid,
               runId: run.runId,
               agentId: run.agentId,
-              agentName: run.manifestName,
+              agentName: run.manifestName || this.agentRegistry.get(run.agentId)?.signed.manifest.name || "Untitled agent",
               nodeId,
               capability: cap ?? "unknown",
               requestedAt: e.ts,

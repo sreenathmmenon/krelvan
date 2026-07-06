@@ -631,11 +631,18 @@ export function estimateCostCents(
     "gemini-pro-latest": [125, 500],
   };
 
-  // Groq / Mistral are cheap and price-volatile; left at 0 (no reliable per-model map).
+  // Groq / Mistral are cheap and price-volatile — no reliable per-model map. But returning 0 means
+  // the run budget can never trip on a runaway loop for those providers (metered spend stays ~0).
+  // Use a conservative flat per-token estimate so budget enforcement still works. Local (ollama)
+  // and arbitrary compatible gateways are genuinely free/unknown → 0.
   let rateMap: Record<string, [number, number]>;
   if (provider === "anthropic") rateMap = anthropicRates;
   else if (provider === "gemini") rateMap = geminiRates;
   else if (provider === "openai") rateMap = openaiRates;
+  else if (provider === "groq" || provider === "mistral") {
+    // Conservative flat estimate (cents per 1M tokens) so budgets still halt runaways.
+    return Math.ceil((inputTokens / 1_000_000) * 20 + (outputTokens / 1_000_000) * 60);
+  }
   else return 0;
 
   // Match the LONGEST matching key first — a prefix match alone mis-prices "gpt-4o-mini" as

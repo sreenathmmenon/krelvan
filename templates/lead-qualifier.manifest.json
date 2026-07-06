@@ -9,8 +9,7 @@
     "lead_url": "https://example.com/company/acme",
     "icp": "B2B SaaS companies, 50-500 employees, with an engineering org and a public careers page",
     "from_name": "Alex from Krelvan",
-    "remember_map": "verdict=score.reason",
-    "url": "https://example.com/company/acme"
+    "remember_map": "verdict=score.reason"
   },
   "nodes": [
     {

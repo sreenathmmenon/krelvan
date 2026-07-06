@@ -133,7 +133,7 @@ export default function InboxPage() {
 
   // The agents present in the inbox, for the filter dropdown.
   const agentNames = useMemo(
-    () => [...new Set(items.map(i => i.run.manifestName))].sort((a, b) => a.localeCompare(b)),
+    () => [...new Set(items.map(i => i.run.manifestName || "Untitled agent"))].sort((a, b) => a.localeCompare(b)),
     [items],
   );
 
@@ -325,7 +325,7 @@ export default function InboxPage() {
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap", marginBottom: "var(--s1)" }}>
                       {isUnread && <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--brand)", flex: "0 0 auto" }} />}
-                      <span className="h3" style={{ margin: 0 }}>{run.manifestName}</span>
+                      <span className="h3" style={{ margin: 0 }}>{run.manifestName || "Untitled agent"}</span>
                       {isHalted
                         ? <span className="badge badge-paused">Awaiting approval</span>
                         : <span className="badge badge-done">Completed</span>}

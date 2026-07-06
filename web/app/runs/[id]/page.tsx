@@ -498,7 +498,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "var(--s5)" }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap", marginBottom: "var(--s2)" }}>
-              <h1 className="h1" style={{ margin: 0 }}>{run.manifestName}</h1>
+              <h1 className="h1" style={{ margin: 0 }}>{run.manifestName || "Untitled agent"}</h1>
               {isLiveSSE && (
                 <span className="badge badge-running"><span className="dot" />live</span>
               )}

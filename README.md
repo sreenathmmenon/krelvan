@@ -62,7 +62,7 @@ diagnosis) switch on when you add a provider key.
 **Option A — one command (Node 22+):**
 
 ```bash
-git clone <this-repo> krelvan && cd krelvan
+git clone https://github.com/sreenathmmenon/krelvan && cd krelvan
 npm install
 npx krelvan          # builds core + web on first run, then starts both
 ```

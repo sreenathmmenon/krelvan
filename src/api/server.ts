@@ -793,6 +793,7 @@ async function handleMintTrigger(_req: IncomingMessage, res: ServerResponse, par
 
 async function handleRevokeTrigger(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const agentId = params["id"] ?? "";
+  if (!rt.agentRegistry.get(agentId)) { jsonError(res, 404, "agent not found"); return; }
   const removed = rt.triggerStore.revoke(agentId);
   json(res, 200, { revoked: removed });
 }
@@ -807,9 +808,12 @@ async function handleGetRun(_req: IncomingMessage, res: ServerResponse, params: 
 
   const agent = rt.agentRegistry.get(record.agentId);
   const manifest = agent ? agent.signed.manifest : null;
+  // Resolve the agent name for the run detail (M1): the UI reads manifestName/agentName; fall back
+  // to the live agent registry so a run whose record has an empty name never renders a blank header.
+  const agentName = record.manifestName || manifest?.name || "Untitled agent";
 
   json(res, 200, {
-    run: record,
+    run: { ...record, agentName, manifestName: agentName },
     manifest,
     projection: {
       started: p.started,
