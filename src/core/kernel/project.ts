@@ -102,9 +102,19 @@ export function applyEvent(acc: FoldAccumulator, e: LedgerEvent): void {
   const pl = asObj(e.payload);
 
   switch (e.type) {
-    case "RunStarted":
+    case "RunStarted": {
       acc.started = true;
+      // Seed the run state from the caller's initialState captured in the event, so a resume
+      // reconstructs it from the ledger. Log-derived node outputs still shadow it (they are
+      // applied by later NodeConcluded events). (M2)
+      const seeded = (e.payload as { initialState?: Record<string, string | number | boolean | null> }).initialState;
+      if (seeded && typeof seeded === "object") {
+        for (const [k, v] of Object.entries(seeded)) {
+          if (!(k in acc.state)) acc.state[k] = v;
+        }
+      }
       break;
+    }
     case "RunCompleted":
       acc.completed = true;
       break;

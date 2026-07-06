@@ -221,7 +221,14 @@ export class Engine {
 
         switch (d.kind) {
           case "start":
-            await this.append({ type: "RunStarted", scope: this.scope(), payload: { manifest: this.m.name } }, this.deps.owner);
+            // Persist the caller's initialState (webhook body, chat message, UI run input) INTO
+            // the RunStarted event, so it lives in the ledger and is reconstructed on resume —
+            // an approval- or deadline-resume spins up a fresh engine with no opts.initialState,
+            // and without this the run would resume with that input lost. (M2)
+            await this.append(
+              { type: "RunStarted", scope: this.scope(), payload: Object.keys(initialState).length > 0 ? { manifest: this.m.name, initialState } : { manifest: this.m.name } },
+              this.deps.owner,
+            );
             break;
 
           case "enter":
