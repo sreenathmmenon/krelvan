@@ -54,28 +54,31 @@ On top of that, Krelvan does things only an agentic platform can:
 
 ---
 
-## Run it in 60 seconds
+## Run it
 
 The web UI and API boot with **no secrets**. LLM features (building agents, explanations,
 diagnosis) switch on when you add a provider key.
 
-**Option A — one command (Node 22+):**
+**Clone and run (needs Node 22+):**
 
 ```bash
-git clone https://github.com/sreenathmmenon/krelvan && cd krelvan
+# check your Node version first:  node -v   (must be 22+)
+git clone https://github.com/sreenathmmenon/krelvan
+cd krelvan
 npm install
-npx krelvan          # builds core + web on first run, then starts both
+npx krelvan          # run INSIDE the cloned repo — builds core + web, then starts both
 ```
+
+The first run builds the web UI (~2–3 minutes, one time only). After that, starts take seconds.
 
 ```
 Web UI   http://localhost:3100
 API      http://localhost:3201/api/health
 ```
 
-First run builds the web UI and core; later runs start in seconds. `Ctrl-C` stops both.
-Ports: `PORT` (API, default 3201) · `KRELVAN_WEB_PORT` (web, default 3100).
+`Ctrl-C` stops both. Ports: `PORT` (API, default 3201) · `KRELVAN_WEB_PORT` (web, default 3100).
 
-**Option B — Docker:**
+**Or, fully isolated (no Node toolchain needed) — Docker:**
 
 ```bash
 docker compose up --build
@@ -83,6 +86,9 @@ docker compose up --build
 
 Same URLs. The SQLite database persists in the named volume `krelvan-data`, so your agents
 and runs survive restarts.
+
+> **Note:** `npx krelvan` runs from inside the cloned repository (it invokes the project's own
+> launcher). Krelvan is not published to npm yet — clone the repo to run it.
 
 **Enable LLM features:** copy `.env.example` → `.env` and set a provider + key:
 

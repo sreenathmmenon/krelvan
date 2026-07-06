@@ -51,5 +51,25 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "ai-agents",
+    "self-hosted",
+    "open-source",
+    "llm",
+    "mcp",
+    "automation",
+    "langgraph",
+    "rag"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sreenathmmenon/krelvan.git"
+  },
+  "homepage": "https://github.com/sreenathmmenon/krelvan#readme",
+  "bugs": {
+    "url": "https://github.com/sreenathmmenon/krelvan/issues"
   }
 }

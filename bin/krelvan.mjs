@@ -37,6 +37,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
 const WEB = join(ROOT, "web");
 
+// Node version gate — a cryptic failure on an old Node reads as "the product is broken".
+// Fail clearly and early with the exact requirement instead. (Krelvan needs Node 22+.)
+{
+  const major = Number(process.versions.node.split(".")[0]);
+  if (Number.isFinite(major) && major < 22) {
+    console.error(`\n  Krelvan needs Node 22 or newer — you have ${process.version}.`);
+    console.error(`  Install Node 22+ (https://nodejs.org) and try again.\n`);
+    process.exit(1);
+  }
+}
+
 // Load .env (Node built-ins only) BEFORE reading config so ports / data dir /
 // LLM banner reflect the user's .env. The API process loads it again
 // independently; reading it here keeps the launcher's own decisions accurate.
@@ -170,7 +181,7 @@ async function ensureBuilt() {
   // and the API origin is read from server env at start. Just build if not present.
   const needBuild = !existsSync(join(WEB, ".next"));
   if (needBuild) {
-    log("building web UI (next build)…");
+    log("building the web UI — first run only, this takes ~2-3 minutes. Later starts take seconds…");
     await run(NPM, ["run", "build"], { cwd: WEB, env: { ...process.env } });
   } else {
     log("web UI already built (web/.next) — skipping");
