@@ -32,8 +32,14 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
   const apiPath = path.join("/");
   const session = readSessionCookie((n) => req.cookies.get(n)?.value);
 
-  // GATE: non-public API calls require a valid session cookie.
-  if (!PUBLIC_API.has(apiPath) && !session) {
+  // The inbound webhook trigger (api/triggers/:agentId) is a PUBLIC, token-authed endpoint meant
+  // to be called by external systems. It carries its own Authorization: Bearer <trigger-token>
+  // which the API validates — no admin session, and we must PASS THROUGH the caller's bearer
+  // (never inject the API token). This makes the copyable URL callable from anywhere.
+  const isTrigger = apiPath.startsWith("api/triggers/");
+
+  // GATE: non-public, non-trigger API calls require a valid session cookie.
+  if (!PUBLIC_API.has(apiPath) && !isTrigger && !session) {
     return json(401, { error: "not authenticated" });
   }
 
@@ -62,6 +68,12 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
   //    bypassable. Forwarding session-only closes that hole.)
   if (PUBLIC_API.has(apiPath)) {
     if (AUTH_TOKEN) headers.set("authorization", `Bearer ${AUTH_TOKEN}`);
+  }
+  //  - For the inbound trigger route, forward the CALLER's own Authorization header (their
+  //    trigger token) unchanged so the API validates it — do NOT inject the API bearer.
+  if (isTrigger) {
+    const auth = req.headers.get("authorization");
+    if (auth) headers.set("authorization", auth);
   }
   if (session) headers.set("x-krelvan-session", session);
 

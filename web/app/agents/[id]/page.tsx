@@ -1361,6 +1361,9 @@ function TriggerPanel({ agentId }: { agentId: string }) {
   useEffect(() => { refresh(); }, [refresh]);
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
+  // The trigger is a public, token-authed endpoint; call it through the same-origin proxy path,
+  // which forwards the caller's Bearer token to the API. The DISPLAYED url and the CURL below
+  // use this identical URL so copy-paste works exactly as shown.
   const fullUrl = url ? `${origin}/proxy${url}` : "";
   const copy = (text: string, key: string) => {
     void navigator.clipboard.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(null), 1500); });
