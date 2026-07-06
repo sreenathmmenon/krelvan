@@ -17,15 +17,15 @@
  */
 
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
-import { getLLMClient, estimateCostCents, currentProvider, defaultModelForProvider } from "../../adapters/llm-client.js";
+import { getLLMClient, estimateCostCents, currentProvider, resolveModel } from "../../adapters/llm-client.js";
 import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("think");
 
 function defaultModel(): string {
   if (process.env["KRELVAN_THINK_MODEL"]) return process.env["KRELVAN_THINK_MODEL"];
-  if (process.env["KRELVAN_LLM_MODEL"]) return process.env["KRELVAN_LLM_MODEL"];
-  return defaultModelForProvider(currentProvider(), "smart");
+  // resolveModel guards against a stale KRELVAN_LLM_MODEL for the wrong provider.
+  return resolveModel(currentProvider(), "smart");
 }
 
 export const thinkCapability: CapabilityPlugin = {

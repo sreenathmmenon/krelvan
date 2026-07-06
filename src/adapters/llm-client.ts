@@ -806,11 +806,29 @@ export function defaultModelForProvider(
   switch (provider) {
     case "anthropic": return tier === "cheap" ? "claude-haiku-4-5" : "claude-sonnet-4-6";
     case "openai":    return tier === "cheap" ? "gpt-4o-mini" : "gpt-4o";
-    case "gemini":    return tier === "cheap" ? "gemini-1.5-flash" : "gemini-2.0-flash";
+    case "gemini":    return tier === "cheap" ? "gemini-2.5-flash" : "gemini-2.5-flash";
     case "groq":      return tier === "cheap" ? "llama-3.1-8b-instant" : "llama-3.3-70b-versatile";
     case "mistral":   return tier === "cheap" ? "mistral-small-latest" : "mistral-large-latest";
     case "ollama":    return "llama3.2";
     case "compatible": return "";
     default:          return "claude-sonnet-4-6";
   }
+}
+
+/**
+ * Resolve the model to use for the ACTIVE provider, guarding against a stale/mismatched
+ * KRELVAN_LLM_MODEL. A common footgun: a `.env` left with an Ollama tag (e.g. `qwen2.5:14b`,
+ * `llama3.2`) while the provider is switched to Gemini/OpenAI via a shell export — the Ollama
+ * model then gets shipped to a hosted provider and 404s every run. If the configured model
+ * clearly belongs to a different provider, we ignore it and fall back to the provider's default.
+ */
+export function resolveModel(provider: LLMProvider, tier: "smart" | "cheap" = "smart"): string {
+  const configured = process.env["KRELVAN_LLM_MODEL"]?.trim();
+  if (configured) {
+    // An Ollama-style tag ("name:tag" with no vendor prefix) is only valid on ollama/compatible.
+    const looksOllama = /^[a-z0-9._-]+:[a-z0-9._-]+$/i.test(configured) && !configured.includes("/");
+    const mismatched = looksOllama && provider !== "ollama" && provider !== "compatible";
+    if (!mismatched) return configured;
+  }
+  return defaultModelForProvider(provider, tier);
 }

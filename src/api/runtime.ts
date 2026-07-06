@@ -17,6 +17,7 @@
 import { HmacKeyring, Ed25519Keyring, generateEd25519Keypair, contentAddress, type Signer, type Verifier } from "../core/ledger/crypto.js";
 import { SqliteLedgerStore } from "../core/ledger/sqlite-store.js";
 import { Engine } from "../core/kernel/engine.js";
+import { resetLLMClient } from "../adapters/llm-client.js";
 import { Supervisor, type CapabilityPlugin, type SupervisorSnapshotHandle } from "../core/capability/capability.js";
 import { Compiler } from "../core/compiler/compiler.js";
 import { getLogger } from "../core/observability/logger.js";
@@ -1628,6 +1629,19 @@ export class KrelvanRuntime {
     if (cfg.apiKey !== undefined) apply(MODEL_API_KEY_SECRET, cfg.apiKey);
     if (cfg.model !== undefined) apply(MODEL_NAME_SECRET, cfg.model);
     if (cfg.baseUrl !== undefined) apply(MODEL_BASE_URL_SECRET, cfg.baseUrl);
+    // Runtime plugins (think/compose/web_search/…) read process.env and the shared LLM client
+    // caches on first use. Sync the resolved config into process.env and reset the cached client
+    // so a model change made in the UI actually takes effect on the NEXT run — not just the next
+    // process restart. (The secret-store values above are the durable source of truth.)
+    const sync = (envName: string, secretName: string) => {
+      const v = this.secretStore.resolve(secretName);
+      if (v) process.env[envName] = v; else delete process.env[envName];
+    };
+    sync("KRELVAN_LLM_PROVIDER", MODEL_PROVIDER_SECRET);
+    sync("KRELVAN_LLM_API_KEY", MODEL_API_KEY_SECRET);
+    sync("KRELVAN_LLM_MODEL", MODEL_NAME_SECRET);
+    sync("KRELVAN_LLM_BASE_URL", MODEL_BASE_URL_SECRET);
+    resetLLMClient();
     // anthropic/openai with no key set at all → not actually ready; report honestly via status
     return { ok: true, status: this.modelStatus };
   }

@@ -17,7 +17,7 @@
  */
 
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
-import { getLLMClient, estimateCostCents } from "../../adapters/llm-client.js";
+import { getLLMClient, estimateCostCents, currentProvider, resolveModel } from "../../adapters/llm-client.js";
 import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("compose");
@@ -36,11 +36,9 @@ function styleInstruction(style: CompositionStyle): string {
 }
 
 function defaultModel(): string {
-  if (process.env["KRELVAN_LLM_MODEL"]) return process.env["KRELVAN_LLM_MODEL"];
-  const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
-  if (provider === "openai") return "gpt-4o-mini";
-  if (provider === "ollama") return "llama3.2";
-  return "claude-haiku-4-5-20251001";
+  // resolveModel guards against a stale KRELVAN_LLM_MODEL that belongs to another provider
+  // (e.g. an Ollama tag left in .env while the provider is Gemini) — see llm-client.resolveModel.
+  return resolveModel(currentProvider(), "cheap");
 }
 
 export const composeCapability: CapabilityPlugin = {

@@ -29,18 +29,15 @@
  */
 
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
-import { getLLMClient, estimateCostCents } from "../../adapters/llm-client.js";
+import { getLLMClient, estimateCostCents, currentProvider, resolveModel } from "../../adapters/llm-client.js";
 import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("llm-route");
 
 function defaultModel(): string {
   if (process.env["KRELVAN_ROUTE_MODEL"]) return process.env["KRELVAN_ROUTE_MODEL"];
-  if (process.env["KRELVAN_LLM_MODEL"]) return process.env["KRELVAN_LLM_MODEL"];
-  const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
-  if (provider === "openai") return "gpt-4o-mini";
-  if (provider === "ollama") return "llama3.2";
-  return "claude-haiku-4-5-20251001";
+  // resolveModel guards against a stale KRELVAN_LLM_MODEL for the wrong provider.
+  return resolveModel(currentProvider(), "cheap");
 }
 
 export const llmRouteCapability: CapabilityPlugin = {

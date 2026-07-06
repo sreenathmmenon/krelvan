@@ -17,7 +17,7 @@
 
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
 import { fetchWithRetry } from "../../adapters/http-retry.js";
-import { getLLMClient } from "../../adapters/llm-client.js";
+import { getLLMClient, currentProvider, resolveModel } from "../../adapters/llm-client.js";
 import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("web-search");
@@ -226,8 +226,8 @@ export const webSearchCapability: CapabilityPlugin = {
 
     // ── Path 3: LLM synthesis via configured provider (last resort) ──────────
     if (hasLlm) {
-      const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
-      const model = process.env["KRELVAN_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
+      const provider = currentProvider();
+      const model = resolveModel(provider, "cheap");
       log.info({ nodeId: call.nodeId, query, model, provider }, "web_search: keyless search unavailable — LLM synthesis (last resort)");
 
       const client = getLLMClient();
