@@ -215,8 +215,8 @@ export default function Dashboard() {
     return counts.map(c => ({ h: c > 0 ? Math.max(0.34, c / max) : 0.18, empty: c === 0 }));
   })();
   const sparkActiveDays = sparkBuckets.filter(b => !b.empty).length;
-  // Terminal runs are signed into the ledger — the proof metric (never a dup of total runs).
-  const signedRuns = runs.filter(r => r.status === "completed" || r.status === "failed" || r.status === "halted").length;
+  // Terminal runs — the completed-work metric (never a dup of total runs).
+  const recordedRuns = runs.filter(r => r.status === "completed" || r.status === "failed" || r.status === "halted").length;
   const runsThisWeek = (() => {
     const now = Date.now(), window = 6 * 86_400_000;
     return runs.filter(r => Number.isFinite(r.createdAt) && now - r.createdAt <= window).length;
@@ -338,11 +338,11 @@ export default function Dashboard() {
               </div>
               {/* The agent/run counts live in the stat strip just below — don't repeat them
                   here. Reinforce the wedge: a deliberate trust pill (seal + label). */}
-              <div className="workspace-trust" aria-label="every run is signed">
+              <div className="workspace-trust" aria-label="every run is recorded">
                 <span className="workspace-trust__mark" aria-hidden="true"><SealGlyph size={13} /></span>
                 <span className="workspace-trust__text">
-                  <strong>Every run signed</strong>
-                  <span>tamper-evident · replayable</span>
+                  <strong>Every run recorded</strong>
+                  <span>complete · replayable</span>
                 </span>
               </div>
             </div>
@@ -363,7 +363,7 @@ export default function Dashboard() {
           >
             <div id="dashboard-composer" className="container" style={{ position: "relative", zIndex: 1, width: "100%" }}>
               {/* Two-column hero (matches the homepage): payoff + composer on the left,
-                  a proof artifact on the right answering "what do I get after I describe
+                  a real result on the right answering "what do I get after I describe
                   a goal?". One CTA (the composer). No competing buttons. */}
               <div className="hero-grid hero-grid--workspace">
                 <div>
@@ -376,14 +376,14 @@ export default function Dashboard() {
                   </h1>
                   <p className="dark-ink-soft body-lg" style={{ maxWidth: "46ch", marginBottom: "var(--s6)" }}>
                     Type what you want done. Krelvan builds the agent, shows you the plan,
-                    and runs it — keeping a signed record you can open and replay.
+                    and runs it — keeping a complete record you can open and replay.
                   </p>
 
                   {/* the build box — the one and only CTA (same as homepage) */}
                   {composerInner}
 
                   <p className="dark-ink-muted small" style={{ marginTop: "var(--s5)" }}>
-                    Runs on your machine · every step kept as a signed record you own
+                    Runs on your machine · every step kept as a record you own
                   </p>
                 </div>
 
@@ -464,9 +464,9 @@ export default function Dashboard() {
                   <span className="stat-label">{s.label}</span>
                 </div>
               ))}
-              {/* Proof-centric 4th tile (on-brand, never a duplicate of 'total runs'):
-                  how many runs are signed into the ledger. When there's enough activity
-                  spread, show the 6-day trend sparkline; otherwise the signed count. */}
+              {/* Completion-centric 4th tile (on-brand, never a duplicate of 'total runs'):
+                  how many runs are complete and recorded. When there's enough activity
+                  spread, show the 6-day trend sparkline; otherwise the recorded count. */}
               {sparkActiveDays >= 2 ? (
                 <div className="stat-cell">
                   <div className="stat-cell__row">
@@ -481,8 +481,8 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <div className="stat-cell stat-cell--proof">
-                  <span className="stat-value">{signedRuns}<span className="stat-value__sub">/{runs.length}</span></span>
-                  <span className="stat-label">signed · replayable</span>
+                  <span className="stat-value">{recordedRuns}<span className="stat-value__sub">/{runs.length}</span></span>
+                  <span className="stat-label">complete · replayable</span>
                 </div>
               )}
             </div>
@@ -566,7 +566,7 @@ export default function Dashboard() {
                           {(r.status === "completed" || r.status === "failed") && (
                             <div className="run-ledger-strip">
                               <span className="run-ledger-strip__seal" style={{ display: "inline-flex" }}><SealGlyph size={11} /></span>
-                              <span className="run-ledger-strip__tag">signed · replayable</span>
+                              <span className="run-ledger-strip__tag">complete · replayable</span>
                               <span className="run-ledger-strip__hash mono">{r.runId.replace(/^run-/, "").slice(-6)}</span>
                             </div>
                           )}
@@ -579,7 +579,7 @@ export default function Dashboard() {
                   <div className="card" style={{ padding: "var(--s7) var(--s5)", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--s2)" }}>
                     <span className="glyph-chip" style={{ width: 32, height: 32 }}><ClockGlyph size={18} /></span>
                     <span className="small" style={{ color: "var(--ink-soft)", fontWeight: 600 }}>No runs yet</span>
-                    <span className="small muted" style={{ maxWidth: "24ch" }}>Run an agent and its signed record appears here.</span>
+                    <span className="small muted" style={{ maxWidth: "24ch" }}>Run an agent and its complete record appears here.</span>
                   </div>
                 )}
 

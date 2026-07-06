@@ -11,20 +11,19 @@ import {
 } from "./_builder";
 import { loadRegistry, type CatalogEntry } from "../lib/registry";
 import { glyphFor, UI } from "../lib/glyphs";
-import { verifyBundle, type ProofBundle, type VerifyResult } from "../lib/verify-bundle";
 
 // ── Krelvan landing — product-first debut ──────────────────────────────────────
 // The homepage IS the working product. On first paint a visitor lands on a dark
 // hero whose right side is a REAL run artifact (or a clearly-labelled live example
 // until a run exists), with a CTA that drops straight into the embedded builder one
 // screen below. Within seconds they can describe a goal, watch a real graph compile
-// in the BuildPreviewModal, run it, and open /runs/[id] to see the actual signed,
-// replayable record. We demonstrate ownership and proof by letting you DO and SEE
+// in the BuildPreviewModal, run it, and open /runs/[id] to see the actual
+// replayable record. We demonstrate ownership by letting you DO and SEE
 // it — never by lecturing about internals. The builder data path is unchanged:
 // same buildAgent / startRun / explainRun as /dashboard; only the page IA + copy.
 
 // Pre-built example graph for the hero artifact when no real run exists yet.
-// Clearly labelled "live example" — never presented with fabricated proof fields.
+// Clearly labelled "live example" — never presented with fabricated fields.
 const EXAMPLE_NODES = [
   { id: "entry", role: "intake", autonomy: "auto", capabilities: [{ name: "web_search", sideEffect: "read", budgetCents: 1 }] },
   { id: "reason", role: "reason over findings", autonomy: "auto", capabilities: [{ name: "think", sideEffect: "none", budgetCents: 3 }] },
@@ -213,7 +212,7 @@ function ExampleGallery() {
         </h2>
         <p className="body-lg soft" style={{ maxWidth: "62ch", marginBottom: "var(--s5)" }}>
           No hosted black box. Every entry is an inspectable file in a public registry. Install any
-          in one click and watch it run — every step signed, the risky ones pausing for your approval.
+          in one click and watch it run — every step recorded, the risky ones pausing for your approval.
         </p>
         {/* The depth numbers live in the hero stat strip above the fold; this section is
             about BROWSING, so it leads with the real integrations + the example agents
@@ -274,140 +273,7 @@ function InstallCommand() {
   );
 }
 
-// ── Live in-browser verifier — the viral hook ──────────────────────────────────
-// Fetch the genuine signed sample bundle (/sample-run.krproof.json, Ed25519, 7 events) and
-// verify it client-side with Web Crypto (web/lib/verify-bundle.ts) — the same checks the CLI
-// runs. The "tamper" toggle flips one byte of a payload and re-verifies LIVE, so a skeptic
-// watches ✓ CONSISTENT flip to ✗ REJECTED in their own browser (open devtools — it's genuinely
-// computing SHA-256 + Ed25519). Not a re-enactment; the real check. Shared by the hero + band.
-const VERIFY_CMD = "npx krelvan verify sample-run.krproof.json";
-const TWEET = "Krelvan agent runs are Ed25519-signed — you can `npx krelvan verify` them offline, zero deps. Change one byte and it rejects. AI agents you can actually audit.";
-const SHARE_URL = "https://krelvan.com";
-const TWEET_HREF = `https://twitter.com/intent/tweet?text=${encodeURIComponent(TWEET)}&url=${encodeURIComponent(SHARE_URL)}`;
-
-function useLiveVerify() {
-  const [bundle, setBundle] = useState<ProofBundle | null>(null);
-  const [tampered, setTampered] = useState(false);
-  const [result, setResult] = useState<VerifyResult | null>(null);
-  const [verifying, setVerifying] = useState(false);
-  useEffect(() => {
-    void fetch("/sample-run.krproof.json").then(r => r.json()).then((b: ProofBundle) => setBundle(b)).catch(() => {});
-  }, []);
-  useEffect(() => {
-    if (!bundle) return;
-    let cancelled = false;
-    setVerifying(true);
-    const candidate: ProofBundle = JSON.parse(JSON.stringify(bundle));
-    if (tampered) {
-      const target = candidate.events.find(e => e.payload && typeof e.payload === "object") ?? candidate.events[1];
-      target.payload = { ...(target.payload as object), tampered: "one byte changed" };
-    }
-    void verifyBundle(candidate).then(r => { if (!cancelled) { setResult(r); setVerifying(false); } });
-    return () => { cancelled = true; };
-  }, [bundle, tampered]);
-  return { tampered, setTampered, result, verifying };
-}
-
-// The live terminal + tamper toggle. `compact` shortens the title for the narrow hero panel
-// so the tamper pill always fits on one line.
-function VerifyTerminal({ tampered, setTampered, result, verifying, idleNudge, compact }: {
-  tampered: boolean; setTampered: (v: boolean) => void; result: VerifyResult | null; verifying: boolean; idleNudge?: boolean; compact?: boolean;
-}) {
-  const pass = result?.verdict === "CONSISTENT";
-  return (
-    <div className={`proveit__term proveit__term--live${pass ? " is-pass" : result ? " is-fail" : ""}`} aria-live="polite">
-      <div className="proveit__termbar">
-        <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
-        <span className="proveit__termtitle mono">{compact ? "verify · browser" : "krelvan verify · in your browser"}</span>
-        <label className={`proveit__tamper${idleNudge && !tampered ? " is-nudge" : ""}`}>
-          <input type="checkbox" checked={tampered} onChange={e => setTampered(e.target.checked)} />
-          <span>Tamper with one byte</span>
-        </label>
-      </div>
-      <div className="proveit__termbody">
-        <div className="proveit__cmd">
-          <span className="proveit__dollar">$</span>
-          <code>{VERIFY_CMD}{tampered ? "   # one byte changed" : ""}</code>
-        </div>
-        {!result ? (
-          <pre className="proveit__out">{verifying ? "  verifying…" : "  loading sample run…"}</pre>
-        ) : (
-          <pre className="proveit__out">{`  content addresses : `}<span className={result.hashes.failed === 0 ? "proveit__ok" : "proveit__bad"}>{result.hashes.failed === 0 ? `all ${result.hashes.checked} match` : `${result.hashes.failed} mismatch`}</span>{`
-  signatures        : `}<span className={result.signatures.failed === 0 && result.signatures.allSigned ? "proveit__ok" : "proveit__bad"}>{result.signatures.failed === 0 && result.signatures.allSigned ? `all ${result.signatures.checked} valid` : `${result.signatures.failed} invalid`}</span>{`
-  run boundaries    : `}<span className={result.boundaries.startsAtRunStarted && result.boundaries.endsTerminal ? "proveit__ok" : "proveit__bad"}>{result.boundaries.startsAtRunStarted && result.boundaries.endsTerminal ? "RunStarted → terminal" : "broken"}</span>{`
-
-`}{pass
-  ? <><span className="proveit__ok">{`✓ CONSISTENT`}</span>{` — every event authentic and unaltered.
-  (pin `}<span className="dim">--key</span>{` to also prove which instance signed it.)`}</>
-  : <><span className="proveit__bad">{`✗ REJECTED`}</span>{` — the run was altered. Do not trust it.`}</>}</pre>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Hero right panel: the live verifier (the proof, in the hero, above the fold). Falls back to
-// a real completed-run artifact when one exists.
-function HeroVerifyPanel() {
-  const v = useLiveVerify();
-  // One-time auto-demo so a first-time visitor SEES the wedge without interacting:
-  // once the real run verifies CONSISTENT, flip a byte (→ REJECTED, red), hold, flip
-  // back. Runs once, skips on reduced-motion, then the visitor can drive it themselves.
-  const played = useRef(false);
-  const firstConsistent = v.result?.verdict === "CONSISTENT";
-  useEffect(() => {
-    if (played.current || !firstConsistent) return;
-    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    played.current = true; // latch BEFORE scheduling so result-driven re-renders never re-enter or tear this down
-    setTimeout(() => v.setTampered(true), 1400);
-    setTimeout(() => v.setTampered(false), 1400 + 2200);
-    // intentionally no cleanup: this one-shot demo must complete even as v.result changes
-  }, [firstConsistent]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <VerifyTerminal {...v} idleNudge compact />;
-}
-
-function ProveItBand() {
-  const v = useLiveVerify();
-  const [copied, setCopied] = useState(false);
-  const copy = useCallback(() => {
-    void navigator.clipboard.writeText(VERIFY_CMD).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1600); });
-  }, []);
-  return (
-    <section className="proveit" aria-labelledby="proveit-h">
-      <div className="container proveit__grid">
-        <div className="proveit__lede">
-          <p className="micro" style={{ marginBottom: "var(--s2)" }}>You shouldn&apos;t trust this page</p>
-          <h2 id="proveit-h" className="display h1" style={{ marginBottom: "var(--s3)" }}>
-            Don&apos;t trust the demo. <span className="dark-teal" style={{ fontWeight: 800 }}>Verify it.</span>
-          </h2>
-          <p className="body-lg soft" style={{ maxWidth: "48ch", marginBottom: "var(--s5)" }}>
-            This is a <strong>real signed run</strong> from a real agent. The verifier on the right
-            is running in <em>your</em> browser right now — recomputing every SHA-256 hash and checking
-            every Ed25519 signature, no server, no trust. Flip the tamper switch and watch it reject.
-          </p>
-          <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap", alignItems: "center" }}>
-            <a href="/sample-run.krproof.json" download className="btn btn-dark-primary">
-              Download this run ↓
-            </a>
-            <a href={TWEET_HREF} target="_blank" rel="noopener noreferrer" className="btn btn-dark-ghost">
-              Share this on X →
-            </a>
-          </div>
-          <p className="dark-ink-muted small" style={{ marginTop: "var(--s5)", maxWidth: "48ch", lineHeight: 1.6 }}>
-            Then run it for real: <code className="mono" style={{ color: "var(--dark-ink-soft)" }}>{VERIFY_CMD}</code>{" "}
-            <button type="button" onClick={copy} className="proveit__inlinecopy">{copied ? "copied" : "copy"}</button>.
-            The verifier is open and hardened against forgery — signature-stripping, algorithm-downgrade,
-            chain-break. Don&apos;t take our word for it:{" "}
-            <a href="https://github.com/sreenathmmenon/krelvan/blob/main/bin/krelvan-verify.mjs" className="dark-teal" style={{ textDecoration: "underline" }}>read it before you believe it</a>.
-          </p>
-        </div>
-        <VerifyTerminal {...v} />
-      </div>
-    </section>
-  );
-}
-
-// ── Hero artifact: a REAL run (signed · N events · cost), or a labelled example ──
+// ── Hero artifact: a REAL run (N events · cost), or a labelled example ──
 // When a completed run exists we render its honest header and link to /runs/[id].
 // Until then we show the pre-built example graph self-running, clearly framed as a
 // "live example" — no invented field names, no fabricated proof.
@@ -418,7 +284,7 @@ function HeroArtifact({ run }: { run: RunRecord | null }) {
         href={`/runs/${run.runId}`}
         className="dark-device"
         style={{ display: "block", padding: "var(--s5)", textDecoration: "none" }}
-        aria-label={`Open the signed record for ${run.manifestName}`}
+        aria-label={`Open the run record for ${run.manifestName}`}
       >
         <div className="micro" style={{ marginBottom: "var(--s3)" }}>A real run · {timeAgo(run.createdAt)}</div>
         <div
@@ -432,7 +298,7 @@ function HeroArtifact({ run }: { run: RunRecord | null }) {
             <span className="dark-verify-seal__mark" aria-hidden="true">
               <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d={UI.check} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </span>
-            <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>signed</span>
+            <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>recorded</span>
             <span className="dark-ink-muted" aria-hidden="true">·</span>
             <span className="dark-ink-soft mono" style={{ fontSize: 13 }}>
               {run.status === "completed" ? "finished" : run.status}
@@ -460,12 +326,12 @@ function HeroArtifact({ run }: { run: RunRecord | null }) {
         <div style={{ background: "var(--dark-node-fill)", borderRadius: "var(--r)", padding: "var(--s5)", border: "1px solid var(--dark-line)" }}>
           <MiniGraph nodes={EXAMPLE_NODES} edges={EXAMPLE_EDGES} entry="entry" variant="dark" maxHeight={120} />
         </div>
-        {/* Honest: NOTHING has run, so we never show the signed seal here — only on real runs. */}
+        {/* Honest: NOTHING has run, so we never show the completed badge here — only on real runs. */}
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap" }}>
           <span className="dark-ink-muted mono" style={{ fontSize: 13 }}>3 steps · runs and signs once you build it</span>
         </div>
         <div className="dark-ink-muted small">
-          Build your own below — your real, signed runs show up here.
+          Build your own below — your real runs show up here.
         </div>
       </div>
     </div>
@@ -480,9 +346,6 @@ function focusBuilder() {
   window.setTimeout(() => ta?.focus({ preventScroll: true }), 320);
 }
 
-function scrollToProveIt() {
-  document.getElementById("proveit-h")?.closest("section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-}
 
 export default function Landing() {
   const router = useRouter();
@@ -647,7 +510,7 @@ export default function Landing() {
       {/* The exact workspace composer + BuildPreviewModal + stat strip + agents/runs.
           Same data path (buildAgent / startRun / explainRun) as /dashboard.
           This is the dominant first-interaction zone, right under the hero — the PRODUCT
-          leads, so the page shows what you can build before it argues about proof. */}
+          leads, so the page shows what you can build first. */}
       <section id="builder" className="builder-zone" style={{ scrollMarginTop: "var(--s6)" }}>
         <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s8)", textAlign: "center" }}>
           <h2 className="h1" style={{ marginBottom: "var(--s3)" }}>Build and run an agent in seconds.</h2>
@@ -754,7 +617,7 @@ export default function Landing() {
         {/* ════════════ 3 · LATEST-RUN HIGHLIGHT (returning users only) ════════════ */}
         {/* The homepage is NOT the workspace. The full agent grid, stats, and recent-runs
             panel live only at /dashboard. Here, a returning visitor sees a single
-            real-run highlight as proof, with one link into the workspace. */}
+            real-run highlight, with one link into the workspace. */}
         {latestCompleted && (
           <div className="container" style={{ paddingTop: "var(--s4)", paddingBottom: "var(--s9)" }}>
             <Link
@@ -770,7 +633,7 @@ export default function Landing() {
                 <div className="micro" style={{ marginBottom: "var(--s2)" }}>Your latest run</div>
                 <div className="h3" style={{ color: "var(--ink)" }}>{latestCompleted.manifestName}</div>
                 <div className="small muted" style={{ marginTop: "var(--s1)" }}>
-                  {timeAgo(latestCompleted.createdAt)} · <span className="mono" style={{ color: "var(--brand)", fontWeight: 600 }}>signed · replayable</span>
+                  {timeAgo(latestCompleted.createdAt)} · <span className="mono" style={{ color: "var(--brand)", fontWeight: 600 }}>complete · replayable</span>
                 </div>
               </div>
               <span className="btn btn-secondary">Open this record →</span>
@@ -784,7 +647,7 @@ export default function Landing() {
 
       {/* ════════════ 3.4 · THE ACTUAL PRODUCT (show, don't tell) ════════════ */}
       {/* A skeptic wants to SEE the app, not another terminal. This is a real screenshot
-          of the canvas — the signed graph that maps 1:1 to what executed. */}
+          of the canvas — the graph that maps 1:1 to what executed. */}
       <section style={{ background: "var(--surface)", borderTop: "1px solid var(--line)" }}>
         <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)" }}>
           <p className="micro" style={{ marginBottom: "var(--s3)" }}>The canvas is the runtime</p>
@@ -793,11 +656,11 @@ export default function Landing() {
           </h2>
           <p className="body-lg soft" style={{ maxWidth: "56ch", marginBottom: "var(--s6)" }}>
             Every node is a real step, every edge a real branch, and each run replays over the
-            same signed ledger — so the graph is not a diagram of the agent, it is the agent.
+            same recorded run — so the graph is not a diagram of the agent, it is the agent.
           </p>
           <figure style={{ margin: 0, borderRadius: "var(--r-xl, 16px)", overflow: "hidden", border: "1px solid var(--line)", boxShadow: "var(--shadow-lg)", background: "var(--graph-bg)" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/product-canvas.png" alt="The Krelvan canvas showing a 12-node support agent: triage, retrieve, judge with a revise loop, route, send, escalate — each step signed into the ledger."
+            <img src="/product-canvas.png" alt="The Krelvan canvas showing a 12-node support agent: triage, retrieve, judge with a revise loop, route, send, escalate — each step a real recorded event."
               width={1400} height={640} loading="lazy" style={{ display: "block", width: "100%", height: "auto" }} />
           </figure>
         </div>
@@ -877,14 +740,14 @@ export default function Landing() {
             The infrastructure <span style={{ color: "var(--brand)" }}>underneath</span>.
           </h2>
           <p className="body-lg soft" style={{ maxWidth: "60ch", marginBottom: "var(--s7)" }}>
-            The hard parts are solved — signed audit, failure diagnosis, human control, a real sandbox —
+            The hard parts are solved — full run history, failure diagnosis, human control, a real sandbox —
             so you build the domain logic and ship agentic solutions in days, not months.
           </p>
           <div className="depth-grid">
             {[
-              { k: "The ledger IS the runtime", v: "Every step → an append-only, content-addressed, Ed25519-signed log. The canvas, audit trail and cost meter are pure reads of it — so you can scrub back through any run, step by step, and what you see is structurally what executed.", href: "/runs", cta: "Replay a signed run", lead: true },
-              { k: "Failure diagnosis + retry", v: "When a run fails, Krelvan reads the ledger to diagnose why, drafts a corrected agent, and re-runs it — and the repair attempt is itself signed in, pass or fail.", href: "/runs", cta: "Explain a run", lead: true },
-              { k: "Build from plain English", v: "Describe an outcome; get a validated, typed, signed agent graph. The model is a compiler into a manifest the kernel runs — it never executes free-form code.", href: "/dashboard", cta: "Build an agent" },
+              { k: "The canvas IS the runtime", v: "Every step is a real recorded event. The canvas, run history and cost meter are all pure reads of it — so you can scrub back through any run, step by step, and what you see is exactly what executed.", href: "/runs", cta: "Replay a run", lead: true },
+              { k: "Failure diagnosis + retry", v: "When a run fails, Krelvan reads its full history to diagnose why, drafts a corrected agent, and re-runs it — and the repair attempt is recorded too, pass or fail.", href: "/runs", cta: "Explain a run", lead: true },
+              { k: "Build from plain English", v: "Describe an outcome; get a validated, typed agent graph. The model is a compiler into a manifest the kernel runs — it never executes free-form code.", href: "/dashboard", cta: "Build an agent" },
               { k: "Human-in-the-loop gate", v: "Dial autonomy per step — suggest, act-with-veto, full. It pauses before the steps you gate and shows the exact action, not a summary.", href: "/approvals", cta: "Open approvals" },
               { k: "Real OS-process sandbox", v: "Untrusted TS plugins under node --permission, SSRF-guarded brokered egress, secrets injected only at the destination. Adversarially tested.", href: "/capabilities", cta: "Browse capabilities" },
               { k: "Memory + RAG, offline-capable", v: "Episodic, semantic and trust-aware memory with provenance. rag.ingest / rag.search with local embeddings via Ollama — no key, no network.", href: "/capabilities?install=personal-advisor", cta: "Try the advisor" },

@@ -506,7 +506,7 @@ function CatalogCard({ e, installed, autonomy, onInstalled, flash, onDetail, onC
           </div>
         </div>
         {e.tier === "official"
-          ? <span className="badge badge-done cap-badge"><span style={{ display: "inline-flex", color: "var(--ok)" }}><Icon d={UI.shield} size={10} /></span>signed</span>
+          ? <span className="badge badge-done cap-badge"><span style={{ display: "inline-flex", color: "var(--ok)" }}><Icon d={UI.shield} size={10} /></span>official</span>
           : <span className="badge badge-neutral cap-badge">community</span>}
       </div>
       <p className="small cap-card__desc">{e.oneLiner}</p>
@@ -632,7 +632,7 @@ function DetailDrawer({ e, installed, catalog, onClose, onInstalled, flash }: {
             <div className="cap-perm__row">
               <span className="micro" style={{ color: "var(--ink-muted)" }}>Trust</span>
               {e.tier === "official"
-                ? <span className="small" style={{ color: "var(--ok)", display: "inline-flex", gap: 5, alignItems: "center" }}><Icon d={UI.shield} size={12} />Signed by Krelvan</span>
+                ? <span className="small" style={{ color: "var(--ok)", display: "inline-flex", gap: 5, alignItems: "center" }}><Icon d={UI.shield} size={12} />Official Krelvan agent</span>
                 : <span className="small" style={{ color: "var(--ink-soft)" }}>Community — review before installing</span>}
             </div>
             {m.tier >= 1 && (

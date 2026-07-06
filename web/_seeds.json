@@ -1,0 +1,114 @@
+{
+ "advisor": {},
+ "assistant": {
+  "message": "What are the top 3 AI agent frameworks in 2026 and why?",
+  "query": "top AI agent frameworks 2026",
+  "history": ""
+ },
+ "chief-of-staff": {
+  "meetings": "2pm Priya Nair, VP Eng at Stripe (platform eval)",
+  "query": "Stripe engineering",
+  "my_context": "I sell an agentic AI platform"
+ },
+ "competitive-intel": {
+  "topic": "AI developer tools",
+  "query": "AI developer tools competitive landscape 2026"
+ },
+ "content-repurposer": {
+  "source": "Krelvan turns plain English into real multi-agent systems that research, draft, and act across your tools.",
+  "brand_label": "confident, technical",
+  "channel": "linkedin"
+ },
+ "daily-digest": {
+  "query": "latest AI engineering news 2026",
+  "topic": "AI engineering news",
+  "url": "https://news.ycombinator.com",
+  "source_a_label": "AI",
+  "source_b_label": "LLM"
+ },
+ "growth-team": {
+  "url": "https://www.postgresql.org/about/",
+  "site_url": "https://www.postgresql.org/about/",
+  "query": "PostgreSQL database",
+  "product": "PostgreSQL",
+  "audience": "engineering teams",
+  "goal": "be the obvious database choice"
+ },
+ "inbox-triage": {
+  "message": "Hi, our API integration is returning 500 errors since this morning, urgent, customers affected.",
+  "from": "acme@example.com"
+ },
+ "incident-responder": {
+  "alert": "API p99 latency 4200ms, error rate 12%, service payments-api",
+  "query": "high latency payments API"
+ },
+ "influencer-outreach": {
+  "topic": "AI dev tools",
+  "query": "top AI developer tool creators",
+  "product": "Krelvan"
+ },
+ "investment-research": {
+  "topic": "AI infrastructure sector",
+  "query": "AI infrastructure investment 2026"
+ },
+ "lead-qualifier": {
+  "lead_url": "https://stripe.com",
+  "url": "https://stripe.com",
+  "query": "Stripe payments",
+  "icp": "fintech companies",
+  "from_name": "Sam"
+ },
+ "lead-to-outreach": {
+  "lead_url": "https://vercel.com",
+  "url": "https://vercel.com",
+  "query": "Vercel company",
+  "company": "Vercel",
+  "from_name": "Sam"
+ },
+ "order-to-refund": {
+  "order_id": "ORD-4821",
+  "reason": "item arrived damaged",
+  "policy": "refunds allowed within 30 days for damaged goods"
+ },
+ "price-monitor": {
+  "url": "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
+  "target_url": "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
+  "watch_label": "A Light in the Attic",
+  "threshold": "50"
+ },
+ "rag-knowledge": {
+  "source_url": "https://www.postgresql.org/about/",
+  "url": "https://www.postgresql.org/about/",
+  "question": "What is PostgreSQL good at?",
+  "query": "PostgreSQL features"
+ },
+ "reply-handler": {
+  "reply": "Thanks, this looks interesting. Can you send pricing?",
+  "context": "outbound sales email about Krelvan"
+ },
+ "research-analyst": {
+  "topic": "the state of self-hosted AI platforms",
+  "query": "self-hosted AI platforms",
+  "audience": "a technical founder"
+ },
+ "social-voice": {
+  "niche": "applied AI for engineering teams",
+  "query": "applied AI engineering 2026",
+  "brand_voice": "confident, technical",
+  "audience": "engineering leaders",
+  "channel": "LinkedIn"
+ },
+ "support-agent": {
+  "message": "I was double-charged for my subscription this month, please help.",
+  "from": "user@example.com"
+ },
+ "support-bot": {
+  "question": "How do I reset my password?",
+  "source_url": "https://www.postgresql.org/docs/",
+  "url": "https://www.postgresql.org/docs/"
+ },
+ "supervisor-delegation": {
+  "task": "research and summarize the best AI agent frameworks",
+  "query": "AI agent frameworks 2026"
+ }
+}

@@ -739,7 +739,10 @@ async function handleSetDelivery(req: IncomingMessage, res: ServerResponse, para
         const safe = (s: string) => s.replace(/[^a-zA-Z0-9_.-]/g, "_");
         const secretName = `delivery.${safe(agentId)}.${safe(t.channel)}.${k}`;
         const r = rt.secretStore.set(secretName, v);
-        if (r.ok) { t.config[`${k}_ref`] = secretName; delete t.config[k]; }
+        // Either way, the plaintext secret must NOT remain on the record. On success, store the
+        // ref; on failure (e.g. empty value), drop the field entirely rather than persist it.
+        delete t.config[k];
+        if (r.ok) t.config[`${k}_ref`] = secretName;
       }
     }
   }

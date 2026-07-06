@@ -28,8 +28,8 @@ const SECTIONS: Section[] = [
       {
         q: "What is Krelvan?",
         a: [
-          "Krelvan is a self-hostable, open-source platform for building and running AI agents you own. You describe a goal in plain English; Krelvan builds a real agent, shows you the plan before anything executes, runs it on your machine, and keeps a signed, replayable record of every step it took.",
-          "The core idea: the ledger is the runtime. Every run is an append-only, cryptographically signed event log, and the canvas, the audit timeline, and the run history are all direct reads of that one log — so what you see is exactly what executed, by construction.",
+          "Krelvan is a self-hostable, open-source platform for building and running AI agents you own. You describe a goal in plain English; Krelvan builds a real agent, shows you the plan before anything executes, runs it on your machine, and keeps a complete, replayable record of every step it took.",
+          "The core idea: the canvas is the runtime. Every step of a run is a real recorded event, and the visual canvas, the run timeline, and the history are all direct reads of that one record — so what you see is exactly what executed.",
         ],
       },
       {
@@ -41,14 +41,14 @@ const SECTIONS: Section[] = [
       {
         q: "Is Krelvan a hosted service? Do I need an account?",
         a: [
-          "No. Krelvan is self-host first: the API, the web UI, and the signed ledger all run on your own box, and there is no hosted edition today. The only account is the admin credential you create for your own install — self-hosted auth with scrypt password hashing, sessions, and CSRF protection — so an internet-facing box stays yours.",
+          "No. Krelvan is self-host first: the API, the web UI, and all your data run on your own box, and there is no hosted edition today. The only account is the admin credential you create for your own install — self-hosted auth with scrypt password hashing, sessions, and CSRF protection — so an internet-facing box stays yours.",
         ],
       },
       {
         q: "How do I install and run it?",
         a: [
           "Two ways. With Node 22+, clone the repository and run `npx krelvan` — one command builds and starts both the API (port 3201) and the web UI (port 3100). Or run `docker compose up --build` for the same result.",
-          "Everything Krelvan persists lives in a single data directory — the SQLite ledger plus your signing and secret keys — so backing up your install means backing up one folder.",
+          "Everything Krelvan persists lives in a single data directory — the SQLite database plus your secret keys — so backing up your install means backing up one folder.",
         ],
       },
       {
@@ -60,42 +60,27 @@ const SECTIONS: Section[] = [
     ],
   },
   {
-    id: "ledger",
-    title: "The signed ledger",
+    id: "runs",
+    title: "How runs work",
     icon: UI.shield,
     items: [
       {
-        q: "What does “the ledger is the runtime” mean?",
+        q: "What does “the canvas is the runtime” mean?",
         a: [
-          "In most systems, execution happens somewhere and a log is written about it afterwards — and the two can drift. In Krelvan there is no separate “what happened” store: execution itself is a projection of an append-only, content-addressed, signed event log. The visual canvas, the audit timeline, run history, and even agent memory are all pure reads (folds) of that one log.",
+          "In most systems, execution happens somewhere and a log is written about it afterwards — and the two can drift. In Krelvan the visual canvas, the run timeline, the history, and even agent memory are all direct reads of the same recorded run. There is no separate “what happened” store that could disagree.",
           "That single design choice is why “what you see is exactly what executed” is structural rather than hopeful — there is nothing else the UI could be showing you.",
         ],
       },
       {
-        q: "What makes a run “provable”?",
+        q: "Can I replay exactly what an agent did?",
         a: [
-          "Three properties, applied to every event in a run: it is content-addressed (its address is a SHA-256 hash of its canonical bytes), hash-chained to the event before it, and signed — with per-install Ed25519 keys by default. Change one byte anywhere and the content addresses stop matching and the signatures stop verifying.",
-          "Because Ed25519 is asymmetric, anyone can check the record with just the public key. The private key never leaves the signer, so nobody else can produce a signature that verifies against it.",
-        ],
-      },
-      {
-        q: "How do I verify a run? Do I need Krelvan installed?",
-        a: [
-          "You don't even need Krelvan running. Every run exports as a portable proof bundle — the “Download proof” button on any run, or `GET /api/runs/:id/export` — containing every event, its signature, and the public keys. Then `npx krelvan verify <bundle>` re-checks it offline with zero dependencies: it recomputes each content address, verifies every Ed25519 signature, and checks the run boundaries.",
-          "One honest nuance: run unpinned, the verifier reports `CONSISTENT` — internally consistent and unaltered — because it checked signatures against keys included in the bundle. To also prove which install produced it, fetch the issuer's public key (published at `GET /api/ledger/keys`, no auth) and pin it with `--key`: a genuine bundle then reports `VERIFIED · authentic`, and a forged one is rejected as `WRONG SIGNER`.",
-        ],
-      },
-      {
-        q: "What happens if someone tampers with a record?",
-        a: [
-          "Verification fails, loudly. The ledger is append-only with compare-and-swap appends (no forks), every event is content-addressed and signed, and verification catches an edited payload, a dropped event, a reordered chain, or a stripped signature.",
-          "You can try this yourself: the verifier on the homepage runs against a real signed run in your browser — flip the “tamper with one byte” switch and watch it reject.",
+          "Yes. Every step of a run is recorded as a real event, so you can scrub back through any run step by step and see precisely what the agent read, decided, and did — the same view whether the run finished a minute ago or last month.",
         ],
       },
       {
         q: "What happens if a run crashes halfway?",
         a: [
-          "It resumes safely. State lives only in the log, so resuming is just re-reading it: the engine folds the ledger, sees exactly which steps completed, and continues from there. Side effects use a three-event protocol (intent, execution, result), which guarantees an irreversible effect — sending an email, calling a paid API — runs exactly once, never twice, even if the process dies mid-step.",
+          "It resumes safely. The run's state lives entirely in its recorded history, so resuming is just re-reading it: the engine sees exactly which steps completed and continues from there. Side effects use a three-step protocol (intent, execution, result), which guarantees an irreversible effect — sending an email, calling a paid API — runs exactly once, never twice, even if the process dies mid-step.",
           "There's a runnable demo: `npm run demo:resume` kills a run mid-flight, resumes it, and shows each irreversible effect executed exactly once.",
         ],
       },
@@ -121,7 +106,7 @@ const SECTIONS: Section[] = [
       {
         q: "Does my data leave my machine?",
         a: [
-          "Only where you point it. Krelvan is self-hosted: the ledger, your agents, and your documents live in your own data directory. The only outbound calls are the ones you configure — your chosen model provider, plus whatever capabilities you explicitly grant (an HTTP API, an MCP server). With Ollama, even the model calls stay on your machine.",
+          "Only where you point it. Krelvan is self-hosted: your agents, your runs, and your documents live in your own data directory. The only outbound calls are the ones you configure — your chosen model provider, plus whatever capabilities you explicitly grant (an HTTP API, an MCP server). With Ollama, even the model calls stay on your machine.",
           "Secrets are encrypted at rest with AES-256-GCM, and they never enter plugin code — a broker injects them at the destination on the host.",
         ],
       },
@@ -149,7 +134,7 @@ const SECTIONS: Section[] = [
         q: "How does Krelvan handle prompt injection?",
         a: [
           "Honestly: no agent platform can make prompt injection impossible, and we won't claim otherwise. What Krelvan does is bound the blast radius with mechanical guards: capability monotonicity in the compiler (content an agent read can never widen what the agent is allowed to do), untrusted inbound content is quarantined in memory with provenance, conditional logic is a restricted typed-AST evaluator — there is no `eval` anywhere — and outbound HTTP goes through an allowlisted, SSRF-guarded egress channel.",
-          "And because every step lands in the signed ledger, if something does go wrong you can see exactly what happened — provably, after the fact.",
+          "And because every step is recorded, if something does go wrong you can see exactly what happened, after the fact.",
         ],
       },
       {
@@ -169,15 +154,15 @@ const SECTIONS: Section[] = [
       {
         q: "How do I build an agent?",
         a: [
-          "Describe the outcome in plain English. Krelvan compiles that into a validated, typed agent graph — the model acts as a compiler into a manifest the kernel runs; it never executes free-form code — and shows you the plan before anything runs. Approve it, run it, and open the signed record.",
+          "Describe the outcome in plain English. Krelvan compiles that into a validated, typed agent graph — the model acts as a compiler into a manifest the kernel runs; it never executes free-form code — and shows you the plan before anything runs. Approve it, run it, and open the full run history.",
           "You can also start from a ready-made template in the marketplace — a price monitor, a RAG support bot, a knowledge-base ingester — and make it yours.",
         ],
       },
       {
         q: "Can I build agents for my clients or customers?",
         a: [
-          "Yes — that's an intended use, and Apache-2.0 permits it commercially. The fastest path: install a template (say the RAG support bot), then use its customize surface to rename it, point it at the client's knowledge base, and set their tone and autonomy limits. Each clone is baked into a fresh manifest and installed as its own independent, signed agent.",
-          "When you deliver, the client doesn't have to take your word for what the agent did — every run exports a proof bundle they can verify themselves, offline.",
+          "Yes — that's an intended use, and Apache-2.0 permits it commercially. The fastest path: install a template (say the RAG support bot), then use its customize surface to rename it, point it at the client's knowledge base, and set their tone and autonomy limits. Each clone is baked into a fresh manifest and installed as its own independent agent.",
+          "When you deliver, the client can see exactly what the agent did — every run keeps a complete, replayable history they can scrub through step by step.",
         ],
       },
       {
@@ -190,13 +175,13 @@ const SECTIONS: Section[] = [
       {
         q: "What happens when a run fails?",
         a: [
-          "Krelvan doesn't just retry — it reasons about the failure. It reads the signed ledger of the failed run to find the root cause and the failing step, drafts a corrected agent from that diagnosis, and re-runs it. The repair attempt is itself signed into the record, pass or fail, so the fix is as auditable as the failure.",
+          "Krelvan doesn't just retry — it reasons about the failure. It reads the full history of the failed run to find the root cause and the failing step, drafts a corrected agent from that diagnosis, and re-runs it. The repair attempt is recorded too, pass or fail, so the fix is as inspectable as the failure.",
         ],
       },
       {
         q: "Can agents run on a schedule?",
         a: [
-          "Yes. Cron and interval schedules run agents unattended — a price watcher every hour, a digest every morning. Scheduled runs go through exactly the same pipeline as manual ones: same budgets, same approval gates, same signed ledger.",
+          "Yes. Cron and interval schedules run agents unattended — a price watcher every hour, a digest every morning. Scheduled runs go through exactly the same pipeline as manual ones: same budgets, same approval gates, same complete run history.",
         ],
       },
     ],
@@ -218,7 +203,7 @@ const SECTIONS: Section[] = [
       {
         q: "Is it production-ready?",
         a: [
-          "We'd rather under-claim. This is an early release, and the status section of the README marks exactly which parts are battle-tested. The load-bearing proof core — the ledger, the signing, the export, the offline verifier, and the plugin sandbox — is the most heavily tested part of the system, including adversarial tests against forgery, downgrade, and chain-breaks. Strict typecheck and the test suite run clean.",
+          "We'd rather under-claim. This is an early release, and the status section of the README marks exactly which parts are battle-tested. The load-bearing core — the event-sourced kernel, the run history and replay, the resume-after-crash protocol, and the plugin sandbox — is the most heavily tested part of the system, including adversarial tests. Strict typecheck and the test suite run clean.",
           "Judge it yourself: the code, the tests, and a premortem doc enumerating failure modes (each with its guard and status) are all public in the repository.",
         ],
       },
@@ -259,7 +244,7 @@ export default function FaqPage() {
               Frequently asked <span style={{ color: "var(--brand)" }}>questions</span>.
             </h1>
             <p className="body-lg soft" style={{ maxWidth: "58ch", marginBottom: "var(--s5)" }}>
-              {"What Krelvan is, how the signed ledger works, what runs where, and where the edges are today. If it isn't true of the product, it isn't on this page."}
+              {"What Krelvan is, how runs work, what runs where, and where the edges are today. If it isn't true of the product, it isn't on this page."}
             </p>
             {/* section jump chips */}
             <nav aria-label="FAQ sections" className="faq-toc">
@@ -304,7 +289,7 @@ export default function FaqPage() {
           <div className="card" style={{ marginTop: "var(--s8)", padding: "var(--s7) var(--s6)", textAlign: "center" }}>
             <h2 className="h2" style={{ marginBottom: "var(--s3)" }}>Still curious?</h2>
             <p className="body-lg soft" style={{ maxWidth: "48ch", margin: "0 auto var(--s5)" }}>
-              {"The fastest answer is the product itself — build an agent, run it, and open the signed record. Or read the source; it's all there."}
+              {"The fastest answer is the product itself — build an agent, run it, and open the full run history. Or read the source; it's all there."}
             </p>
             <div style={{ display: "flex", gap: "var(--s3)", justifyContent: "center", flexWrap: "wrap" }}>
               <Link href="/dashboard" className="btn btn-primary">Build an agent</Link>

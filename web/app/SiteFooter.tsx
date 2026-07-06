@@ -34,7 +34,7 @@ export default function SiteFooter() {
               <span className="small muted">Own your agents.</span>
             </div>
             <p className="small soft" style={{ lineHeight: 1.6 }}>
-              Describe a goal, get a real agent, and keep a signed record of every step.
+              Describe a goal, get a real agent, and keep a complete record of every step.
               Self-hosted, no vendor lock-in.
             </p>
           </div>

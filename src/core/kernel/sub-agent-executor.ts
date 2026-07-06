@@ -207,7 +207,10 @@ async function runSubAgent(
 
   let result: RunResult;
   try {
-    result = await subEngine.run({ initialState: ctx.initialState, approve: ctx.approve });
+    // gateAllConsequential forces the approval gate for every consequential effect even on an
+    // autonomy:"full" sub-node — so a delegated sub-agent can never take an unsupervised
+    // irreversible / spend / message-human / identity-mutation action, regardless of its manifest.
+    result = await subEngine.run({ initialState: ctx.initialState, approve: ctx.approve, gateAllConsequential: true });
   } catch (err) {
     log.error({ err, subRunId }, "sub-run engine threw unexpectedly");
     return { subRunId, reason: (err as Error).message, actualCostCents: 0, failed: true };

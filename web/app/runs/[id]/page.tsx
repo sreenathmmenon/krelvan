@@ -229,7 +229,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     void loadApprovals();
   }, [id, load, loadApprovals]);
 
-  // Auto-verify the signed ledger once the run has finished — the tamper-proof seal is the #1
+  // Auto-check the run record once it has finished — the completeness badge is the #1
   // wedge, so it should be visible on load (a green seal above the tabs), not 2 clicks deep.
   useEffect(() => {
     if (!detail || verification != null) return;
@@ -544,7 +544,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               <svg viewBox="0 0 16 16" width="16" height="16" fill="none"><path d="M8 1.5l6.5 11.5H1.5L8 1.5z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><path d="M8 6.2v3.1M8 11.3h.01" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
             </span>
             <span className="micro" style={{ color: "var(--danger)", letterSpacing: ".06em" }}>Diagnosis</span>
-            <span className="small muted">reasoned from the signed record</span>
+            <span className="small muted">reasoned from the full run record</span>
           </div>
           <div style={{ padding: "var(--s5)" }}>
             {diagnosing && !diagnosis && (
@@ -612,32 +612,27 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               <Glyph kind="seal" size={18} color="#fff" />
             </span>
             <div className="run-seal__headtext">
-              {/* HONESTY: this seal is about the RECORD's integrity (the signed ledger verifies),
-                  NOT the run's outcome — a halted or failed run still has a fully verifiable
-                  record. HMAC (default) is tamper-EVIDENT but repudiable; only Ed25519 is
-                  non-repudiable. */}
-              <span className="run-seal__title">{verification.nonRepudiable ? "Ledger verified · tamper-proof" : "Ledger verified · tamper-evident"}</span>
-              <span className="run-seal__sub">{verification.nonRepudiable ? "Ed25519 — anyone can verify this record offline from the public key" : "HMAC-SHA256 — this record is verifiable on this instance"}</span>
+              {/* This badge is about the RECORD's completeness — every step of the run is captured,
+                  so a halted or failed run still has a full, replayable record. */}
+              <span className="run-seal__title">Run fully recorded</span>
+              <span className="run-seal__sub">Every step is captured — replay it end to end, exactly as it ran</span>
             </div>
-            <span className="run-seal__verified" aria-live="polite"><Glyph kind="check" size={13} color="currentColor" /> Verified</span>
+            <span className="run-seal__verified" aria-live="polite"><Glyph kind="check" size={13} color="currentColor" /> Complete</span>
           </div>
           <div className="run-seal__chips">
-            <span className="run-seal__chip"><span className="mono">{verification.signedEvents}/{verification.runEvents}</span> events signed</span>
-            <span className="run-seal__chip"><span className="mono">{verification.ledgerEvents}-link</span> hash chain intact</span>
-            <span className="run-seal__chip mono">{verification.algorithm}</span>
+            <span className="run-seal__chip"><span className="mono">{verification.signedEvents}/{verification.runEvents}</span> steps recorded</span>
+            <span className="run-seal__chip"><span className="mono">{verification.ledgerEvents}</span> events in order</span>
           </div>
           <div className="run-seal__actions">
             <a
               href={`${API_BASE}/api/runs/${id}/export`}
               download
               className="run-seal__cta run-seal__cta--primary"
-              title={verification.nonRepudiable
-                ? "Download a signed record anyone can verify offline with `npx krelvan verify`"
-                : "Download the signed record (HMAC is verifiable on this instance)"}
+              title="Download the complete run record as a portable file"
             >
-              Download signed record ↓
+              Download run record ↓
             </a>
-            <a href="#tab-timeline" onClick={() => setTab("timeline")} className="run-seal__cta">View the chain →</a>
+            <a href="#tab-timeline" onClick={() => setTab("timeline")} className="run-seal__cta">View the timeline →</a>
           </div>
         </div>
       )}
@@ -667,7 +662,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               marginBottom: -1,
             }}
           >
-            {t === "canvas" ? "Graph" : t === "explain" ? "Explain" : t === "output" ? "Output" : t === "timeline" ? "Ledger" : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === "canvas" ? "Graph" : t === "explain" ? "Explain" : t === "output" ? "Output" : t === "timeline" ? "Timeline" : t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
@@ -690,7 +685,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             </span>
             <span className="replay-cta__body">
               <strong>Watch the full replay</strong>
-              <span className="small dim">Step through every event on the live canvas — scrub the ledger node by node, see exactly what ran.</span>
+              <span className="small dim">Step through every event on the live canvas — scrub the run node by node, see exactly what ran.</span>
             </span>
             <span className="replay-cta__arrow" aria-hidden="true">↗</span>
           </Link>
@@ -721,7 +716,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               <div style={{ color: "var(--ink-muted)" }}><Glyph kind="ledger" size={28} /></div>
               <p className="h3" style={{ color: "var(--ink)" }}>No events recorded yet</p>
               <p className="small soft" style={{ maxWidth: "42ch", lineHeight: 1.6 }}>
-                Once this run starts, every step the agent takes is signed and appended here in order.
+                Once this run starts, every step the agent takes is recorded here in order.
               </p>
             </div>
           )}
@@ -732,16 +727,16 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               background: verification?.ok ? "color-mix(in srgb, var(--ok) 8%, var(--surface))" : "var(--surface-sunken)",
             }}>
               <div className="small" style={{ color: "var(--ink-soft)", lineHeight: 1.5 }}>
-                Every step is appended to a signed, hash-chained ledger.{" "}
-                {verification == null && <span className="soft">Click verify to re-check the cryptographic chain.</span>}
+                Every step of the run is recorded here in order.{" "}
+                {verification == null && <span className="soft">Click check to confirm the record is complete.</span>}
                 {verification?.ok && (
                   <span style={{ color: "var(--ok)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <Glyph kind="check" size={14} color="var(--ok)" /> Verified — {verification.signedEvents}/{verification.runEvents} agent events signed, {verification.ledgerEvents}-link hash chain intact end-to-end ({verification.algorithm}).
+                    <Glyph kind="check" size={14} color="var(--ok)" /> Complete — {verification.signedEvents}/{verification.runEvents} steps recorded, {verification.ledgerEvents} events in order end to end.
                   </span>
                 )}
                 {verification && !verification.ok && (
                   <span style={{ color: "var(--danger)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <Glyph kind="cross" size={14} color="var(--danger)" /> Verification FAILED: {verification.error} — {verification.detail}
+                    <Glyph kind="cross" size={14} color="var(--danger)" /> Record check FAILED: {verification.error} — {verification.detail}
                   </span>
                 )}
               </div>
@@ -751,12 +746,12 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                   download
                   className="btn btn-sm btn-secondary"
                   style={{ textDecoration: "none" }}
-                  title="Download a portable proof bundle — verify it offline with `npx krelvan verify <file>`, no Krelvan install or trust required"
+                  title="Download the complete run record as a portable file"
                 >
-                  Download proof ↓
+                  Download record ↓
                 </a>
                 <button className="btn btn-sm" disabled={verifying} onClick={runVerify}>
-                  {verifying ? "Verifying…" : verification ? "Re-verify" : "Verify signatures"}
+                  {verifying ? "Checking…" : verification ? "Re-check" : "Check record"}
                 </button>
               </div>
             </div>
@@ -790,7 +785,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                 {eventDetail(e)}
               </span>
               {e.sig
-                ? <span className="mono" title={`signed by ${e.sig.keyId} (epoch ${e.sig.epoch}) — fingerprint ${e.sig.fingerprint}`}
+                ? <span className="mono" title="recorded step"
                     style={{ textAlign: "right", fontSize: 10.5, color: "var(--ok)", display: "inline-flex", gap: 4, justifyContent: "flex-end", alignItems: "center" }}>
                     <Glyph kind="seal" size={11} color="var(--ok)" /> {e.sig.fingerprint.slice(0, 8)}
                   </span>
@@ -984,7 +979,7 @@ function OutputPanel({ projection, manifest, run }: {
         <p className="h3" style={{ color: "var(--live)" }}>Agent is working…</p>
         <p className="small soft" style={{ maxWidth: "42ch", lineHeight: 1.6 }}>
           The result will appear here the moment it finishes. Watch it think live on the <strong>Graph</strong> tab,
-          or follow each step on the <strong>Ledger</strong>.
+          or follow each step on the <strong>Timeline</strong>.
         </p>
       </div>
     );
@@ -1028,7 +1023,7 @@ function OutputPanel({ projection, manifest, run }: {
           <p className="h3" style={{ color: "var(--ink)" }}>No text output produced</p>
           <p className="small soft" style={{ maxWidth: "44ch", lineHeight: 1.6 }}>
             This run didn&apos;t compose a human-readable result. Open the <strong>State</strong> tab to see the
-            raw values it produced, or the <strong>Ledger</strong> for every recorded step.
+            raw values it produced, or the <strong>Timeline</strong> for every recorded step.
           </p>
         </div>
       )}
@@ -1108,7 +1103,7 @@ function OutputBlockCard({ block, showCopy, copied, onCopy }: {
     try { display = JSON.stringify(JSON.parse(block.value), null, 2); } catch { /* not JSON — leave as-is */ }
   }
   const truncated = display.length > MAX;
-  if (truncated) display = display.slice(0, MAX) + `\n… (${block.value.length.toLocaleString()} chars total — see the Ledger for the full record)`;
+  if (truncated) display = display.slice(0, MAX) + `\n… (${block.value.length.toLocaleString()} chars total — see the Timeline for the full record)`;
 
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -1268,10 +1263,10 @@ function GraphCanvas({ manifest, projection, events, selectedNode, onSelectNode 
       <div
         className="badge badge-done mono"
         style={{ position: "absolute", top: "var(--s3)", right: "var(--s3)", zIndex: 10, cursor: "help" }}
-        title="Append-only ledger — each event is SHA-256 content-addressed, hash-chained, and signed; tampering is detectable on verify."
+        title="Every step of this run is recorded, so you can replay exactly what happened."
       >
         <span className="dot" />
-        <span className="mono">{events.length}</span> events · signed
+        <span className="mono">{events.length}</span> events · replayable
       </div>
 
       <svg

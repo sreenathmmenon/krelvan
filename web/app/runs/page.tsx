@@ -37,9 +37,9 @@ const STATUS_LABEL: Record<RunRecord["status"], string> = {
   pending: "pending",
 };
 
-// Teal geometric glyph for empty states — a "signed record / stacked ledger"
+// Teal geometric glyph for empty states — a "stacked run record"
 // mark in the homepage CapGlyph style. Replaces the ✦ emoji.
-function LedgerGlyph({ size = 40 }: { size?: number }) {
+function RecordGlyph({ size = 40 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -164,7 +164,7 @@ export default function RunsPage() {
           <p className="micro" style={{ marginBottom: "var(--s2)" }}>Audit trail</p>
           <h1 className="h1" style={{ marginBottom: "var(--s2)" }}>Runs</h1>
           <p className="soft body-lg" style={{ margin: 0, maxWidth: "56ch" }}>
-            Every run is a signed, replayable record of exactly what your agent did —
+            Every run is a complete, replayable record of exactly what your agent did —
             each step and decision, in order.
           </p>
         </div>
@@ -243,10 +243,10 @@ export default function RunsPage() {
       {/* ── empty: no runs at all ── */}
       {!loading && !error && runs.length === 0 && (
         <div className="state-empty" style={{ padding: "var(--s9) var(--s6)" }}>
-          <div style={{ marginBottom: "var(--s4)" }}><LedgerGlyph size={44} /></div>
+          <div style={{ marginBottom: "var(--s4)" }}><RecordGlyph size={44} /></div>
           <h3 className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s2)" }}>No runs yet</h3>
           <p className="body-lg soft" style={{ maxWidth: "40ch", margin: "0 auto var(--s6)" }}>
-            When you build and run an agent, its signed record shows up here — every step
+            When you build and run an agent, its full record shows up here — every step
             and decision, ready to open and replay.
           </p>
           <Link href="/" className="btn btn-primary">Build your first agent →</Link>
@@ -256,7 +256,7 @@ export default function RunsPage() {
       {/* ── empty: this filter has no runs (but others do) ── */}
       {!loading && !error && runs.length > 0 && filtered.length === 0 && (
         <div className="state-empty">
-          <div style={{ marginBottom: "var(--s2)", opacity: 0.7 }}><LedgerGlyph size={32} /></div>
+          <div style={{ marginBottom: "var(--s2)", opacity: 0.7 }}><RecordGlyph size={32} /></div>
           <h3 className="h3" style={{ color: "var(--ink)", marginBottom: "var(--s1)" }}>
             No {FILTERS.find(f => f.key === filter)?.label.toLowerCase()} runs
           </h3>
@@ -277,7 +277,7 @@ export default function RunsPage() {
                   <th style={{ width: 28, paddingRight: 0 }}><span className="sr-only">Status</span></th>
                   <th>Agent</th>
                   <th style={{ width: 120 }}>Status</th>
-                  <th style={{ width: 130 }}>Proof</th>
+                  <th style={{ width: 130 }}>Record</th>
                   <th className="col-runid" style={{ width: 150 }}>Run ID</th>
                   <th className="num" style={{ width: 110 }}>When</th>
                   <th className="col-chevron" style={{ width: 32 }} aria-hidden="true"></th>
@@ -336,12 +336,12 @@ export default function RunsPage() {
                         </span>
                       </td>
                       <td>
-                        {/* Every terminal run is signed into the ledger — the platform
-                            guarantee. Surfaced per-row so the audit trail carries the proof. */}
+                        {/* Every terminal run is recorded in full — the platform
+                            guarantee. Surfaced per-row so each run shows it is complete. */}
                         {(r.status === "completed" || r.status === "failed" || r.status === "halted") ? (
                           <span className="runs-proof">
                             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                            Signed
+                            Recorded
                           </span>
                         ) : (
                           <span className="small muted">—</span>

@@ -925,16 +925,16 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
             href={selectedRunId ? `/runs/${selectedRunId}#timeline` : `/agents/${agentId}`}
             title={verification?.ok
               ? `Verified: ${verification.signedEvents}/${verification.runEvents} events signed, full ${verification.ledgerEvents}-event chain intact (${verification.algorithm})`
-              : "Every event is hash-chained and signed — any tampering is detectable on verify"}
+              : "Every step of a run is recorded, so you can replay exactly what happened"}
             className="canvas-verify-pill"
             data-state={verification?.ok ? "ok" : verification && !verification.ok ? "fail" : "pending"}
           >
             <span className="canvas-verify-check"><IconCheck size={13} /></span>
-            <span className="sr-only">Ledger status:</span>
+            <span className="sr-only">Run record status:</span>
             {verification?.ok
-              ? <>{verification.signedEvents}/{verification.runEvents} verified</>
+              ? <>{verification.signedEvents}/{verification.runEvents} recorded</>
               : verification && !verification.ok ? "Verify failed"
-              : selectedRunId ? "Verifying…" : "Signed ledger"}
+              : selectedRunId ? "Checking…" : "Replayable"}
           </Link>
 
           {/* run selector */}

@@ -17,7 +17,7 @@ import { glyphFor } from "../lib/glyphs";
 // personal advisor, and a research digest — so the box doesn't read as research-only.
 export const EXAMPLES: { text: string; label: string; hero?: boolean }[] = [
   {
-    text: "Watch this product page and alert me the moment the price drops, with a signed record of every check",
+    text: "Watch this product page and alert me the moment the price drops",
     label: "Price watcher",
     hero: true,
   },
@@ -754,10 +754,10 @@ export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
   );
 }
 
-// ── Hero artifact: a REAL run (signed · cost), or a labelled live example ────────
+// ── Hero artifact: a REAL run (N events · cost), or a labelled live example ─────
 // Shared by the homepage hero and the dashboard hero so both render the SAME proof
 // anchor: "this is what you get after you describe a goal." A real completed run
-// links to its signed record; until one exists we show the pre-built example graph,
+// links to its run record; until one exists we show the pre-built example graph,
 // clearly framed as a "live example" — never fabricated proof fields.
 const EXAMPLE_NODES: ManifestNode[] = [
   { id: "entry", role: "intake", autonomy: "auto", capabilities: [{ name: "web_search", sideEffect: "read", budgetCents: 1 }] },
@@ -859,7 +859,7 @@ export function HeroAnimation() {
   }, []);
   const s = HERO_SCENES[scene]!;
   return (
-    <div className="dark-device heroanim" aria-label="An agent running while each step is signed to a ledger" role="img">
+    <div className="dark-device heroanim" aria-label="An agent running, each step recorded in order" role="img">
       <div className="heroanim__eyebrow">
         <span className="heroanim__live"><span className="heroanim__live-dot" />LIVE</span>
         <span className="micro">{s.label}</span>
@@ -894,7 +894,7 @@ export function HeroAnimation() {
         </svg>
       </div>
 
-      {/* signed ledger — rows write in as the graph executes */}
+      {/* run record — rows write in as the graph executes */}
       <div className="heroanim__ledger" key={`l${scene}`}>
         {s.rows.map((r, i) => (
           <div key={r.hash} className={`heroanim__row heroanim__row--${i}${r.gate ? " heroanim__row--gate" : ""}`}>
@@ -915,7 +915,7 @@ export function HeroAnimation() {
       <div className="heroanim__seal" key={`s${scene}`}>
         <span className="heroanim__seal-mark" aria-hidden="true"><CheckMark size={11} /></span>
         <span className="heroanim__seal-text">VERIFIED</span>
-        <span className="heroanim__seal-sub">run signed · replayable</span>
+        <span className="heroanim__seal-sub">run complete · replayable</span>
       </div>
     </div>
   );
@@ -928,7 +928,7 @@ export function HeroArtifact({ run }: { run: RunRecord | null }) {
         href={`/runs/${run.runId}`}
         className="dark-device"
         style={{ display: "block", padding: "var(--s5)", textDecoration: "none" }}
-        aria-label={`Open the signed record for ${run.manifestName}`}
+        aria-label={`Open the run record for ${run.manifestName}`}
       >
         <div className="micro" style={{ marginBottom: "var(--s3)" }}>A real run · {timeAgo(run.createdAt)}</div>
         <div className="dark-surface-2" style={{ borderRadius: "var(--r)", padding: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
