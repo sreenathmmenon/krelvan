@@ -74,7 +74,7 @@ async function sendViaResend(
       },
       body: JSON.stringify({ from, to, subject, text: body }),
     },
-    { maxAttempts: 3, baseDelayMs: 500 },
+    { maxAttempts: 3, baseDelayMs: 500, timeoutMs: 15000 },
   );
 
   if (!outcome.ok) {

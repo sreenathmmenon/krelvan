@@ -125,7 +125,7 @@ export const telegramSendCapability: CapabilityPlugin = {
         },
         body: JSON.stringify({ chat_id: chatId, text: safeText, ...(parseMode ? { parse_mode: parseMode } : {}) }),
       },
-      { maxAttempts: 3, baseDelayMs: 500 },
+      { maxAttempts: 3, baseDelayMs: 500, timeoutMs: 15000 },
     );
 
     if (!outcome.ok) {

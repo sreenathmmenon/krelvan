@@ -46,13 +46,12 @@ function NavIcon({ glyph, size = 16 }: { glyph: GlyphKey; size?: number }) {
 
 type NavItem = { label: string; href: string; glyph: GlyphKey };
 
-// Two links intentionally point at /dashboard: it IS the agents home today (there
-// is no /agents index route, only /agents/[id] detail pages). "Dashboard" is the
-// workspace overview; "Agents" is the same surface framed for the agent list.
+// "Dashboard" is the workspace overview; "Agents" is the dedicated, searchable list of every
+// agent you own (its own /agents index) — two distinct destinations, no collision.
 const PRIMARY: NavItem[] = [
   { label: "Dashboard",   href: "/dashboard",    glyph: "dashboard" },
   { label: "Inbox",       href: "/inbox",        glyph: "inbox" },
-  { label: "Agents",      href: "/dashboard",    glyph: "agents" },
+  { label: "Agents",      href: "/agents",       glyph: "agents" },
   { label: "Marketplace", href: "/capabilities", glyph: "marketplace" }, // route stays /capabilities
   { label: "Runs",        href: "/runs",         glyph: "runs" },
 ];
