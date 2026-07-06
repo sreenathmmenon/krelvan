@@ -48,6 +48,18 @@ function extractOutput(state: Record<string, unknown>): { headline: string; full
     const headline = full.length > 180 ? full.slice(0, 178).trimEnd() + "…" : full;
     return { headline, full };
   }
+  // Still nothing under a known key — a non-standard agent may put its answer under an unusual
+  // key. Fall back to the LONGEST substantial string value in the state (real prose output) so a
+  // genuine result never shows "No text output".
+  const longest = entries
+    .filter(([k, v]) => typeof v === "string" && !k.startsWith("_") && !/^seed\./.test(k))
+    .map(([, v]) => (v as string).trim())
+    .filter(s => s.length >= 40)
+    .sort((a, b) => b.length - a.length)[0];
+  if (longest) {
+    const headline = longest.length > 180 ? longest.slice(0, 178).trimEnd() + "…" : longest;
+    return { headline, full: longest };
+  }
   // No prose output — summarise the run's notable result values so the card still says
   // something ("price: $19.99 · ok: true") instead of looking empty.
   const notable = entries

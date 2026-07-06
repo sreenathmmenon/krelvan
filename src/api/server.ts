@@ -644,6 +644,11 @@ function recordTriggerFail(ip: string): void {
   const r = triggerFails.get(ip);
   if (!r || now - r.first > 60_000) triggerFails.set(ip, { count: 1, first: now });
   else r.count++;
+  // Prune expired entries so the map can't grow unbounded from a stream of distinct source IPs
+  // (each window is only 60s; anything older is dead weight). Cheap sweep, only when it grows.
+  if (triggerFails.size > 1000) {
+    for (const [k, v] of triggerFails) if (now - v.first > 60_000) triggerFails.delete(k);
+  }
 }
 
 async function handleWebhookTrigger(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
