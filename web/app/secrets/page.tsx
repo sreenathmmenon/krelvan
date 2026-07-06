@@ -303,7 +303,7 @@ function ModelSection() {
           </span>
         </div>
         <p className="small soft" style={{ margin: "0 0 var(--s5)", maxWidth: "62ch" }}>
-          The LLM that turns your plain-English goal into a signed agent and reasons inside each run.
+          The LLM that turns your plain-English goal into a working agent and reasons inside each run.
           Stored encrypted on <em>this</em> instance. Pick a hosted provider with a key, or point at a
           local Ollama — nothing leaves your machine with Ollama.
         </p>

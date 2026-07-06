@@ -115,7 +115,10 @@ export class DelegatePlugin implements CapabilityPlugin {
       const effect = plugin?.sideEffect;
       return !effect || !CONSEQUENTIAL.has(effect);
     };
-    const result = await engine.run({ approve });
+    // gateAllConsequential forces the approval gate for every consequential effect even on
+    // autonomy:"full" sub-nodes; combined with the class-aware `approve` denier, a delegated
+    // sub-agent can never take an unsupervised irreversible/outbound/spend action.
+    const result = await engine.run({ approve, gateAllConsequential: true });
 
     const out: DelegateOutput = {
       status: result.status,

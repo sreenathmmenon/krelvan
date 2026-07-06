@@ -1381,7 +1381,7 @@ function TriggerPanel({ agentId }: { agentId: string }) {
   }
 
   const curl = token
-    ? `curl -X POST ${origin}${url} \\\n  -H "Authorization: Bearer ${token}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"input":"your value"}'`
+    ? `curl -X POST ${fullUrl} \\\n  -H "Authorization: Bearer ${token}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"input":"your value"}'`
     : "";
 
   return (

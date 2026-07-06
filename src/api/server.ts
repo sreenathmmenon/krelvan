@@ -320,8 +320,11 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     try {
       await match.handler(req, res, match.params);
     } catch (err) {
+      const msg = (err as Error).message ?? "internal error";
+      // An oversized request body is a client error (413), not a server fault (500).
+      if (/request body too large/i.test(msg)) { jsonError(res, 413, msg); return; }
       log.error({ err }, "unhandled route error");
-      jsonError(res, 500, (err as Error).message ?? "internal error");
+      jsonError(res, 500, msg);
     }
   });
 

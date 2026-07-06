@@ -108,9 +108,13 @@ export const telegramSendCapability: CapabilityPlugin = {
     const rawParseMode = input["parse_mode"] != null ? String(input["parse_mode"]) : "";
     const parseMode: "HTML" | "Markdown" | null =
       rawParseMode === "HTML" ? "HTML" : rawParseMode === "Markdown" ? "Markdown" : null;
-    const safeText = parseMode === "HTML"
-      ? text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      : text;
+    const safeText =
+      parseMode === "HTML"
+        ? text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        : parseMode === "Markdown"
+          // Escape Telegram Markdown metacharacters so stray _ * ` [ don't 400 the send.
+          ? text.replace(/([_*`[])/g, "\\$1")
+          : text;
 
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
 

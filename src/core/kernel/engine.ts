@@ -109,6 +109,13 @@ export interface RunOptions {
   /** Called when a node effect needs human approval. Return false to park the run. */
   approve?: (call: EffectCall) => boolean;
   /**
+   * Force the approval gate for EVERY consequential effect (write-irreversible / spend /
+   * message-human / identity-mutation) regardless of the node's declared autonomy. Used for
+   * delegated sub-runs, whose model-compiled nodes may be `autonomy:"full"` and would otherwise
+   * skip the gate entirely — closing the "delegate can act unsupervised" bypass. Default false.
+   */
+  gateAllConsequential?: boolean;
+  /**
    * Seed the run state before the first step. Keys are available to the first
    * node's capability calls as input and to edge conditions immediately.
    * Useful for passing external inputs (e.g. a user's query) into the run.
@@ -122,6 +129,7 @@ export class Engine {
   private readonly tracer: Tracer;
   /** transient-failure retry count for capability invokes; set per-run from RunOptions. */
   private effectRetries = 2;
+  private gateAllConsequential = false;
 
   constructor(
     private readonly m: Manifest,
@@ -184,6 +192,7 @@ export class Engine {
 
     const deadlineMs = opts.deadlineMs;
     this.effectRetries = opts.effectRetries !== undefined && opts.effectRetries >= 0 ? opts.effectRetries : 2;
+    this.gateAllConsequential = opts.gateAllConsequential === true;
 
     let result: RunResult | undefined;
     try {
@@ -470,7 +479,14 @@ export class Engine {
       // RESOLVED this exact approval (same content-addressed idem), honor that decision —
       // proceed on "approve", fail on "deny" — instead of re-parking forever. Only when there
       // is NO prior resolution do we consult the live `approve` callback (which parks the run).
-      if (verdict.requiresApproval) {
+      // When gateAllConsequential is set (delegated sub-runs), a consequential effect ALWAYS goes
+      // through the approval gate even if the node is autonomy:"full" — closing the bypass where a
+      // model-compiled full node could fire an irreversible/spend/message-human effect unsupervised.
+      const CONSEQUENTIAL = new Set(["write-irreversible", "spend", "message-human", "identity-mutation"]);
+      const effectClass = this.deps.supervisor.sideEffectOf(call);
+      const mustGate = verdict.requiresApproval
+        || (this.gateAllConsequential && effectClass != null && CONSEQUENTIAL.has(effectClass));
+      if (mustGate) {
         const prior = p.resolvedApprovals.get(idem);
         if (prior === "deny") {
           await this.append(

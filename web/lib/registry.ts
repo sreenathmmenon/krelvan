@@ -3208,7 +3208,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
  {
   "name": "price-monitor",
   "title": "Price Monitor",
-  "oneLiner": "Watch a page on a schedule and alert you when the price changes — signed each check.",
+  "oneLiner": "Watch a page on a schedule and alert you when the price changes.",
   "category": "Templates",
   "sideEffect": "message-human",
   "tier": "official",
@@ -4742,7 +4742,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   "name": "wiki-ask",
   "title": "Wiki Ask",
   "category": "Templates",
-  "oneLiner": "Answers only from your compiled wiki pages and cites them — says 'not covered yet' instead of guessing. Every answer signed.",
+  "oneLiner": "Answers only from your compiled wiki pages and cites them — says 'not covered yet' instead of guessing.",
   "sideEffect": "write-reversible",
   "tier": "official",
   "author": "Krelvan",
@@ -4759,7 +4759,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
        "maxNodeVisits": 2,
        "seed": {
            "wiki": "my-wiki",
-           "question": "What is Krelvan and why is its ledger important?"
+           "question": "What is Krelvan and what can it do?"
        },
        "nodes": [
            {
@@ -4776,7 +4776,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "answer",
-               "role": "You answer questions strictly from a maintained wiki. The user's question is in the 'question' state value. The retrieved wiki pages are in the CURRENT DATA TO ANALYZE section — each block is tagged with its page like [1] (page: krelvan). Answer the question using ONLY those pages. If the CURRENT DATA TO ANALYZE section is empty, or the 'hits' value is 0, then the wiki has nothing on this topic — say clearly that the wiki does not cover this yet and that ingesting a relevant source would let you answer; do NOT make anything up. When you do answer, cite the page(s) you used. Output object keys: result (your answer, 1-3 sentences, grounded in the wiki pages, or the 'not covered yet' message), grounded (true if the answer came from wiki pages, false if the wiki lacked the topic), cited_pages (a comma-separated list of the page names you used, e.g. 'krelvan, ledger', or 'none').",
+               "role": "You answer questions strictly from a maintained wiki. The user's question is in the 'question' state value. The retrieved wiki pages are in the CURRENT DATA TO ANALYZE section — each block is tagged with its page like [1] (page: krelvan). Answer the question using ONLY those pages. If the CURRENT DATA TO ANALYZE section is empty, or the 'hits' value is 0, then the wiki has nothing on this topic — say clearly that the wiki does not cover this yet and that ingesting a relevant source would let you answer; do NOT make anything up. When you do answer, cite the page(s) you used. Output object keys: result (your answer, 1-3 sentences, grounded in the wiki pages, or the 'not covered yet' message), grounded (true if the answer came from wiki pages, false if the wiki lacked the topic), cited_pages (a comma-separated list of the page names you used, e.g. 'krelvan, agents', or 'none').",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -4823,7 +4823,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   "name": "influencer-outreach",
   "title": "Influencer Outreach",
   "category": "Marketing",
-  "oneLiner": "Drafts a personalized creator pitch from their real bio — no fake metrics — then pauses for your approval. Every pitch signed.",
+  "oneLiner": "Drafts a personalized creator pitch from their real bio — no fake metrics — then pauses for your approval.",
   "sideEffect": "message-human",
   "tier": "official",
   "author": "Krelvan",
