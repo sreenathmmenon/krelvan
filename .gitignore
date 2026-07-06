@@ -25,3 +25,11 @@ secrets.json
 **/secret.key
 **/secrets.json
 .env
+
+# All local env files (may contain secrets) — never commit
+.env
+.env.*
+!.env.example
+web/.env
+web/.env.*
+!web/.env.example
