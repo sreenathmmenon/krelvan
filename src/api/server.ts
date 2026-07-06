@@ -450,7 +450,7 @@ async function handleCreateAgent(req: IncomingMessage, res: ServerResponse, rt: 
     {
       kind: "owner",
       id: "owner-demo",
-      allowedCapabilities: rt.agentRegistry.defaultAllowedCapabilities(),
+      allowedCapabilities: rt.liveAllowedCapabilities(),
       maxRunBudgetCents: 10_000,
     },
     rt.now(),

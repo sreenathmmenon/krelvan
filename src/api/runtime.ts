@@ -270,7 +270,6 @@ export class AgentRegistry {
       { name: "notify_webhook", sideEffect: "write-reversible",  maxBudgetCents: 100  },
       // subAgent capabilities use "read" side-effect from the parent's perspective;
       // the sub-run's own capabilities enforce their own side-effect classes.
-      { name: "delegate",       sideEffect: "read",              maxBudgetCents: 5000 },
     ];
   }
 }
@@ -1198,12 +1197,17 @@ export class KrelvanRuntime {
    * Builtins keep their hardcoded budget ceilings; enabled user plugins get a
    * generous default so the model can freely reference them.
    */
+  /** Public accessor for the LIVE allowed-capability set (builtins + installed YAML/MCP/wiki/RAG),
+   *  so callers like the create-agent endpoint compile against what is actually registered rather
+   *  than a stale hardcoded list. */
+  liveAllowedCapabilities(): AllowedCapability[] { return this.allowedCapabilities(); }
+
   private allowedCapabilities(): AllowedCapability[] {
     const BUILTIN_BUDGETS: Record<string, number> = {
       think: 2000, recall: 50, remember: 50, llm_route: 500,
       web_search: 500, compose: 500, telegram_send: 100, slack_send: 100,
       email_send: 100, http_get: 200, http_post: 200, text_transform: 50,
-      notify_webhook: 100, delegate: 5000,
+      notify_webhook: 100,
     };
     const result: AllowedCapability[] = [];
     for (const cap of this.capabilityRegistry.list()) {
