@@ -121,30 +121,42 @@ export class PluginLifecycleService implements PluginLifecyclePort {
     const sourceHash = createHash("sha256").update(content).digest("hex");
     const installedAt = this.deps.now(); // captured once
 
-    // Dry-load to discover the plugin's declared name and extract secret refs.
+    // Discover the plugin's declared name and secret refs.
+    //
+    // SECURITY: a 'typescript' plugin is arbitrary code. We must NOT execute it at install time —
+    // otherwise a malicious plugin runs its top-level code the moment a user clicks "Install",
+    // before the untrusted-code gate (which only guards enable()) ever applies. So for TypeScript
+    // plugins we extract the name/refs STATICALLY from the source text (no execution). Only YAML —
+    // which is safe-by-construction (declarative, no eval) — gets the code path via a dry-load.
     let secretRefs: string[] = [];
     let resolvedName = inferName(absPath);
-    const dryResult = await this.deps.factory.load(
-      {
-        kind: "installed",
-        name: resolvedName,
-        pluginKind,
-        sourcePath: absPath,
-        sourceHash,
-        secretRefs: [],
-        version,
-        installedAt,
-      },
-      { resolve: () => undefined, validateRefs: (_refs) => ({ ok: true as const }) },
-    );
-    if (dryResult.ok) {
-      resolvedName = dryResult.plugin.name;
-    } else {
+    const staticFromText = () => {
       const text = content.toString("utf-8");
       secretRefs = extractSecretRefsFromText(text);
-      const nameMatch = text.match(/^name:\s*(.+)$/m);
-      if (nameMatch?.[1]) {
-        resolvedName = nameMatch[1].trim();
+      const nameMatch = text.match(/^name:\s*(.+)$/m) ?? text.match(/name\s*[:=]\s*["'`]([a-z][a-z0-9._-]*)["'`]/);
+      if (nameMatch?.[1]) resolvedName = nameMatch[1].trim();
+    };
+    if (pluginKind === "typescript") {
+      // Never execute untrusted plugin code to read its name — extract statically.
+      staticFromText();
+    } else {
+      const dryResult = await this.deps.factory.load(
+        {
+          kind: "installed",
+          name: resolvedName,
+          pluginKind,
+          sourcePath: absPath,
+          sourceHash,
+          secretRefs: [],
+          version,
+          installedAt,
+        },
+        { resolve: () => undefined, validateRefs: (_refs) => ({ ok: true as const }) },
+      );
+      if (dryResult.ok) {
+        resolvedName = dryResult.plugin.name;
+      } else {
+        staticFromText();
       }
     }
 

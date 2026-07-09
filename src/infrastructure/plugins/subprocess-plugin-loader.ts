@@ -8,9 +8,10 @@
  *   - child_process → denied (no --allow-child-process) → cannot spawn shells/binaries
  *   - native addons → denied (no --allow-addons) → cannot load arbitrary native code
  *   - worker_threads / WASI → denied
- *   - fs READ   → allowed (modules must be importable). Read alone cannot modify or, by
- *                 itself, exfiltrate; and the child gets a SCRUBBED env (no secrets), so
- *                 there is nothing sensitive to read. (The data dir is not passed.)
+ *   - fs READ   → SCOPED to only what module resolution needs (the Node runtime dir, the
+ *                 project node_modules, and the plugin's own source dir). The data directory
+ *                 (secret.key, secrets.json, signing keys) is NOT in the allowed set, so a
+ *                 plugin cannot read secrets off disk. The child's env is also scrubbed.
  *
  * The child cannot reach back into the host process (OS-process boundary). It talks to
  * the parent only over the existing message protocol via IPC (process.send). A per-invoke
@@ -31,6 +32,8 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { dirname, join, resolve as resolvePath } from "node:path";
+import { realpathSync } from "node:fs";
 
 import type { PluginLoaderStrategy } from "../../core/plugins/ports.js";
 import type { CapabilityPlugin, EffectCall } from "../../core/capability/capability.js";
@@ -251,18 +254,33 @@ export class SubprocessPluginLoader implements PluginLoaderStrategy {
     });
 
     // Permission flags. We DENY the dangerous capabilities — fs WRITE, child_process,
-    // native addons, worker_threads, wasi — by simply not granting them. fs READ is
-    // ALLOWED (Node needs it to resolve and import modules; scoping it tightly breaks
-    // module resolution across platforms). Read alone cannot modify state or, by itself,
-    // exfiltrate — and the child's env is SCRUBBED, so there are no secrets to read. The
-    // OS-process boundary + scrubbed env + write/spawn denial is the real isolation.
+    // native addons, worker_threads, wasi — by simply not granting them.
+    //
+    // fs READ is SCOPED, not wide-open. Node needs read access to resolve and import modules,
+    // but granting `--allow-fs-read=*` also lets a plugin read the data directory (secret.key,
+    // secrets.json, signing keys). So we grant read ONLY to the paths the child genuinely needs:
+    //   - the Node runtime install (its own libs, for module resolution)
+    //   - the project's node_modules (dependencies)
+    //   - the plugin's own source directory
+    // and we run the child with cwd set to a benign temp dir, so a bare relative "data/…" read
+    // resolves nowhere sensitive. The data directory is never in the allowed set.
+    // Node's --permission checks REAL paths, so resolve symlinks (e.g. macOS /var → /private/var,
+    // temp dirs) or the grant won't match and legitimate plugins fail to load.
+    const real = (p: string) => { try { return realpathSync(p); } catch { return resolvePath(p); } };
+    const absSource = real(resolvePath(sourcePath));
+    const nodeDir = real(dirname(process.execPath));
+    const pluginDir = dirname(absSource);
+    const projectNodeModules = real(join(process.cwd(), "node_modules"));
+    const readRoots = [...new Set([nodeDir, projectNodeModules, pluginDir])];
 
     const argv = [
       "--permission",
-      "--allow-fs-read=*",
+      ...readRoots.map((r) => `--allow-fs-read=${r}/*`),
+      // also allow reading the exact plugin file itself (not just its dir glob)
+      `--allow-fs-read=${absSource}`,
       `--max-old-space-size=${MAX_MEMORY_MB}`,
       "--input-type=module",
-      "-e", childBootstrap(sourcePath),
+      "-e", childBootstrap(absSource),
     ];
 
     return new Promise<CapabilityPlugin>((resolve, reject) => {
