@@ -271,9 +271,17 @@ async function up() {
     );
     // Web talks to the API through its same-origin proxy; the token + API origin are
     // SERVER-ONLY env (no NEXT_PUBLIC_), so the token never reaches the browser.
-    // Bind the web to 0.0.0.0 so a PaaS (Railway/Render/Fly) can route public traffic
-    // to it. The API stays on loopback (internal-only); only the web proxy reaches it.
-    startProcess("web", nextBin, ["start", "-p", WEB_PORT, "-H", "0.0.0.0"], {
+    //
+    // Bind the web UI to LOOPBACK by default — exposing it to a network is a DELIBERATE act,
+    // mirroring the API. Otherwise `npx krelvan` on a shared/cloud box would silently put the
+    // login page and session cookie on the network in plain HTTP. To expose (e.g. on a PaaS or
+    // behind a reverse proxy), set KRELVAN_WEB_HOST=0.0.0.0 — and front it with HTTPS.
+    const WEB_HOST = process.env.KRELVAN_WEB_HOST ?? "127.0.0.1";
+    const webLoopback = WEB_HOST === "127.0.0.1" || WEB_HOST === "::1" || WEB_HOST === "localhost";
+    if (!webLoopback) {
+      log(`⚠  web UI is binding to ${WEB_HOST} (network-exposed). Put it behind HTTPS (e.g. Caddy/nginx) and set KRELVAN_SECURE_COOKIES=1 — the login and session cookie are plain HTTP otherwise.`);
+    }
+    startProcess("web", nextBin, ["start", "-p", WEB_PORT, "-H", WEB_HOST], {
       cwd: WEB,
       // KRELVAN_SECURE_COOKIES=1 (set it when fronted by HTTPS, e.g. behind Caddy) makes the
       // session cookie Secure. KRELVAN_WEB_ORIGIN is the public origin for the CSRF/Origin check.

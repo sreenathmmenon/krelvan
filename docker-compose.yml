@@ -20,11 +20,14 @@ services:
       context: .
       dockerfile: Dockerfile
     image: krelvan:latest
-    # Publish ONLY the web UI. The API port is internal-only by design.
+    # Publish ONLY the web UI, and bind it to LOOPBACK by default so it is not exposed on the
+    # network by accident. To expose it (behind an HTTPS reverse proxy), change this to
+    # "3100:3100" and set KRELVAN_SECURE_COOKIES=1. The API port is internal-only by design.
     ports:
-      - "3100:3100"   # web UI
+      - "127.0.0.1:3100:3100"   # web UI (loopback only by default)
     environment:
-      PORT: "3100"            # public web UI
+      PORT: "3100"            # web UI (bound inside the container)
+      KRELVAN_WEB_HOST: "0.0.0.0" # inside the container the app must bind 0.0.0.0; the host publish above keeps it loopback-only
       KRELVAN_API_PORT: "3201" # internal API (not published)
       KRELVAN_DATA_DIR: /data
       # Optional LLM config — uncomment / supply via an .env file:
