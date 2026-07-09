@@ -103,6 +103,32 @@ Without any provider the UI still runs and clearly reports LLM as off.
 
 ---
 
+## Self-hosting safely
+
+Krelvan is safe by default and stays that way as long as you keep these in mind:
+
+- **It binds to your machine only (`127.0.0.1`) by default.** Nothing is on the network unless you
+  choose to expose it — exposing is a deliberate act (set `KRELVAN_WEB_HOST=0.0.0.0` for the web,
+  `KRELVAN_HOST=0.0.0.0` for the API).
+
+- **Exposing it? Put it behind HTTPS.** The app speaks plain HTTP; run it behind a reverse proxy
+  (Caddy or nginx) that terminates TLS, then set `KRELVAN_SECURE_COOKIES=1` and
+  `KRELVAN_WEB_ORIGIN=https://your-host`. Over HTTPS the session cookie is automatically a Secure
+  `__Host-` cookie. The API refuses to start exposed without an auth token, so you can't open it to
+  the world by accident.
+
+- **Third-party TypeScript/JS plugins are trusted-code-only.** Declarative **YAML** capabilities and
+  **MCP** connectors are safe to install from anyone — they can't run arbitrary code. A raw TypeScript
+  plugin, however, runs real code (in a sandbox that denies file writes, subprocess spawning, and reads
+  outside its own directory, and routes network through a brokered egress channel) — treat it like code
+  you'd `npm install`: only install TS plugins you trust. Enabling one requires an explicit
+  `KRELVAN_ALLOW_UNTRUSTED_PLUGINS=1`.
+
+- **Your secrets are encrypted at rest** (AES-256-GCM) in the data directory. For backups, you can keep
+  the encryption key separate from the ciphertext — see *Backups & the data directory* below.
+
+---
+
 ## The one principle
 
 **The canvas IS the runtime.** Execution is captured as a real, ordered record. The canvas, the run timeline, and the history
