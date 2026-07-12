@@ -154,3 +154,21 @@ test("RAW SOCKET HAS NOTHING TO STEAL: even a direct fetch sees no Krelvan/custo
     delete process.env["SECRET_API_TOKEN"];
   }
 });
+
+test("BLOCKED: plugin cannot read files outside its own dir / node_modules (e.g. the data dir)", async () => {
+  const { mkdtempSync: mkd, writeFileSync: wf } = await import("node:fs");
+  const dir = mkd(join(tmpdir(), "krelvan-sb-"));
+  // a secret in a SIBLING dir the plugin must not be able to read
+  const secretDir = mkdtempSync(join(tmpdir(), "krelvan-secret-"));
+  const secretPath = join(secretDir, "secret.key");
+  wf(secretPath, "TOP_SECRET_VALUE");
+  const res = await run(dir,
+    `import { readFileSync } from "node:fs";
+     export default { name:'p', sideEffect:'read', invoke: async()=>{
+       let r; try { r = "READ:" + readFileSync(${JSON.stringify(secretPath)}, "utf8"); } catch(e){ r = "BLOCKED:" + (e.code||e.message); }
+       return { output:{ r }, claimedCostCents:0 };
+     }};`);
+  const r = (res.output as { r: string }).r;
+  assert.ok(r.startsWith("BLOCKED"), `expected read to be blocked, got: ${r}`);
+  assert.ok(!r.includes("TOP_SECRET_VALUE"), "the secret must never be readable");
+});
