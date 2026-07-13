@@ -190,6 +190,7 @@ docs/                # LEDGER_SPEC, PREMORTEM, EXTENSION_MODEL, AGENTIC_CAPABILI
 - Marketplace: Git-registry-backed (`registry/index.json`), free + paid, official +
   community; every entry verified to install
 - One-command install (`npx krelvan`) + Docker (`docker compose up`)
+- Active build plan: `docs/CUSTOMER_SURFACE_BUILD_PLAN.md` — execute in the sequencing order given there.
 
 **Not yet built:**
 - PostgreSQL multi-tenant store adapter
