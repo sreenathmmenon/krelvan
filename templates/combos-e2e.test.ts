@@ -44,6 +44,7 @@ function plugins(out: Record<string, Record<string, unknown>>): Map<string, Capa
   return new Map<string, CapabilityPlugin>([
     ["http_get", mk("http_get", "read", 5)],
     ["http_post", mk("http_post", "write-irreversible", 3)], // covers both reversible+irreversible uses
+    ["web_search", mk("web_search", "read", 8)],             // the enrich node researches the lead
     ["think", mk("think", "read", 40)],
     ["compose", mk("compose", "read", 40)],
     ["email_send", mk("email_send", "message-human", 5)],

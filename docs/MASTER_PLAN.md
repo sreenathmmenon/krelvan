@@ -140,7 +140,7 @@ journey documented in its `docs/`. Still runs. This is the proof-of-concept and 
 source of all the strategy docs.
 
 ### `genesis-new` (the future core) — built bottom-up, TypeScript
-**Verified state: 167/170 tests pass (3 are live-model API tests that need a key), typecheck clean, 0 runtime dependencies in core.**
+**Verified state: 490/490 tests pass (1 requires Ollama and skips without it), typecheck clean, 0 runtime dependencies in core.**
 Built and proven (each by passing tests + runnable demos):
 
 | Subsystem | What it does | Status |

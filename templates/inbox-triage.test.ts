@@ -51,6 +51,22 @@ function outputPlugin(name: string, sideEffect: CapabilityPlugin["sideEffect"], 
   };
 }
 
+/**
+ * A NODE-AWARE fake: several nodes share one capability (classify + draft both use `think`),
+ * and the engine dispatches by capability name — so one plugin must return the right output
+ * per node. It branches on call.nodeId; an unmapped node yields {}.
+ */
+function nodeAwarePlugin(name: string, sideEffect: CapabilityPlugin["sideEffect"], cost: number, byNode: Record<string, Record<string, unknown>>): CapabilityPlugin {
+  return {
+    name,
+    sideEffect,
+    estimateCents: () => cost,
+    async invoke(call): Promise<{ output: unknown; claimedCostCents: number }> {
+      return { output: byNode[call.nodeId] ?? {}, claimedCostCents: cost };
+    },
+  };
+}
+
 test("inbox-triage manifest is structurally valid", () => {
   const issues = validateManifest(manifest);
   assert.deepEqual(issues, [], `validation issues: ${issues.map((i) => i.message).join("; ")}`);
@@ -92,12 +108,20 @@ function buildEngine(replyPath: boolean) {
   const r = rig();
   const plugins = new Map<string, CapabilityPlugin>();
   plugins.set("recall", outputPlugin("recall", "read", 5, { last_contact: "sales" }));
-  plugins.set("think", outputPlugin("think", "read", 60, replyPath
-    ? { category: "sales", urgency: 80, should_reply: true, reason: "A real prospect is awaiting our reply." }
-    : { category: "newsletter", urgency: 0, should_reply: false, reason: "Automated newsletter — no reply needed." }));
+  // `classify` and `draft` both use the `think` capability — one node-aware plugin gives
+  // the classifier its verdict and the draft node its subject+reply.
+  plugins.set("think", nodeAwarePlugin("think", "read", 60, {
+    classify: replyPath
+      ? { category: "sales", urgency: 80, should_reply: true, reason: "A real prospect is awaiting our reply." }
+      : { category: "newsletter", urgency: 0, should_reply: false, reason: "Automated newsletter — no reply needed." },
+    draft: {
+      subject: "Re: Following up on the proposal",
+      reply: "Hi Jordan — thanks for the nudge. I'm reviewing the proposal now and will come back to you this week with next steps. — Sam",
+    },
+  }));
+  // `archive` uses `compose` — a no-op note on the archive path.
   plugins.set("compose", outputPlugin("compose", "read", 30, {
-    subject: "Re: Following up on the proposal",
-    reply: "Hi Jordan — thanks for the nudge. I'm reviewing the proposal now and will come back to you this week with next steps. — Sam",
+    note: "Archived — no reply warranted.",
   }));
   plugins.set("email_send", outputPlugin("email_send", "message-human", 5, { sent: true, message_id: "msg-1" }));
   plugins.set("remember", outputPlugin("remember", "write-reversible", 5, { ok: true }));

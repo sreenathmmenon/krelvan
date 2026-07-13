@@ -228,7 +228,7 @@ Point an install at your own fork with
 ```bash
 npm install
 npm run typecheck    # strict TS, clean
-npm test             # 297 / 300 pass (3 are live-model API tests that need a key)
+npm test             # 490/490 (1 test requires Ollama and skips without it)
 npm run demo:ledger  # canvas + timeline all read from one recorded run
 npm run demo:resume  # kill mid-run, resume — each irreversible effect runs EXACTLY once
 npm run demo:e2e     # a real 3-agent pipeline drives itself off its recorded run
@@ -241,7 +241,7 @@ npm run demo:live    # (needs KRELVAN_ANTHROPIC_KEY) a real model proposes a wor
 
 ## Status — honest
 
-**Built & verified** (typecheck clean · 297/300 tests · web build green):
+**Built & verified** (typecheck clean · 490/490 tests · web build green):
 - Event-sourced run store + SQLite durable store (real on-disk crash/resume)
 - Identity, secrets & time (key rotation/revocation, secret broker, monotonic clock)
 - Capability plane (deny-by-default, autonomy gradient, supervisor co-sign)

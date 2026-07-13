@@ -97,7 +97,7 @@ six side-effect classes + approval gates) is the moat.
 ```
 npm install
 npm run typecheck     # strict TS — must be clean
-npm test              # node:test suite — 167/170 pass (3 are live-model API tests)
+npm test              # node:test suite — 490/490 (1 test requires Ollama and skips without it)
 npm run demo:ledger   # the inversion (views fold from one verified log)
 npm run demo:resume   # crash + resume, each irreversible effect runs exactly once
 npm run demo:e2e      # a real multi-agent run drives itself off the ledger
@@ -169,7 +169,7 @@ docs/                # LEDGER_SPEC, PREMORTEM, EXTENSION_MODEL, AGENTIC_CAPABILI
 
 ## Status (keep this honest, update as you build)
 
-**Built & verified (typecheck clean · 167/170 tests · web build green):**
+**Built & verified (typecheck clean · 490/490 tests · web build green):**
 - Core: ledger (all invariants) + SQLite durable store; identity/secrets/time
 - Core: capability plane, manifest + typed-AST expr, pure kernel + engine
 - Core: NL→manifest compiler (capability monotonicity), memory planes, channels,

@@ -37,17 +37,18 @@ function rig() {
 function plugins(): Map<string, CapabilityPlugin> {
   const search: CapabilityPlugin = { name: "web_search", sideEffect: "read", estimateCents: () => 8,
     async invoke() { return { output: { findings: "Open platforms are consolidating; self-host + extensibility win.", angle: "Own your agents." }, claimedCostCents: 8 }; } };
-  const compose: CapabilityPlugin = { name: "compose", sideEffect: "read", estimateCents: () => 35,
-    async invoke(c: EffectCall) {
-      if (c.nodeId === "write") return { output: { title: "The State of Open Agent Platforms", body: "Open, self-hostable agent platforms are winning. ..." }, claimedCostCents: 35 };
-      return { output: { result: "shipped: The State of Open Agent Platforms" }, claimedCostCents: 10 };
-    } };
+  // The `write` node composes the post with the `think` capability (not `compose`).
+  const think: CapabilityPlugin = { name: "think", sideEffect: "read", estimateCents: () => 35,
+    async invoke() { return { output: { title: "The State of Open Agent Platforms", body: "Open, self-hostable agent platforms are winning. ..." }, claimedCostCents: 35 }; } };
+  // The `record` node logs the outcome with the `compose` capability.
+  const compose: CapabilityPlugin = { name: "compose", sideEffect: "read", estimateCents: () => 10,
+    async invoke() { return { output: { result: "shipped: The State of Open Agent Platforms" }, claimedCostCents: 10 }; } };
   const dispatch: CapabilityPlugin = { name: "github.dispatch", sideEffect: "write-reversible", estimateCents: () => 2,
     async invoke() { return { output: { dispatched: true }, claimedCostCents: 2 }; } };
   const deploy: CapabilityPlugin = { name: "deploy.vercel", sideEffect: "write-irreversible", estimateCents: () => 1,
     async invoke() { return { output: { job: "dpl_abc123" }, claimedCostCents: 1 }; } };
   return new Map<string, CapabilityPlugin>([
-    ["web_search", search], ["compose", compose], ["github.dispatch", dispatch], ["deploy.vercel", deploy],
+    ["web_search", search], ["think", think], ["compose", compose], ["github.dispatch", dispatch], ["deploy.vercel", deploy],
   ]);
 }
 

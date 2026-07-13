@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { validateManifest, type Manifest } from "../src/core/manifest/manifest.js";
+import { parseOutputMap } from "../src/core/manifest/output-map.js";
 import { HmacKeyring } from "../src/core/ledger/crypto.js";
 import { InMemoryLedgerStore, verify } from "../src/core/ledger/store.js";
 import { Supervisor, type CapabilityPlugin } from "../src/core/capability/capability.js";
@@ -51,6 +52,23 @@ function outputPlugin(name: string, sideEffect: CapabilityPlugin["sideEffect"], 
   };
 }
 
+/**
+ * A NODE-AWARE fake plugin: several manifest nodes can share ONE capability (e.g. both
+ * `synthesize` and `compose` use `think`), and the engine dispatches by capability name —
+ * so a single plugin must return the right output for whichever node called it. It branches
+ * on call.nodeId; an unmapped node yields {} (still runs, contributes nothing).
+ */
+function nodeAwarePlugin(name: string, sideEffect: CapabilityPlugin["sideEffect"], cost: number, byNode: Record<string, Record<string, unknown>>): CapabilityPlugin {
+  return {
+    name,
+    sideEffect,
+    estimateCents: () => cost,
+    async invoke(call): Promise<{ output: unknown; claimedCostCents: number }> {
+      return { output: byNode[call.nodeId] ?? {}, claimedCostCents: cost };
+    },
+  };
+}
+
 test("research-analyst manifest is structurally valid", () => {
   const issues = validateManifest(manifest);
   assert.deepEqual(issues, [], `validation issues: ${issues.map(i => i.message).join("; ")}`);
@@ -85,6 +103,14 @@ test("research-analyst persists the brief deterministically (remember_map in see
   assert.match(String(manifest.seed!["remember_map"]), /last_brief=compose\.body/);
 });
 
+test("research-analyst declares output_map so its brief is captured deterministically", () => {
+  const om = parseOutputMap(manifest.seed);
+  assert.ok(om, "output_map must be present and parse");
+  assert.equal(om!.bodyKey, "compose.body");
+  assert.equal(om!.titleKey, "compose.title");
+  assert.equal(om!.format, "markdown");
+});
+
 test("research-analyst drives the engine end-to-end, routes to compose, and the ledger verifies", async () => {
   const r = rig();
 
@@ -95,14 +121,18 @@ test("research-analyst drives the engine end-to-end, routes to compose, and the 
     findings: "Several 2025 reports note small open-weight models (3B-14B) now rival larger closed models on common tasks. Sources: a benchmark roundup and two vendor model cards.",
     query_used: "state of small open-weight language models 2025",
   }));
-  plugins.set("think", outputPlugin("think", "read", 50, {
-    summary: "Small open-weight models have closed much of the gap with larger closed models on mainstream tasks, driven by better data and distillation.",
-    key_points: "Open-weight 7B-14B models rival larger ones on many benchmarks\nLocal/private deployment is now practical\nQuality varies sharply by task",
-    confidence: 80,
-  }));
-  plugins.set("compose", outputPlugin("compose", "read", 15, {
-    body: "BLUF: Small open-weight models are now production-viable for many tasks.\n- They rival larger closed models on mainstream benchmarks.\n- They enable private, local deployment.\n- Quality still varies by task.\nWhat we don't yet know: long-horizon reasoning parity.",
-    title: "Small Open-Weight Models: Where They Stand",
+  // Both `synthesize` and `compose` use the `think` capability — one node-aware plugin
+  // returns the analyst summary for synthesize and the finished brief for compose.
+  plugins.set("think", nodeAwarePlugin("think", "read", 50, {
+    synthesize: {
+      summary: "Small open-weight models have closed much of the gap with larger closed models on mainstream tasks, driven by better data and distillation.",
+      key_points: "Open-weight 7B-14B models rival larger ones on many benchmarks\nLocal/private deployment is now practical\nQuality varies sharply by task",
+      confidence: 80,
+    },
+    compose: {
+      body: "BLUF: Small open-weight models are now production-viable for many tasks.\n- They rival larger closed models on mainstream benchmarks.\n- They enable private, local deployment.\n- Quality still varies by task.\nWhat we don't yet know: long-horizon reasoning parity.",
+      title: "Small Open-Weight Models: Where They Stand",
+    },
   }));
   plugins.set("remember", outputPlugin("remember", "write-reversible", 5, { ok: true, stored: "last_brief" }));
 

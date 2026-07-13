@@ -559,7 +559,7 @@ Implements `ModelPort` against the Anthropic API.
 
 ## What's built vs. what's next
 
-### Built and verified (167/170 tests, typecheck clean)
+### Built and verified (490/490 tests, typecheck clean)
 
 | Subsystem | Files | Status |
 |---|---|---|
@@ -591,7 +591,7 @@ Implements `ModelPort` against the Anthropic API.
 cd /Users/sreenath/Code/myAIExps/genesis-new
 npm install
 npm run typecheck        # strict TS, should be clean
-npm test                 # 167/170 passing (3 live-model tests need a key)
+npm test                 # 490/490 (1 test requires Ollama and skips without it)
 
 npm run demo:ledger      # canvas + cost + audit all fold from one log
 npm run demo:resume      # kill mid-run; each irreversible effect runs exactly once

@@ -40,20 +40,19 @@ function rig() {
 
 /** Per-node fakes keyed by nodeId; `over` overrides specific node outputs per scenario. */
 function plugins(over: Record<string, Record<string, unknown>> = {}): Map<string, CapabilityPlugin> {
+  // The manifest uses the `think` capability for triage, judge, qa AND for answer, clarify,
+  // escalate (they compose prose with `think`, not `compose`). Since the engine dispatches by
+  // capability name, ONE node-aware `think` plugin must return the right output for each node.
   const thinkOut = (nodeId: string): Record<string, unknown> => {
     if (nodeId === "triage") return { distress: false, out_of_scope: false, category: "shipping", sentiment: "neutral", language: "english", urgency: 50, asks: "when will my order arrive", needs_action: false, reason: "asks order status", ...over["triage"] };
     if (nodeId === "judge") return { verdict: "pass", critique: "none", score: 92, ...over["judge"] };
     if (nodeId === "qa") return { qa_relevant: true, qa_accurate: true, qa_safe: true, qa_resolved: true, qa_score: 90, qa_note: "good resolution", ...over["qa"] };
-    return { result: "ok" };
-  };
-  const composeOut = (nodeId: string): Record<string, unknown> => {
     if (nodeId === "answer") return { reply: "Your order ships in 1 day and arrives in 3-5 days.", grounded: true, cited_source: "handbook", makes_promise: false, ...over["answer"] };
     if (nodeId === "clarify") return { reply: "Could you share your order number so I can check?", is_clarification: true, ...over["clarify"] };
     if (nodeId === "escalate") return { brief: "Case file: customer asks order status; KB weak; recommend human reply.", kb_gap: "none", ...over["escalate"] };
-    return { result: "composed" };
+    return { result: "ok" };
   };
   const think: CapabilityPlugin = { name: "think", sideEffect: "read", estimateCents: () => 50, async invoke(c: EffectCall) { return { output: thinkOut(c.nodeId), claimedCostCents: 50 }; } };
-  const compose: CapabilityPlugin = { name: "compose", sideEffect: "read", estimateCents: () => 35, async invoke(c: EffectCall) { return { output: composeOut(c.nodeId), claimedCostCents: 35 }; } };
   const ragOut = over["retrieve"] ?? { ok: true, hits: 3, top_score: "0.81", top_score_pct: 81, sources: "handbook", body: "[1] (source: handbook) Orders ship in 1 day." };
   const ragSearch: CapabilityPlugin = { name: "rag.search", sideEffect: "read", estimateCents: () => 15, async invoke() { return { output: ragOut, claimedCostCents: 15 }; } };
   const route: CapabilityPlugin = { name: "llm_route", sideEffect: "read", estimateCents: () => 20, async invoke() { return { output: over["route"] ?? { chosen_node: "resolve", reason: "grounded informational answer" }, claimedCostCents: 20 }; } };
@@ -61,7 +60,9 @@ function plugins(over: Record<string, Record<string, unknown>> = {}): Map<string
   const remember: CapabilityPlugin = { name: "remember", sideEffect: "write-reversible", estimateCents: () => 5, async invoke() { return { output: { ok: true }, claimedCostCents: 5 }; } };
   const email: CapabilityPlugin = { name: "email_send", sideEffect: "message-human", estimateCents: () => 5, async invoke() { return { output: { sent: true }, claimedCostCents: 5 }; } };
   const slack: CapabilityPlugin = { name: "slack_send", sideEffect: "message-human", estimateCents: () => 5, async invoke() { return { output: { sent: true }, claimedCostCents: 5 }; } };
-  return new Map<string, CapabilityPlugin>([["think", think], ["compose", compose], ["rag.search", ragSearch], ["llm_route", route], ["recall", recall], ["remember", remember], ["email_send", email], ["slack_send", slack]]);
+  // `notify_human` uses notify_webhook — required for the escalation path to complete.
+  const notify: CapabilityPlugin = { name: "notify_webhook", sideEffect: "write-reversible", estimateCents: () => 3, async invoke() { return { output: { delivered: true }, claimedCostCents: 3 }; } };
+  return new Map<string, CapabilityPlugin>([["think", think], ["rag.search", ragSearch], ["llm_route", route], ["recall", recall], ["remember", remember], ["email_send", email], ["slack_send", slack], ["notify_webhook", notify]]);
 }
 
 async function run(over: Record<string, Record<string, unknown>> = {}, approve: (c: EffectCall) => boolean = () => true) {
