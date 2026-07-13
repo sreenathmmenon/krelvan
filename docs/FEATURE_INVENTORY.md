@@ -377,7 +377,7 @@
 
 ## Test Coverage
 
-**490/490 tests passing** (1 requires Ollama and skips without it) across:
+**All tests passing** (1 requires Ollama and skips without it) across:
 - Ledger invariants (I1-I8), canonicalization, concurrent appends, key rotation
 - Manifest validation, expression evaluator
 - Kernel decision tree

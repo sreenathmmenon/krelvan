@@ -34,7 +34,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3201
 ```bash
 # From repo root
 npm run typecheck          # strict TypeScript — must be clean before any commit
-npm test                   # tests must be green (490/490)
+npm test                   # tests must be green (all pass; 1 requires Ollama and skips without it)
 
 # Start the API server (port 3201)
 npm run start:api          # or: node --loader ts-node/esm src/api/index.ts
