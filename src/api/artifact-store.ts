@@ -62,6 +62,8 @@ export interface ArtifactRecord {
   readAt?: number;
   /** sha256 hex of the live share token; absent = private (never public). */
   shareTokenHash?: string;
+  /** shown on the agent's public feed when true (default false). Owner-controlled (B4). */
+  published?: boolean;
 }
 
 /** Fields accepted when creating an artifact (ids/timestamps are assigned by the store). */

@@ -169,6 +169,10 @@ export function authenticate(
   // (checked in the handler, constant-time). A shared output is read-only and returns only
   // the rendered output + agent name — never a runId or internal id, no session required.
   if (url.pathname.startsWith("/api/share/")) return { ok: true };
+  // The public Agent Front Door (B2): profile/feed are public reads gated by the agent's
+  // own public flags; /ask is authenticated by a per-agent SITE KEY (checked in the handler,
+  // constant-time). Deny-by-default is enforced downstream — a disabled agent 404s. No session.
+  if (url.pathname.startsWith("/api/public/")) return { ok: true };
 
   const ip = clientIp(req);
   const now = Date.now();

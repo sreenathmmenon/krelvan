@@ -192,6 +192,15 @@ function jsonError(res: ServerResponse, status: number, message: string): void {
   json(res, status, { error: message });
 }
 
+/** Response helper for the PUBLIC front door — CORS `*` (no cookies, site-key-authed). */
+function jsonPublic(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Vary": "Origin" });
+  res.end(JSON.stringify(body, null, 2));
+}
+function jsonPublicError(res: ServerResponse, status: number, message: string): void {
+  jsonPublic(res, status, { error: message });
+}
+
 // ── server factory ────────────────────────────────────────────────────────────
 
 export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
@@ -235,12 +244,20 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "DELETE", pattern: ["api", "artifacts", ":id", "share"], handler: (q, r, p) => handleUnshareArtifact(q, r, p, runtime) },
     // PUBLIC — a share token resolves one artifact's rendered output, no session (allowlisted).
     { method: "GET",    pattern: ["api", "share", ":token"],           handler: (q, r, p) => handlePublicShare(q, r, p, runtime) },
+    // PUBLIC Agent Front Door (B2) — profile/feed reads + site-key-authed ask + poll.
+    { method: "GET",    pattern: ["api", "public", "agents", ":slug"],                handler: (q, r, p) => handlePublicProfile(q, r, p, runtime) },
+    { method: "GET",    pattern: ["api", "public", "agents", ":slug", "feed"],        handler: (q, r, p) => handlePublicFeed(q, r, p, runtime) },
+    { method: "POST",   pattern: ["api", "public", "agents", ":slug", "ask"],         handler: (q, r, p) => handlePublicAsk(q, r, p, runtime) },
+    { method: "GET",    pattern: ["api", "public", "agents", ":slug", "ask", ":thread"], handler: (q, r, p) => handlePublicAskPoll(q, r, p, runtime) },
     // Inbound/interactive: a public, token-authenticated webhook that starts an agent run.
     { method: "POST",   pattern: ["api", "triggers", ":agentId"],     handler: (q, r, p) => handleWebhookTrigger(q, r, p, runtime) },
     // Admin (session-gated): mint / view-status / revoke an agent's webhook trigger token.
     { method: "POST",   pattern: ["api", "agents", ":id", "chat"],     handler: (q, r, p) => handleChat(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "agents", ":id", "delivery"], handler: (q, r, p) => handleGetDelivery(q, r, p, runtime) },
     { method: "PUT",    pattern: ["api", "agents", ":id", "delivery"], handler: (q, r, p) => handleSetDelivery(q, r, p, runtime) },
+    { method: "GET",    pattern: ["api", "agents", ":id", "public"],  handler: (q, r, p) => handleGetPublic(q, r, p, runtime) },
+    { method: "PUT",    pattern: ["api", "agents", ":id", "public"],  handler: (q, r, p) => handleSetPublic(q, r, p, runtime) },
+    { method: "POST",   pattern: ["api", "agents", ":id", "public", "rotate-key"], handler: (q, r, p) => handleRotateSiteKey(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleGetTrigger(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleMintTrigger(q, r, p, runtime) },
     { method: "DELETE", pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleRevokeTrigger(q, r, p, runtime) },
@@ -278,12 +295,17 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
   ];
 
   const server = createServer(async (req, res) => {
-    // CORS preflight — public, returns the allowlisted origin + the headers we accept.
+    // CORS preflight. The admin API is same-origin only (KRELVAN_WEB_ORIGIN). The PUBLIC
+    // front door (/api/public/*) is DELIBERATELY `*`: those routes carry no session/cookie —
+    // they are authenticated by a per-agent site key (the /ask path) or are public reads, so
+    // an embeddable widget on any third-party site must be able to call them cross-origin.
     if (req.method === "OPTIONS") {
+      const preflightPath = new URL(req.url ?? "/", "http://localhost").pathname;
+      const isPublic = preflightPath.startsWith("/api/public/");
       res.writeHead(204, {
-        "Access-Control-Allow-Origin": CORS_ORIGIN,
+        "Access-Control-Allow-Origin": isPublic ? "*" : CORS_ORIGIN,
         "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Site-Key, X-CSRF-Token",
         "Vary": "Origin",
       });
       res.end();
@@ -759,6 +781,106 @@ async function handlePublicShare(req: IncomingMessage, res: ServerResponse, para
   });
 }
 
+// ── Public Agent Front Door (B2) ────────────────────────────────────────────────
+// All routes are allowlisted past the session gate and rate-limited per IP. Deny-by-default:
+// a route 404s unless the agent's owner has enabled the matching public flag. Nothing here
+// ever returns a runId / internal id, and 429s carry no cost or budget numbers.
+
+// Per-IP throttle for the public front door (shared shape with the trigger route).
+const publicFails = new Map<string, { count: number; first: number }>();
+function publicThrottled(ip: string): boolean {
+  const now = Date.now();
+  const r = publicFails.get(ip);
+  return !!(r && now - r.first < 60_000 && r.count >= 60);
+}
+function recordPublicHit(ip: string): void {
+  const now = Date.now();
+  const r = publicFails.get(ip);
+  if (!r || now - r.first > 60_000) publicFails.set(ip, { count: 1, first: now });
+  else r.count++;
+  if (publicFails.size > 1000) { for (const [k, v] of publicFails) if (now - v.first > 60_000) publicFails.delete(k); }
+}
+
+/** Extract the site key from `X-Site-Key` header or the JSON body's `siteKey` (never a query string). */
+function siteKeyFrom(req: IncomingMessage, body: { siteKey?: unknown }): string | undefined {
+  const h = req.headers["x-site-key"];
+  if (typeof h === "string" && h.trim()) return h.trim();
+  if (typeof body.siteKey === "string" && body.siteKey.trim()) return body.siteKey.trim();
+  return undefined;
+}
+
+/** The one-line intent shown on the public profile (kept short, never internal detail). */
+function oneLiner(intent: string): string {
+  const s = intent.trim().split("\n")[0] ?? "";
+  return s.length > 140 ? `${s.slice(0, 138).trimEnd()}…` : s;
+}
+
+/** GET /api/public/agents/:slug — profile. 404 unless the agent exists AND is public-enabled. */
+async function handlePublicProfile(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const ip = clientIp(req);
+  if (publicThrottled(ip)) { jsonPublicError(res, 429, "too many requests — slow down"); return; }
+  recordPublicHit(ip);
+  const agent = rt.agentRegistry.getBySlug(params["slug"] ?? "");
+  // Deny-by-default: an absent OR not-enabled agent is indistinguishable (both 404, no leak).
+  if (!agent || !agent.public?.enabled) { jsonPublicError(res, 404, "not found"); return; }
+  jsonPublic(res, 200, {
+    name: agent.signed.manifest.name,
+    intent: oneLiner(agent.signed.manifest.intent),
+    chatEnabled: agent.public.chat === true,
+    feedEnabled: agent.public.showFeed === true,
+  });
+}
+
+/** GET /api/public/agents/:slug/feed — published artifacts (title/body/createdAt only). */
+async function handlePublicFeed(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const ip = clientIp(req);
+  if (publicThrottled(ip)) { jsonPublicError(res, 429, "too many requests — slow down"); return; }
+  recordPublicHit(ip);
+  const agent = rt.agentRegistry.getBySlug(params["slug"] ?? "");
+  // The feed 404s unless the agent is enabled AND its feed flag is on.
+  if (!agent || !agent.public?.enabled || !agent.public.showFeed) { jsonPublicError(res, 404, "not found"); return; }
+  jsonPublic(res, 200, { items: rt.publicFeed(agent.id, 20) });
+}
+
+/** POST /api/public/agents/:slug/ask { message, thread?, siteKey } — site-key-authed chat turn. */
+async function handlePublicAsk(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const ip = clientIp(req);
+  if (publicThrottled(ip)) { jsonPublicError(res, 429, "too many requests — slow down"); return; }
+  recordPublicHit(ip);
+  let body: { message?: unknown; thread?: unknown; siteKey?: unknown };
+  try { body = JSON.parse(await readBody(req)); } catch { jsonPublicError(res, 400, "invalid JSON"); return; }
+
+  const agent = rt.agentRegistry.getBySlug(params["slug"] ?? "");
+  // 404 (not 401/403) when disabled → no oracle about which agents exist or have chat on.
+  if (!agent || !agent.public?.enabled || !agent.public.chat) { jsonPublicError(res, 404, "not found"); return; }
+  if (!rt.verifySiteKey(agent, siteKeyFrom(req, body))) { jsonPublicError(res, 401, "invalid site key"); return; }
+
+  const message = String(body.message ?? "").trim();
+  if (!message) { jsonPublicError(res, 400, "message is required"); return; }
+  const thread = String(body.thread ?? `t-${Math.random().toString(36).slice(2, 10)}`).slice(0, 80);
+
+  const result = await rt.publicAsk(agent, message, thread);
+  if (result.status === "rate-limited") { jsonPublicError(res, 429, "you're sending messages too fast — please slow down"); return; }
+  if (result.status === "reply") { jsonPublic(res, 200, { reply: result.reply, thread: result.thread }); return; }
+  if (result.status === "awaiting-approval") { jsonPublic(res, 202, { status: "awaiting-approval", thread: result.thread }); return; }
+  // pending → give the caller a poll URL.
+  jsonPublic(res, 202, { status: "pending", thread: result.thread, poll: `/api/public/agents/${params["slug"]}/ask/${result.thread}` });
+}
+
+/** GET /api/public/agents/:slug/ask/:thread — poll a still-running ask. */
+async function handlePublicAskPoll(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const ip = clientIp(req);
+  if (publicThrottled(ip)) { jsonPublicError(res, 429, "too many requests — slow down"); return; }
+  recordPublicHit(ip);
+  const agent = rt.agentRegistry.getBySlug(params["slug"] ?? "");
+  if (!agent || !agent.public?.enabled || !agent.public.chat) { jsonPublicError(res, 404, "not found"); return; }
+  const result = await rt.publicAskPoll(agent, String(params["thread"] ?? "").slice(0, 80));
+  if (result.status === "reply") { jsonPublic(res, 200, { reply: result.reply }); return; }
+  if (result.status === "awaiting-approval") { jsonPublic(res, 202, { status: "awaiting-approval" }); return; }
+  if (result.status === "unknown") { jsonPublicError(res, 404, "no such thread"); return; }
+  jsonPublic(res, 202, { status: "pending" });
+}
+
 // ── Inbound webhook trigger (the interactive/inbound path) ──────────────────────
 
 /** Extract the trigger token from an Authorization: Bearer header (query-string tokens
@@ -890,6 +1012,51 @@ async function handleGetTrigger(_req: IncomingMessage, res: ServerResponse, para
   if (!rt.agentRegistry.get(agentId)) { jsonError(res, 404, "agent not found"); return; }
   // Status only — the plaintext token is shown ONCE at mint time and never retrievable again.
   json(res, 200, { enabled: rt.triggerStore.has(agentId), url: `/api/triggers/${agentId}` });
+}
+
+// ── Public surface admin (B1) ───────────────────────────────────────────────────
+
+/** GET /api/agents/:id/public — the current public config (booleans + slug; never the key). */
+async function handleGetPublic(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const agent = rt.agentRegistry.get(params["id"] ?? "");
+  if (!agent) { jsonError(res, 404, "agent not found"); return; }
+  const p = agent.public;
+  json(res, 200, {
+    slug: agent.slug,
+    publicUrl: agent.slug ? `/a/${agent.slug}` : null,
+    enabled: p?.enabled ?? false,
+    showFeed: p?.showFeed ?? false,
+    chat: p?.chat ?? false,
+    hasSiteKey: p?.siteKeyHash !== undefined,
+  });
+}
+
+/** PUT /api/agents/:id/public { enabled, showFeed, chat } — deny-by-default; mints the site
+ *  key once when chat is first enabled (returned ONCE). */
+async function handleSetPublic(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  let body: { enabled?: unknown; showFeed?: unknown; chat?: unknown };
+  try { body = JSON.parse(await readBody(req)); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  const desired = { enabled: body.enabled === true, showFeed: body.showFeed === true, chat: body.chat === true };
+  const result = rt.setAgentPublic(params["id"] ?? "", desired);
+  if (!result.ok) { jsonError(res, 404, result.error); return; }
+  const p = result.agent.public;
+  json(res, 200, {
+    slug: result.agent.slug,
+    publicUrl: result.agent.slug ? `/a/${result.agent.slug}` : null,
+    enabled: p?.enabled ?? false,
+    showFeed: p?.showFeed ?? false,
+    chat: p?.chat ?? false,
+    hasSiteKey: p?.siteKeyHash !== undefined,
+    // Present ONLY when a key was just minted. Save it now — it is never shown again.
+    ...(result.siteKey ? { siteKey: result.siteKey, note: "Save this key now — it is shown only once." } : {}),
+  });
+}
+
+/** POST /api/agents/:id/public/rotate-key — mint a fresh site key, invalidating the old one. */
+async function handleRotateSiteKey(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const result = rt.rotateSiteKey(params["id"] ?? "");
+  if (!result.ok) { jsonError(res, 400, result.error); return; }
+  json(res, 201, { siteKey: result.siteKey, note: "Save this key now — it is shown only once. The previous key no longer works." });
 }
 
 async function handleMintTrigger(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {

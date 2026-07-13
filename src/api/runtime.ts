@@ -36,6 +36,7 @@ import { SecretStore } from "./secret-store.js";
 import { TriggerStore } from "./trigger-store.js";
 import { ArtifactStore } from "./artifact-store.js";
 import { extractArtifact } from "./artifact-extractor.js";
+import { uniqueSlug } from "./slug.js";
 import { AdminAuth } from "./admin-auth.js";
 import { thinkCapability } from "../core/plugins/think.js";
 import { recallCapability, rememberCapability, identifyCapability, loadSoul, saveSoul } from "../core/plugins/memory-plugins.js";
@@ -61,7 +62,7 @@ import type { SecretBrokerPort, OwnerId, PluginInstallResult, PluginEnableResult
 import { parseOwnerId } from "../core/plugins/ports.js";
 import { join, resolve as resolvePath } from "node:path";
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, copyFileSync, unlinkSync, chmodSync } from "node:fs";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NewEvent } from "../core/ledger/event.js";
 
 const log = getLogger("runtime");
@@ -186,6 +187,21 @@ export interface PendingApproval {
 
 // ── Agent registry ─────────────────────────────────────────────────────────────
 
+/**
+ * The agent's PUBLIC surface config. Deny-by-default (AGENTS.md rule 9): every flag is off
+ * until the owner flips it, so nothing is reachable off the admin panel by default.
+ */
+export interface AgentPublicConfig {
+  /** master switch — the public profile/feed/ask routes 404 unless this is true. */
+  enabled: boolean;
+  /** expose the published-artifact feed on the public page. */
+  showFeed: boolean;
+  /** allow public chat turns via /ask (requires a site key). */
+  chat: boolean;
+  /** sha256 of the live site key (`pk_…`); absent = no key minted. Never the plaintext. */
+  siteKeyHash?: string;
+}
+
 export interface AgentRecord {
   id: string;
   signed: SignedManifest;
@@ -194,6 +210,10 @@ export interface AgentRecord {
   lastRunId?: string;
   /** Where this agent's output is delivered when a run completes (in addition to the Inbox). */
   deliverTo?: import("./delivery.js").DeliveryTarget[];
+  /** Stable URL-safe public handle (used in /a/:slug). Assigned at save time. */
+  slug?: string;
+  /** Public-surface config. Absent/all-off = fully private (the default). */
+  public?: AgentPublicConfig;
 }
 
 export class AgentRegistry {
@@ -210,6 +230,13 @@ export class AgentRegistry {
     try {
       const raw = JSON.parse(readFileSync(this.path, "utf8")) as AgentRecord[];
       for (const a of raw) this.agents.set(a.id, a);
+      // Backfill slugs for agents saved before slugs existed, so every agent has a stable
+      // public handle. Deterministic within one load (uniqueSlug sees the growing taken-set).
+      let backfilled = false;
+      for (const a of this.agents.values()) {
+        if (!a.slug) { a.slug = uniqueSlug(a.signed.manifest.name, this.takenSlugs(a.id)); backfilled = true; }
+      }
+      if (backfilled) this.persist();
       log.info({ count: this.agents.size }, "loaded agents from disk");
     } catch (err) {
       log.warn({ err }, "failed to load agents.json — starting fresh");
@@ -221,14 +248,43 @@ export class AgentRegistry {
   }
 
   save(signed: SignedManifest): AgentRecord {
-    const record: AgentRecord = { id: signed.id, signed, createdAt: Date.now() };
+    // Re-importing the same manifest (same content-address id) keeps its existing slug so a
+    // public URL stays stable; a new agent gets a fresh unique slug from its name.
+    const existing = this.agents.get(signed.id);
+    const slug = existing?.slug ?? uniqueSlug(signed.manifest.name, this.takenSlugs(signed.id));
+    const record: AgentRecord = { id: signed.id, signed, createdAt: existing?.createdAt ?? Date.now(), slug, ...(existing?.public ? { public: existing.public } : {}) };
     this.agents.set(record.id, record);
     this.persist();
     return record;
   }
 
+  /** The set of slugs in use, excluding one agent id (so re-saving doesn't collide with itself). */
+  private takenSlugs(exceptId?: string): Set<string> {
+    const s = new Set<string>();
+    for (const a of this.agents.values()) if (a.slug && a.id !== exceptId) s.add(a.slug);
+    return s;
+  }
+
   get(id: string): AgentRecord | undefined {
     return this.agents.get(id);
+  }
+
+  /** Look up an agent by its public slug (for the /api/public/agents/:slug routes). */
+  getBySlug(slug: string): AgentRecord | undefined {
+    for (const a of this.agents.values()) if (a.slug === slug) return a;
+    return undefined;
+  }
+
+  /**
+   * Set an agent's public config. Deny-by-default is enforced by the caller passing the full
+   * desired state; this just persists it. Returns the updated record, or undefined if absent.
+   */
+  setPublicConfig(agentId: string, cfg: AgentPublicConfig): AgentRecord | undefined {
+    const a = this.agents.get(agentId);
+    if (!a) return undefined;
+    a.public = cfg;
+    this.persist();
+    return a;
   }
 
   list(): AgentRecord[] {
@@ -1218,6 +1274,57 @@ export class KrelvanRuntime {
     return { ok: true, agent };
   }
 
+  // ── Public surface (B1) ────────────────────────────────────────────────────────
+
+  /**
+   * Set an agent's public config (deny-by-default: caller sends the full desired state).
+   * When chat is turned ON and no site key exists yet, a fresh site key is minted and its
+   * PLAINTEXT is returned ONCE (only its hash is stored). Turning chat OFF clears the key,
+   * so re-enabling later mints a new one. Returns the updated record + any one-time key.
+   */
+  setAgentPublic(
+    agentId: string,
+    desired: { enabled: boolean; showFeed: boolean; chat: boolean },
+  ): { ok: true; agent: AgentRecord; siteKey?: string } | { ok: false; error: string } {
+    const agent = this.agentRegistry.get(agentId);
+    if (!agent) return { ok: false, error: "agent not found" };
+    const prev = agent.public;
+    const cfg: AgentPublicConfig = { enabled: desired.enabled, showFeed: desired.showFeed, chat: desired.chat };
+    let siteKey: string | undefined;
+    if (desired.chat) {
+      if (prev?.siteKeyHash) {
+        cfg.siteKeyHash = prev.siteKeyHash; // keep the existing key when chat stays on
+      } else {
+        siteKey = `pk_${randomBytes(24).toString("base64url")}`;
+        cfg.siteKeyHash = createHash("sha256").update(siteKey, "utf8").digest("hex");
+      }
+    }
+    // chat off → siteKeyHash is dropped (any embedded widget stops working immediately).
+    const updated = this.agentRegistry.setPublicConfig(agentId, cfg);
+    if (!updated) return { ok: false, error: "agent not found" };
+    return siteKey ? { ok: true, agent: updated, siteKey } : { ok: true, agent: updated };
+  }
+
+  /** Rotate an agent's site key (invalidates the old one). Chat must be enabled. */
+  rotateSiteKey(agentId: string): { ok: true; siteKey: string } | { ok: false; error: string } {
+    const agent = this.agentRegistry.get(agentId);
+    if (!agent) return { ok: false, error: "agent not found" };
+    if (!agent.public?.enabled || !agent.public.chat) return { ok: false, error: "public chat is not enabled for this agent" };
+    const siteKey = `pk_${randomBytes(24).toString("base64url")}`;
+    this.agentRegistry.setPublicConfig(agentId, { ...agent.public, siteKeyHash: createHash("sha256").update(siteKey, "utf8").digest("hex") });
+    return { ok: true, siteKey };
+  }
+
+  /** Constant-time check that `presented` is the live site key for this agent's public chat. */
+  verifySiteKey(agent: AgentRecord, presented: string | undefined): boolean {
+    if (!presented) return false;
+    const hash = agent.public?.siteKeyHash;
+    if (!agent.public?.enabled || !agent.public.chat || !hash) return false;
+    const a = Buffer.from(createHash("sha256").update(presented, "utf8").digest("hex"), "hex");
+    const b = Buffer.from(hash, "hex");
+    return a.length === b.length && timingSafeEqual(a, b);
+  }
+
   /**
    * Builder Agent — agentic compile loop.
    *
@@ -1879,6 +1986,99 @@ export class KrelvanRuntime {
     const run = this.runRegistry.create({ agentId, runId, manifestName: agent.signed.manifest.name, origin: { kind: "trigger" } });
     void this.executeRun(runId, agent.signed.manifest, initialState, agentId);
     return { ok: true, run };
+  }
+
+  // ── Public ask (B2) ────────────────────────────────────────────────────────────
+  // A public visitor talks to a published agent via a per-agent SITE KEY. The turn is a
+  // normal chat run — it inherits the agent's EXISTING grants (zero capability widening) and
+  // the human-approval gate is honored verbatim (a parked turn awaits an ADMIN approval; the
+  // public caller can never approve). Sliding-window run caps per (key-scoped) thread and per
+  // agent stop an exposed instance from being cost-drained.
+
+  /** thread → the runId currently executing/executed for it (so a 202 can be polled). */
+  private readonly _publicThreadRun = new Map<string, string>();
+  /** sliding-window timestamps of public asks, keyed by agentId and by thread, for rate caps. */
+  private readonly _publicAskWindow = new Map<string, number[]>();
+
+  /** True if `key` has had >= `max` asks in the last `windowMs`; also records this ask. */
+  private _publicCapTripped(key: string, max: number, windowMs: number): boolean {
+    const now = this.now();
+    const arr = (this._publicAskWindow.get(key) ?? []).filter((t) => now - t < windowMs);
+    if (arr.length >= max) { this._publicAskWindow.set(key, arr); return true; }
+    arr.push(now);
+    this._publicAskWindow.set(key, arr);
+    return false;
+  }
+
+  /** Pull the human-facing reply out of a finished run's state (shared with chatWithAgent). */
+  private async extractReply(runId: string): Promise<string> {
+    const { project } = await import("../core/kernel/project.js");
+    const events = await this.store.readRun("default", runId);
+    const state = project(events).state as Record<string, unknown>;
+    const suffixes = [".reply", ".result", ".answer", ".response", ".message", ".body", ".text"];
+    for (const suf of suffixes) {
+      const hit = Object.entries(state).find(([k, v]) => k.endsWith(suf) && typeof v === "string" && (v as string).trim().length > 0);
+      if (hit) return String(hit[1]).trim();
+    }
+    const first = Object.entries(state).find(([k, v]) => typeof v === "string" && (v as string).trim().length > 20 && !k.startsWith("_"));
+    return first ? String(first[1]).trim() : "(the agent produced no text reply)";
+  }
+
+  /**
+   * Public ask. `slug` selects the agent; the site key is verified constant-time by the caller
+   * (server passes the resolved agent). Returns:
+   *  - { status: "reply", reply, thread } when the run finished within the timeout,
+   *  - { status: "pending", thread } when it's still running (caller returns 202 + poll url),
+   *  - { status: "awaiting-approval", thread } when it parked at the human gate,
+   *  - { status: "rate-limited" } when a run cap tripped (caller returns 429, NO numbers).
+   */
+  async publicAsk(agent: AgentRecord, message: string, thread: string):
+    Promise<{ status: "reply"; reply: string; thread: string } | { status: "pending" | "awaiting-approval"; thread: string } | { status: "rate-limited" }> {
+    // Run caps: env-tunable, sane defaults. Per-thread and per-agent sliding windows.
+    const perThread = Number(process.env["KRELVAN_PUBLIC_THREAD_MAX"]) || 10;   // asks / window / thread
+    const perAgent = Number(process.env["KRELVAN_PUBLIC_AGENT_MAX"]) || 120;    // asks / window / agent
+    const windowMs = Number(process.env["KRELVAN_PUBLIC_WINDOW_MS"]) || 60_000;
+    if (this._publicCapTripped(`agent:${agent.id}`, perAgent, windowMs)) return { status: "rate-limited" };
+    if (this._publicCapTripped(`thread:${agent.id}:${thread}`, perThread, windowMs)) return { status: "rate-limited" };
+
+    const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    this._publicThreadRun.set(`${agent.id}:${thread}`, runId);
+    // kind:"chat" (inbox-excluded) + origin public-ask. Memory scoped to the thread.
+    this.runRegistry.create({ agentId: agent.id, runId, manifestName: agent.signed.manifest.name, kind: "chat", origin: { kind: "public-ask" } });
+    const initialState: Record<string, string | number | boolean | null> = { message, history: "", sender_id: `public:${thread}` };
+
+    // Execute in the background; race it against the ask timeout.
+    const exec = this.executeRun(runId, agent.signed.manifest, initialState, agent.id);
+    const timeoutMs = Number(process.env["KRELVAN_ASK_TIMEOUT_MS"]) || 25_000;
+    let timedOut = false;
+    await Promise.race([exec, new Promise<void>((r) => setTimeout(() => { timedOut = true; r(); }, timeoutMs))]);
+
+    const status = this.runRegistry.get(runId)?.status;
+    if (timedOut && status !== "completed" && status !== "failed" && status !== "halted") return { status: "pending", thread };
+    if (status === "halted") return { status: "awaiting-approval", thread };
+    if (status === "completed") return { status: "reply", reply: await this.extractReply(runId), thread };
+    // failed (or unknown) — surface a neutral message, never an internal reason.
+    return { status: "reply", reply: "Sorry — I couldn't answer that just now. Please try again.", thread };
+  }
+
+  /** Poll a public thread's latest run for the reply (the 202 path). */
+  async publicAskPoll(agent: AgentRecord, thread: string):
+    Promise<{ status: "reply"; reply: string } | { status: "pending" | "awaiting-approval" } | { status: "unknown" }> {
+    const runId = this._publicThreadRun.get(`${agent.id}:${thread}`);
+    if (!runId) return { status: "unknown" };
+    const status = this.runRegistry.get(runId)?.status;
+    if (status === "completed") return { status: "reply", reply: await this.extractReply(runId) };
+    if (status === "halted") return { status: "awaiting-approval" };
+    if (status === "failed") return { status: "reply", reply: "Sorry — I couldn't answer that just now. Please try again." };
+    return { status: "pending" };
+  }
+
+  /** Published, non-archived artifacts for an agent's public feed (title/body/createdAt only). */
+  publicFeed(agentId: string, limit = 20): { title: string; body: string; createdAt: number }[] {
+    return this.artifactStore.list({ agentId, archived: false, limit: 200 })
+      .filter((a) => a.published === true)
+      .slice(0, limit)
+      .map((a) => ({ title: a.title, body: a.body, createdAt: a.createdAt }));
   }
 
   /**
