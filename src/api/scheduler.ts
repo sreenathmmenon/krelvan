@@ -23,6 +23,15 @@ const log = getLogger("scheduler");
 
 export type ScheduleKind = "cron" | "interval";
 
+/**
+ * What to do with a schedule whose next-run time elapsed while the process was down.
+ *  - "skip":    advance silently to the next future occurrence (the default — a missed
+ *               hourly poll doesn't need to fire ten times at boot).
+ *  - "runOnce": fire exactly ONE catch-up run, then re-arm (right for a daily/weekly
+ *               digest — you still want yesterday's digest, but only once).
+ */
+export type OnMissed = "skip" | "runOnce";
+
 export interface ScheduleRecord {
   id: string;
   agentId: string;
@@ -37,9 +46,38 @@ export interface ScheduleRecord {
   lastRunAt?: number;
   lastRunId?: string;
   nextRunAt?: number;
+  /** Missed-run policy across downtime. Default "skip". */
+  onMissed?: OnMissed;
+  /** Outcome of the most recent scheduled run (set when the run finishes — see C2). */
+  lastStatus?: "completed" | "failed" | "halted";
+  /** Consecutive failures. Reset to 0 on a completed run; a warning surfaces at >= 3. */
+  failStreak?: number;
 }
 
 export type ScheduleRunCallback = (agentId: string, scheduleId: string) => Promise<string>;
+
+/**
+ * Injectable time + timer facade so the scheduler is testable with a fake clock and
+ * deterministic timers. Defaults to the real Node primitives.
+ */
+export interface SchedulerClock {
+  now(): number;
+  setTimer(fn: () => void, ms: number): ReturnType<typeof setTimeout>;
+  clearTimer(t: ReturnType<typeof setTimeout>): void;
+}
+
+const REAL_CLOCK: SchedulerClock = {
+  now: () => Date.now(),
+  setTimer: (fn, ms) => setTimeout(fn, ms),
+  clearTimer: (t) => clearTimeout(t),
+};
+
+/**
+ * setTimeout with a delay above 2^31-1 ms (~24.8 days) fires IMMEDIATELY — a monthly or
+ * yearly cron would misfire on arm. Cap each timer at 6h and sleep-chain (re-arm on wake)
+ * until the real due time.
+ */
+export const MAX_ARM_MS = 6 * 60 * 60 * 1000;
 
 // ── Cron parser ───────────────────────────────────────────────────────────────
 
@@ -199,18 +237,42 @@ export class ScheduleRegistry {
 
 // ── Scheduler ─────────────────────────────────────────────────────────────────
 
+/** Called when a schedule crosses the failure-streak threshold, to deliver a one-line notice. */
+export type ScheduleFailureNotifier = (schedule: ScheduleRecord, latestReason: string) => void;
+
+/** After this many consecutive failures, the schedule stays armed but surfaces a warning. */
+export const FAIL_STREAK_WARN = 3;
+
 export class Scheduler {
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly clock: SchedulerClock;
+  private readonly notifyFailure?: ScheduleFailureNotifier;
 
   constructor(
     private readonly registry: ScheduleRegistry,
     private readonly onRun: ScheduleRunCallback,
-  ) {}
+    opts: { clock?: SchedulerClock; notifyFailure?: ScheduleFailureNotifier } = {},
+  ) {
+    this.clock = opts.clock ?? REAL_CLOCK;
+    if (opts.notifyFailure) this.notifyFailure = opts.notifyFailure;
+  }
 
-  /** Start all enabled schedules. Called at startup. */
+  /**
+   * Start all enabled schedules. Called at startup. For each enabled schedule whose stored
+   * nextRunAt already elapsed while the process was down, apply its onMissed policy: "skip"
+   * advances silently to the next future occurrence; "runOnce" fires exactly one catch-up.
+   */
   start(): void {
+    const now = this.clock.now();
     for (const schedule of this.registry.list()) {
-      if (schedule.enabled) {
+      if (!schedule.enabled) continue;
+      const missed = schedule.nextRunAt !== undefined && schedule.nextRunAt < now;
+      if (missed && (schedule.onMissed ?? "skip") === "runOnce") {
+        // Fire exactly one catch-up, then arm() (called inside fire) re-arms for the future.
+        void this.fire(schedule.id);
+      } else {
+        // "skip" (or nothing missed): arm computes the next FUTURE occurrence, so a past
+        // nextRunAt is naturally skipped.
         this.arm(schedule);
       }
     }
@@ -220,13 +282,13 @@ export class Scheduler {
   /** Stop all timers. */
   stop(): void {
     for (const [id, timer] of this.timers) {
-      clearTimeout(timer);
+      this.clock.clearTimer(timer);
       log.info({ id }, "schedule disarmed");
     }
     this.timers.clear();
   }
 
-  /** Arm a single schedule. */
+  /** Arm a single schedule for its next occurrence (sleep-chained past the 6h timer cap). */
   arm(schedule: ScheduleRecord): void {
     this.disarm(schedule.id);
 
@@ -236,8 +298,8 @@ export class Scheduler {
       return;
     }
 
-    const nextRunAt = Date.now() + delayMs;
-    this.registry.update(schedule.id, { nextRunAt });
+    const dueAt = this.clock.now() + delayMs;
+    this.registry.update(schedule.id, { nextRunAt: dueAt });
 
     log.info({
       id: schedule.id,
@@ -246,18 +308,33 @@ export class Scheduler {
       nextIn: `${Math.round(delayMs / 1000)}s`,
     }, "schedule armed");
 
-    const timer = setTimeout(() => {
-      void this.fire(schedule.id);
-    }, delayMs);
+    this.armUntil(schedule.id, dueAt);
+  }
 
-    this.timers.set(schedule.id, timer);
+  /**
+   * Sleep-chain a timer toward an absolute `dueAt`. Node's setTimeout fires immediately for
+   * delays over ~24.8 days, so we cap each hop at MAX_ARM_MS and re-check on wake. When the
+   * remaining time is within one hop, we set the final timer that actually fires.
+   */
+  private armUntil(id: string, dueAt: number): void {
+    const remaining = dueAt - this.clock.now();
+    const hop = Math.min(Math.max(remaining, 0), MAX_ARM_MS);
+    const timer = this.clock.setTimer(() => {
+      // Re-check against the live clock: if we've reached the due time, fire; else keep chaining.
+      if (this.clock.now() >= dueAt) {
+        void this.fire(id);
+      } else {
+        this.armUntil(id, dueAt);
+      }
+    }, hop);
+    this.timers.set(id, timer);
   }
 
   /** Disarm a schedule (cancel pending timer). */
   disarm(id: string): void {
     const existing = this.timers.get(id);
     if (existing) {
-      clearTimeout(existing);
+      this.clock.clearTimer(existing);
       this.timers.delete(id);
     }
   }
@@ -288,22 +365,45 @@ export class Scheduler {
 
     try {
       const runId = await this.onRun(schedule.agentId, scheduleId);
-      this.registry.update(scheduleId, { lastRunAt: Date.now(), lastRunId: runId });
+      this.registry.update(scheduleId, { lastRunAt: this.clock.now(), lastRunId: runId });
       log.info({ id: scheduleId, runId }, "scheduled run started");
     } catch (err) {
+      // Failing to even START the run is itself a failure — count it toward the streak so a
+      // broken schedule (deleted agent, bad config) can't silently fail forever.
+      this.recordRunOutcome(scheduleId, "failed", (err as Error).message);
       log.error({ id: scheduleId, err: (err as Error).message }, "scheduled run failed to start");
     }
 
-    // Re-arm for the next occurrence
+    // Re-arm for the next occurrence (a disabled schedule is left disarmed).
     const updated = this.registry.get(scheduleId);
     if (updated?.enabled) {
       this.arm(updated);
     }
   }
 
-  /** Compute milliseconds until the next fire time. */
+  /**
+   * Record how a scheduled run finished (called from the runtime once the run completes/fails/
+   * halts — see C2 attribution). Tracks a consecutive-failure streak: a "completed" run resets
+   * it, anything else increments it. At the warning threshold the schedule STAYS ARMED (we don't
+   * disable it — the next occurrence might succeed) but a one-line notice is delivered through the
+   * agent's existing deliverTo targets so the owner learns their schedule is broken.
+   */
+  recordRunOutcome(scheduleId: string, status: "completed" | "failed" | "halted", reason = ""): void {
+    const schedule = this.registry.get(scheduleId);
+    if (!schedule) return;
+    const prevStreak = schedule.failStreak ?? 0;
+    const nextStreak = status === "completed" ? 0 : prevStreak + 1;
+    this.registry.update(scheduleId, { lastStatus: status, failStreak: nextStreak });
+    // Notify exactly ONCE, when the streak first reaches the threshold (not on every later fail).
+    if (nextStreak === FAIL_STREAK_WARN && this.notifyFailure) {
+      const updated = this.registry.get(scheduleId);
+      if (updated) this.notifyFailure(updated, reason);
+    }
+  }
+
+  /** Compute milliseconds until the next fire time (relative to the injected clock). */
   private msUntilNext(schedule: ScheduleRecord): number | null {
-    const now = new Date();
+    const now = new Date(this.clock.now());
     try {
       if (schedule.kind === "interval") {
         const ms = parseInt(schedule.spec);
