@@ -122,3 +122,33 @@ test("C2: a failing scheduled run feeds the schedule failure streak", async () =
     assert.equal(sched?.enabled, true, "schedule stays armed despite the streak");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("C4: runScheduleNow fires through the schedule path (origin attribution holds)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "krelvan-c4-"));
+  try {
+    const rt = makeRuntime(dir, { body: "The finished brief.", title: "Brief" });
+    const imp = rt.importManifest(composeManifest("Digest"));
+    assert.ok(imp.ok);
+    const agentId = imp.agent.id;
+    rt.scheduleRegistry.create({ id: "sched-RUN", agentId, agentName: "Digest", kind: "interval", spec: "3600000", label: "hourly", enabled: true, createdAt: 0 });
+
+    const res = await rt.runScheduleNow("sched-RUN");
+    assert.ok(res.ok, res.ok ? "" : res.error);
+    // Wait for the (background) run to finish.
+    if (res.ok) {
+      for (let i = 0; i < 100; i++) {
+        const st = rt.runRegistry.get(res.runId)?.status;
+        if (st === "completed" || st === "failed" || st === "halted") break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      const rec = rt.runRegistry.get(res.runId);
+      assert.equal(rec?.origin?.kind, "schedule", "run-now is attributed to the schedule");
+      assert.equal(rec?.origin?.scheduleId, "sched-RUN");
+      // It shows up in the schedule's history.
+      assert.ok(rt.runRegistry.listBySchedule("sched-RUN").some(r => r.runId === res.runId), "appears in history");
+    }
+    // A missing schedule is a clean error, not a throw.
+    const bad = await rt.runScheduleNow("nope");
+    assert.equal(bad.ok, false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

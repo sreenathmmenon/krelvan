@@ -1935,6 +1935,22 @@ export class KrelvanRuntime {
     return runId;
   }
 
+  /**
+   * "Run now" from the Schedules page — fires the schedule's agent THROUGH the same
+   * startScheduledRun path, so the run carries origin { kind: "schedule", scheduleId } and
+   * shows up in the schedule's history exactly like an automatic fire.
+   */
+  async runScheduleNow(scheduleId: string): Promise<{ ok: true; runId: string } | { ok: false; error: string }> {
+    const schedule = this.scheduleRegistry.get(scheduleId);
+    if (!schedule) return { ok: false, error: "schedule not found" };
+    try {
+      const runId = await this.startScheduledRun(schedule.agentId, scheduleId);
+      return { ok: true, runId };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  }
+
   /** Create a new schedule for an agent. */
   createSchedule(opts: {
     agentId: string;

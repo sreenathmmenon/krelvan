@@ -204,6 +204,16 @@ a:hover { color: var(--brand-hover); }
 }
 @media (max-width: 860px) { .build-on-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 560px) { .build-on-grid { grid-template-columns: 1fr; } }
+
+/* Schedule card: dot · content · actions on desktop; stacks (actions below, full-width,
+   dot inline with the title) on narrow screens so nothing gets crushed into a 3-col grid. */
+.schedule-card { display: grid; grid-template-columns: auto 1fr auto; gap: var(--s5); align-items: center; }
+.schedule-card .schedule-actions { display: flex; gap: var(--s2); align-items: center; justify-self: end; }
+@media (max-width: 620px) {
+  .schedule-card { grid-template-columns: auto 1fr; }
+  .schedule-card .schedule-actions { grid-column: 1 / -1; justify-self: stretch; flex-wrap: wrap; }
+  .schedule-card .schedule-actions > button { flex: 1 1 auto; }
+}
 .segmented > button {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
   height: 28px; padding: 0 var(--s3);

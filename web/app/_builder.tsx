@@ -7,8 +7,9 @@
  */
 import { useState, useEffect, useRef, Fragment } from "react";
 import {
-  deleteAgent, explainBuild, timeAgo,
+  deleteAgent, explainBuild, timeAgo, createSchedule, setDelivery,
   type AgentRecord, type RunRecord, type BuildResult, type ManifestNode, type ManifestEdge,
+  type DeliveryChannel, type DeliveryTarget,
 } from "../lib/api";
 import { edgeGeometry, type Box } from "../lib/graph-edges";
 import { glyphFor } from "../lib/glyphs";
@@ -454,11 +455,37 @@ function FullMiniGraph({ nodes, edges, entry }: { nodes: ManifestNode[]; edges: 
   );
 }
 
+// Delivery channels offered on the schedule card (Inbox is always on — it's where output lands).
+const SCHEDULE_CHANNELS: { channel: DeliveryChannel; label: string }[] = [
+  { channel: "email", label: "Email" },
+  { channel: "slack", label: "Slack" },
+  { channel: "telegram", label: "Telegram" },
+  { channel: "webhook", label: "Webhook" },
+];
+
 export function BuildPreviewModal({ result, onRun, onDiscard }: { result: BuildResult; onRun: () => void; onDiscard: () => void }) {
-  const { agent, graph, attempts, warnings } = result;
+  const { agent, graph, attempts, warnings, schedule } = result;
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [rationale, setRationale] = useState<string | null>(null);
   const [rationaleLoading, setRationaleLoading] = useState(true);
+  // Schedule card state (C3): whether to arm the detected schedule + which channels to deliver to.
+  const [scheduleOn, setScheduleOn] = useState(true);
+  const [channels, setChannels] = useState<Set<DeliveryChannel>>(new Set());
+  const [saving, setSaving] = useState(false);
+
+  // On confirm: if a schedule was detected and kept, create it + wire delivery, then run once now.
+  async function confirmAndRun() {
+    if (schedule && scheduleOn && !saving) {
+      setSaving(true);
+      try {
+        await createSchedule({ agentId: agent.id, kind: schedule.kind, spec: schedule.spec, label: schedule.label, onMissed: schedule.onMissed });
+        const targets = [...channels].map((channel) => ({ channel } as DeliveryTarget));
+        if (targets.length > 0) await setDelivery(agent.id, targets);
+      } catch { /* non-fatal — the agent still runs; the schedule can be added from the Schedules page */ }
+      finally { setSaving(false); }
+    }
+    onRun();
+  }
 
   useEffect(() => {
     setRationaleLoading(true);
@@ -598,10 +625,49 @@ export function BuildPreviewModal({ result, onRun, onDiscard }: { result: BuildR
           </div>
         </div>
 
+        {/* Schedule card (C3) — shown when the intent described a recurring cadence */}
+        {schedule && (
+          <div style={{ marginBottom: "var(--s5)", padding: "var(--s4)", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--r)", boxShadow: "var(--shadow-sm)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", marginBottom: "var(--s3)" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "var(--s2)", cursor: "pointer" }}>
+                <input type="checkbox" checked={scheduleOn} onChange={e => setScheduleOn(e.target.checked)} aria-label="Enable this schedule" />
+                <span className="small" style={{ fontWeight: 600, color: "var(--ink)" }}>Run on a schedule</span>
+              </label>
+            </div>
+            <p className="small soft" style={{ margin: "0 0 var(--s3)" }}>
+              Runs <span style={{ fontWeight: 600, color: "var(--ink)" }}>{schedule.label}</span> (server time).
+              {schedule.onMissed === "runOnce" && " Missed runs after downtime deliver once."}
+            </p>
+            <div style={{ opacity: scheduleOn ? 1 : 0.5, pointerEvents: scheduleOn ? "auto" : "none" }}>
+              <div className="micro" style={{ marginBottom: "var(--s2)" }}>Deliver to</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s2)" }}>
+                <span className="mono" style={{ fontSize: 11, padding: "var(--s1) var(--s2)", background: "var(--brand-tint)", color: "var(--brand)", borderRadius: "var(--r-pill)" }}>Inbox ✓</span>
+                {SCHEDULE_CHANNELS.map(({ channel, label }) => {
+                  const on = channels.has(channel);
+                  return (
+                    <button
+                      key={channel}
+                      type="button"
+                      className={`btn btn-sm ${on ? "btn-secondary" : "btn-ghost"}`}
+                      aria-pressed={on}
+                      onClick={() => setChannels(prev => { const n = new Set(prev); n.has(channel) ? n.delete(channel) : n.add(channel); return n; })}
+                    >
+                      {on ? `${label} ✓` : label}
+                    </button>
+                  );
+                })}
+              </div>
+              {channels.size > 0 && (
+                <p className="micro soft" style={{ margin: "var(--s2) 0 0" }}>Add the destination&apos;s address/token on the agent&apos;s Delivery settings.</p>
+              )}
+            </div>
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: "var(--s3)", justifyContent: "flex-end", alignItems: "center" }}>
           <button className="btn btn-secondary" onClick={onDiscard}>Discard</button>
-          <button className="btn btn-primary btn-lg" onClick={onRun}>
-            Run now
+          <button className="btn btn-primary btn-lg" onClick={() => void confirmAndRun()} disabled={saving}>
+            {saving ? "Saving…" : schedule && scheduleOn ? "Create & run once now" : "Run now"}
           </button>
         </div>
       </div>

@@ -82,6 +82,11 @@ export class AnthropicModel implements ModelPort {
           description: "Initial run state (e.g. {\"query\": \"...\"} for web_search). When the FINAL node composes prose to deliver, set output_map here, e.g. {\"output_map\": \"title=<node>.title,body=<node>.body,format=markdown\"} pointing at that node's output keys.",
           additionalProperties: true,
         },
+        schedule: {
+          type: ["object", "null"],
+          description: "OPTIONAL. If the intent asks the agent to run on a recurring schedule, propose one: {\"kind\":\"cron\",\"expr\":\"0 8 * * 1-5\"} (5-field cron, server-local time) or {\"kind\":\"interval\",\"ms\":3600000} (>= 60000). Omit or null if no recurrence is requested. This is a suggestion — it is re-validated before use.",
+          additionalProperties: true,
+        },
         nodes: {
           type: "array",
           items: {

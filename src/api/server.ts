@@ -44,6 +44,8 @@ import { getLogger } from "../core/observability/logger.js";
 import type { KrelvanRuntime } from "./runtime.js";
 import type { Manifest } from "../core/manifest/manifest.js";
 import { applyCustomize } from "../core/manifest/customize.js";
+import { parseSchedulePhrase, isDigestCadence } from "../core/manifest/schedule-phrase.js";
+import { validateCron } from "./scheduler.js";
 import { getLLMClient } from "../adapters/llm-client.js";
 import { authenticate, clientIp, type AuthState } from "./auth.js";
 
@@ -290,6 +292,7 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "POST",   pattern: ["api", "schedules"],               handler: (q, r) => handleCreateSchedule(q, r, runtime) },
     { method: "GET",    pattern: ["api", "schedules", ":id"],        handler: (q, r, p) => handleGetSchedule(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "schedules", ":id", "runs"], handler: (q, r, p) => handleScheduleRuns(q, r, p, runtime) },
+    { method: "POST",   pattern: ["api", "schedules", ":id", "run"],  handler: (q, r, p) => handleRunScheduleNow(q, r, p, runtime) },
     { method: "PATCH",  pattern: ["api", "schedules", ":id"],        handler: (q, r, p) => handlePatchSchedule(q, r, p, runtime) },
     { method: "DELETE", pattern: ["api", "schedules", ":id"],        handler: (q, r, p) => handleDeleteSchedule(q, r, p, runtime) },
   ];
@@ -501,6 +504,30 @@ async function handleCreateAgent(req: IncomingMessage, res: ServerResponse, rt: 
   json(res, 201, { agent });
 }
 
+/** A schedule proposal returned to the builder UI (never auto-applied — the user confirms). */
+interface ScheduleProposal { kind: "cron" | "interval"; spec: string; label: string; onMissed: "skip" | "runOnce" }
+
+/** Deterministic schedule from the raw intent (C3). Digest-cadence → runOnce, else skip. */
+export function scheduleFromIntent(intent: string): ScheduleProposal | null {
+  const p = parseSchedulePhrase(intent);
+  if (!p) return null;
+  return { kind: p.kind, spec: p.spec, label: p.label, onMissed: isDigestCadence(p) ? "runOnce" : "skip" };
+}
+
+/** Validate the MODEL's schedule proposal (untrusted): cron via validateCron, interval floored
+ *  at 60s. Returns a proposal only if it passes; otherwise null (silently dropped). */
+export function validatedModelSchedule(s: { kind: "cron"; expr: string } | { kind: "interval"; ms: number }): ScheduleProposal | null {
+  if (s.kind === "cron") {
+    if (validateCron(s.expr) !== null) return null;
+    return { kind: "cron", spec: s.expr, label: s.expr, onMissed: "skip" };
+  }
+  if (s.kind === "interval") {
+    if (!Number.isInteger(s.ms) || s.ms < 60_000) return null;
+    return { kind: "interval", spec: String(s.ms), label: `every ${Math.round(s.ms / 60_000)} min`, onMissed: "skip" };
+  }
+  return null;
+}
+
 async function handleBuildAgent(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const raw = await readBody(req);
   let body: { intent?: string };
@@ -529,10 +556,21 @@ async function handleBuildAgent(req: IncomingMessage, res: ServerResponse, rt: K
 
   const { agent, attempts, warnings } = result;
   const manifest = agent.signed.manifest;
+
+  // Schedule detection (C3): the DETERMINISTIC phrase parser runs first and, when it matches,
+  // always wins (LLM-is-untrusted posture). Only if it finds nothing do we consider the model's
+  // proposal on the manifest — and only after re-validating it (validateCron / interval floor),
+  // so a bad model spec is silently dropped rather than trusted.
+  let schedule = scheduleFromIntent(body.intent.trim());
+  if (!schedule && manifest.schedule) {
+    schedule = validatedModelSchedule(manifest.schedule);
+  }
+
   json(res, 201, {
     agent,
     attempts,
     warnings,
+    ...(schedule ? { schedule } : {}),
     graph: {
       nodes: manifest.nodes.map(n => ({ id: n.id, role: n.role, capabilities: n.capabilities, autonomy: n.autonomy })),
       edges: manifest.edges ?? [],
@@ -2035,6 +2073,14 @@ async function handleScheduleRuns(_req: IncomingMessage, res: ServerResponse, pa
     return { ...r, agentName: name, manifestName: name, ...(artifactId ? { artifactId } : {}) };
   });
   json(res, 200, { runs });
+}
+
+/** POST /api/schedules/:id/run — fire this schedule now (through startScheduledRun so the run
+ *  is attributed to the schedule and lands in its history). */
+async function handleRunScheduleNow(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const result = await rt.runScheduleNow(params["id"] ?? "");
+  if (!result.ok) { jsonError(res, 404, result.error); return; }
+  json(res, 202, { runId: result.runId, started: true });
 }
 
 async function handlePatchSchedule(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {

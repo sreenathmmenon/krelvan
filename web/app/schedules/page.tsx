@@ -8,10 +8,14 @@ import {
   createSchedule,
   toggleSchedule,
   deleteSchedule,
+  runScheduleNow,
+  getScheduleRuns,
+  getStatus,
   timeAgo,
   getCached,
   type ScheduleRecord,
   type AgentRecord,
+  type ScheduleRun,
 } from "../../lib/api";
 
 const CRON_PRESETS = [
@@ -69,6 +73,21 @@ function describeCron(spec: string): string | null {
   return map[spec.trim()] ?? null;
 }
 
+// After this many consecutive failures a schedule surfaces a warning (mirrors the backend).
+const STREAK_WARN = 3;
+
+/** A compact "in 3h 12m" / "in 45s" countdown from now to a future ms timestamp. */
+function countdown(at: number, now: number): string {
+  const diff = at - now;
+  if (diff <= 0) return "due now";
+  const s = Math.floor(diff / 1000);
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (d > 0) return `in ${d}d ${h}h`;
+  if (h > 0) return `in ${h}h ${m}m`;
+  if (m > 0) return `in ${m}m ${sec}s`;
+  return `in ${sec}s`;
+}
+
 export default function SchedulesPage() {
   const cachedSchedules = getCached<ScheduleRecord[]>("schedules");
   const [schedules, setSchedules] = useState<ScheduleRecord[]>(cachedSchedules ?? []);
@@ -76,6 +95,9 @@ export default function SchedulesPage() {
   const [loading, setLoading] = useState(!cachedSchedules);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [serverTz, setServerTz] = useState<string | null>(null);
+  // A 1s tick drives the live next-run countdowns without refetching.
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   const load = useCallback(async () => {
     try {
@@ -91,6 +113,19 @@ export default function SchedulesPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  // The server timezone — schedules evaluate cron in server-local time, so we say which.
+  useEffect(() => { void getStatus().then(st => setServerTz(st.serverTz ?? null)).catch(() => {}); }, []);
+  // Tick every second so countdowns stay live; refetch schedules periodically for status.
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    const r = setInterval(() => void load(), 10_000);
+    return () => { clearInterval(t); clearInterval(r); };
+  }, [load]);
+
+  async function handleRunNow(id: string) {
+    try { await runScheduleNow(id); setTimeout(() => void load(), 400); }
+    catch (e) { setError((e as Error).message); }
+  }
 
   async function handleToggle(id: string, enabled: boolean) {
     try {
@@ -206,8 +241,11 @@ export default function SchedulesPage() {
             <ScheduleCard
               key={s.id}
               schedule={s}
+              serverTz={serverTz}
+              now={nowTick}
               onToggle={handleToggle}
               onDelete={handleDelete}
+              onRunNow={handleRunNow}
             />
           ))}
         </div>
@@ -216,18 +254,38 @@ export default function SchedulesPage() {
   );
 }
 
+// Last-run status → a dot colour. amber (--live) is reserved for LIVE/RUNNING only, so a
+// finished status never uses it: OK green, failed/warning red, unknown neutral.
+function statusDot(s: ScheduleRecord): { color: string; label: string } {
+  if ((s.failStreak ?? 0) >= STREAK_WARN) return { color: "var(--danger)", label: `failing (${s.failStreak}×)` };
+  if (s.lastStatus === "completed") return { color: "var(--ok)", label: "last run ok" };
+  if (s.lastStatus === "failed") return { color: "var(--danger)", label: "last run failed" };
+  if (s.lastStatus === "halted") return { color: "var(--info)", label: "last run awaited approval" };
+  return { color: "var(--line-strong)", label: "no runs yet" };
+}
+
 function ScheduleCard({
   schedule: s,
+  serverTz,
+  now,
   onToggle,
   onDelete,
+  onRunNow,
 }: {
   schedule: ScheduleRecord;
+  serverTz: string | null;
+  now: number;
   onToggle: (id: string, enabled: boolean) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onRunNow: (id: string) => Promise<void>;
 }) {
   const [toggling, setToggling] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<ScheduleRun[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   async function handleToggle() {
     setToggling(true);
@@ -241,28 +299,47 @@ function ScheduleCard({
     setDeleting(false);
   }
 
+  async function handleRunNow() {
+    setRunning(true);
+    await onRunNow(s.id);
+    setRunning(false);
+    if (historyOpen) void loadHistory();
+  }
+
+  async function loadHistory() {
+    setHistoryLoading(true);
+    try { setHistory(await getScheduleRuns(s.id)); } catch { setHistory([]); }
+    finally { setHistoryLoading(false); }
+  }
+
+  function toggleHistory() {
+    const next = !historyOpen;
+    setHistoryOpen(next);
+    if (next && history === null) void loadHistory();
+  }
+
   const state = scheduleState(s);
   const gloss = s.kind === "cron" ? describeCron(s.spec) : `Runs ${formatSpec("interval", s.spec)}`;
+  const dot = statusDot(s);
+  const warning = (s.failStreak ?? 0) >= STREAK_WARN;
 
   return (
     <div
-      className="card card-hover"
+      className="card card-hover schedule-card"
       style={{
         padding: "var(--s5)",
-        display: "grid", gridTemplateColumns: "auto 1fr auto",
-        gap: "var(--s5)", alignItems: "center",
         borderLeft: `3px solid ${s.enabled ? "var(--brand)" : "var(--line-strong)"}`,
         opacity: s.enabled ? 1 : 0.72,
         transition: "opacity var(--t-standard) var(--ease)",
       }}
     >
-      {/* leading status dot — neutral/paused only; schedules are never "live" */}
+      {/* leading LAST-RUN status dot — ok/failed/warning/neutral. Never amber (that's live-only). */}
       <span
-        aria-hidden="true"
+        aria-label={dot.label}
+        title={dot.label}
         style={{
           width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
-          background: s.enabled ? "var(--brand)" : "var(--paused)",
-          boxShadow: s.enabled ? "0 0 0 4px var(--brand-ring)" : "none",
+          background: s.enabled ? dot.color : "var(--paused)",
         }}
       />
 
@@ -278,6 +355,7 @@ function ScheduleCard({
           <span className={STATE_BADGE_CLASS[state]}>
             {STATE_LABEL[state]}
           </span>
+          {warning && <span className="badge badge-failed">failing — check config</span>}
         </div>
 
         {/* the spec — the source of truth, in mono — with a plain-English gloss */}
@@ -312,21 +390,57 @@ function ScheduleCard({
             <span>
               Next run:{" "}
               <span className="mono" style={{ color: "var(--ink-soft)", fontWeight: 500 }}>
-                {timeAgo(s.nextRunAt)}
+                {countdown(s.nextRunAt, now)}
               </span>
               <span className="mono" style={{ color: "var(--ink-muted)" }}>
-                {" "}· {new Date(s.nextRunAt).toLocaleTimeString()}
+                {" "}· {new Date(s.nextRunAt).toLocaleTimeString()}{serverTz ? ` ${serverTz}` : ""}
               </span>
             </span>
           )}
           {!s.enabled && <span className="mono">Paused — will not run</span>}
         </div>
+
+        {/* expandable last-10 history */}
+        <div style={{ marginTop: "var(--s3)" }}>
+          <button className="btn btn-sm btn-ghost" onClick={toggleHistory} aria-expanded={historyOpen}>
+            {historyOpen ? "Hide history" : "History"}
+          </button>
+          {historyOpen && (
+            <div style={{ marginTop: "var(--s2)", borderTop: "1px solid var(--line)", paddingTop: "var(--s2)" }}>
+              {historyLoading ? (
+                <p className="small muted" style={{ margin: 0 }}>Loading…</p>
+              ) : !history || history.length === 0 ? (
+                <p className="small muted" style={{ margin: 0 }}>No runs yet — use “Run now” to fire it once.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "var(--s1)" }}>
+                  {history.map(run => (
+                    <div key={run.runId} style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap" }}>
+                      <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: run.status === "completed" ? "var(--ok)" : run.status === "failed" ? "var(--danger)" : run.status === "halted" ? "var(--info)" : "var(--line-strong)" }} />
+                      <span className="small mono" style={{ color: "var(--ink-muted)" }}>{timeAgo(run.createdAt)}</span>
+                      <span className="small" style={{ color: "var(--ink-soft)" }}>{run.status}</span>
+                      <Link href={`/runs/${run.runId}`} className="small" style={{ color: "var(--brand)", fontWeight: 500 }}>run →</Link>
+                      {run.artifactId && <Link href={`/outputs/${run.artifactId}`} className="small" style={{ color: "var(--brand)", fontWeight: 500 }}>output →</Link>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* actions */}
-      <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center", justifySelf: "end" }}>
+      <div className="schedule-actions">
         {!confirmDelete ? (
           <>
+            <button
+              className="btn btn-sm btn-secondary"
+              disabled={running}
+              onClick={() => void handleRunNow()}
+              title="Fire this schedule once, now"
+            >
+              {running ? "…" : "Run now"}
+            </button>
             <button
               className="btn btn-sm btn-secondary"
               disabled={toggling}

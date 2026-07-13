@@ -161,6 +161,23 @@ test("MODEL: the compiler prompt instructs output_map for the final composing no
   assert.ok(/final node/i.test(seenSystem), "prompt must tie output_map to the final composing node");
 });
 
+test("MODEL+COMPILER: a model schedule proposal survives compilation (validated downstream)", async () => {
+  const withSchedule = JSON.stringify({
+    version: 1, name: "digest", intent: "daily digest", entry: "write",
+    runBudgetCents: 50, maxNodeVisits: 2,
+    schedule: { kind: "cron", expr: "0 8 * * 1-5" },
+    nodes: [{ id: "write", role: "Write a digest", autonomy: "full", capabilities: [{ name: "think", sideEffect: "read", budgetCents: 30 }] }],
+    edges: [],
+  });
+  const model = modelWith(withSchedule);
+  const ring = new HmacKeyring();
+  const compiler = new Compiler(model, ring.addKey("compiler", "c", { epoch: 1, validFrom: 0, validUntil: null }));
+  const owner: Principal = { kind: "owner", id: "owner", maxRunBudgetCents: 1000, allowedCapabilities: [{ name: "think", sideEffect: "read", maxBudgetCents: 100 }] };
+  const res = await compiler.compile("daily digest", owner, 1);
+  assert.ok(res.ok, !res.ok ? JSON.stringify(res.issues) : "");
+  assert.deepEqual(res.signed.manifest.schedule, { kind: "cron", expr: "0 8 * * 1-5" }, "schedule proposal preserved for downstream validation");
+});
+
 test("MODEL+COMPILER: an output_map in a proposal survives compilation intact", async () => {
   const withMap = JSON.stringify({
     version: 1,

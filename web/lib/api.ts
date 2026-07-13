@@ -47,10 +47,20 @@ export interface AgentRecord {
   lastRunId?: string;
 }
 
+/** A schedule the builder detected from the intent — shown for confirmation, never auto-applied. */
+export interface ScheduleProposal {
+  kind: "cron" | "interval";
+  spec: string;
+  label: string;
+  onMissed: "skip" | "runOnce";
+}
+
 export interface BuildResult {
   agent: AgentRecord;
   attempts: number;
   warnings: string[];
+  /** present when the intent described a recurring schedule (C3). */
+  schedule?: ScheduleProposal;
   graph: {
     nodes: ManifestNode[];
     edges: ManifestEdge[];
@@ -212,7 +222,7 @@ export async function buildAgent(intent: string): Promise<BuildResult> {
   });
 }
 
-export interface ModelStatus { hasLlm: boolean; provider: string; model?: string | null; source?: "in-app" | "env" }
+export interface ModelStatus { hasLlm: boolean; provider: string; model?: string | null; source?: "in-app" | "env"; serverTz?: string }
 /** Readiness: is a model wired up? Drives the build gate + the "Model connected" pill. */
 export async function getStatus(): Promise<ModelStatus> {
   return apiFetch<ModelStatus>("/api/status");
@@ -596,6 +606,9 @@ export interface ScheduleRecord {
   lastRunId?: string;
   nextRunAt?: number;
   armed: boolean;
+  onMissed?: "skip" | "runOnce";
+  lastStatus?: "completed" | "failed" | "halted";
+  failStreak?: number;
 }
 
 // ── HITL Approvals ────────────────────────────────────────────────────────────
@@ -641,6 +654,7 @@ export async function createSchedule(opts: {
   kind: "cron" | "interval";
   spec: string;
   label?: string;
+  onMissed?: "skip" | "runOnce";
 }): Promise<ScheduleRecord> {
   const data = await apiFetch<{ schedule: ScheduleRecord }>("/api/schedules", {
     method: "POST",
@@ -659,6 +673,24 @@ export async function toggleSchedule(id: string, enabled: boolean): Promise<Sche
 
 export async function deleteSchedule(id: string): Promise<void> {
   await apiFetch(`/api/schedules/${id}`, { method: "DELETE" });
+}
+
+/** Fire a schedule now, through the schedule path so the run is attributed to it. */
+export async function runScheduleNow(id: string): Promise<{ runId: string }> {
+  return apiFetch<{ runId: string }>(`/api/schedules/${id}/run`, { method: "POST" });
+}
+
+/** One row of a schedule's run history — a run + the artifact it produced (if any). */
+export interface ScheduleRun extends RunRecord {
+  agentName: string;
+  artifactId?: string;
+  origin?: { kind: string; scheduleId?: string };
+}
+
+/** The last runs this schedule fired (newest-first), for the expandable history. */
+export async function getScheduleRuns(id: string): Promise<ScheduleRun[]> {
+  const data = await apiFetch<{ runs: ScheduleRun[] }>(`/api/schedules/${encodeURIComponent(id)}/runs`);
+  return data.runs;
 }
 
 // ── Webhook triggers (inbound — fire an agent from an external system) ────────────
