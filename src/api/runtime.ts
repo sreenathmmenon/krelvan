@@ -23,7 +23,7 @@ import { Compiler } from "../core/compiler/compiler.js";
 import { getLogger } from "../core/observability/logger.js";
 import type { LedgerStore } from "../core/ledger/store.js";
 import { verify } from "../core/ledger/store.js";
-import { validateManifest, type Manifest } from "../core/manifest/manifest.js";
+import { validateManifest, fatalIssues, type Manifest } from "../core/manifest/manifest.js";
 import { canonicalize } from "../core/ledger/canonical.js";
 import type { SignedManifest, AllowedCapability } from "../core/compiler/compiler.js";
 import type { SideEffectClass } from "../core/manifest/manifest.js";
@@ -31,9 +31,11 @@ import { loadYamlCapability } from "../core/extensions/yaml-capability.js";
 import { AnthropicModel } from "../adapters/anthropic-model.js";
 import { McpRegistry, type McpServerConfig } from "../core/mcp/mcp-client.js";
 import { loadCapabilityDirectory, loadJsCapabilities } from "../core/capability/directory-loader.js";
-import { Scheduler, ScheduleRegistry, validateCron, type ScheduleRecord } from "./scheduler.js";
+import { Scheduler, ScheduleRegistry, validateCron, FAIL_STREAK_WARN, type ScheduleRecord, type OnMissed } from "./scheduler.js";
 import { SecretStore } from "./secret-store.js";
 import { TriggerStore } from "./trigger-store.js";
+import { ArtifactStore } from "./artifact-store.js";
+import { extractArtifact } from "./artifact-extractor.js";
 import { AdminAuth } from "./admin-auth.js";
 import { thinkCapability } from "../core/plugins/think.js";
 import { recallCapability, rememberCapability, identifyCapability, loadSoul, saveSoul } from "../core/plugins/memory-plugins.js";
@@ -278,6 +280,13 @@ export class AgentRegistry {
 
 export type RunStatus = "pending" | "running" | "completed" | "failed" | "halted";
 
+/** How a run was started. Powers the schedule-history view and the "from schedule" chip. */
+export interface RunOrigin {
+  kind: "manual" | "schedule" | "trigger" | "public-ask";
+  /** present when kind === "schedule": which schedule fired this run. */
+  scheduleId?: string;
+}
+
 export interface RunRecord {
   runId: string;
   agentId: string;
@@ -290,6 +299,9 @@ export interface RunRecord {
   /** How the run was started. "chat" runs are conversation turns — they must NOT appear in
    *  the Inbox (which shows deliverable agent output, not chat replies). Default: a normal run. */
   kind?: "run" | "chat";
+  /** How the run was triggered (manual/schedule/trigger/public-ask). Absent = manual (no
+   *  migration needed — old records render as manual). */
+  origin?: RunOrigin;
 }
 
 export class RunRegistry {
@@ -315,7 +327,7 @@ export class RunRegistry {
     atomicWrite(this.path, JSON.stringify([...this.runs.values()], null, 2));
   }
 
-  create(opts: { agentId: string; runId: string; manifestName: string; kind?: "run" | "chat" }): RunRecord {
+  create(opts: { agentId: string; runId: string; manifestName: string; kind?: "run" | "chat"; origin?: RunOrigin }): RunRecord {
     const record: RunRecord = {
       runId: opts.runId,
       agentId: opts.agentId,
@@ -323,10 +335,19 @@ export class RunRegistry {
       status: "pending",
       createdAt: Date.now(),
       kind: opts.kind ?? "run",
+      ...(opts.origin ? { origin: opts.origin } : {}),
     };
     this.runs.set(record.runId, record);
     this.persist();
     return record;
+  }
+
+  /** Runs fired by a specific schedule, newest-first (for the schedule-history view). */
+  listBySchedule(scheduleId: string, limit = 20): RunRecord[] {
+    return [...this.runs.values()]
+      .filter(r => r.origin?.kind === "schedule" && r.origin.scheduleId === scheduleId)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit);
   }
 
   get(runId: string): RunRecord | undefined {
@@ -601,6 +622,8 @@ export class KrelvanRuntime {
   readonly secretStore: SecretStore;
   /** Per-agent webhook trigger tokens (the inbound/interactive path). */
   readonly triggerStore: TriggerStore;
+  /** Completed-run outputs as first-class, rendered, shareable artifacts (the consume side). */
+  readonly artifactStore: ArtifactStore;
   /** Admin login (first-run setup + username/password + sessions). */
   readonly adminAuth: AdminAuth;
   readonly scheduler: Scheduler;
@@ -661,6 +684,7 @@ export class KrelvanRuntime {
     this.scheduleRegistry = new ScheduleRegistry(config.dataDir);
     this.secretStore = new SecretStore(config.dataDir);
     this.triggerStore = new TriggerStore(config.dataDir);
+    this.artifactStore = new ArtifactStore(config.dataDir);
     this.adminAuth = new AdminAuth(config.dataDir);
     // MCP servers resolve their {{secret:NAME}} env refs from the encrypted secret store;
     // the child gets a scrubbed env (never Krelvan's own secrets).
@@ -671,8 +695,21 @@ export class KrelvanRuntime {
     // the encrypted SecretStore so a UI-connected Telegram works with no env var / restart.
     setTelegramSecretResolver((name) => this.secretStore.resolve(name));
     setEmailSecretResolver((name) => this.secretStore.resolve(name));
-    this.scheduler = new Scheduler(this.scheduleRegistry, (agentId, scheduleId) =>
-      this.startScheduledRun(agentId, scheduleId),
+    this.scheduler = new Scheduler(
+      this.scheduleRegistry,
+      (agentId, scheduleId) => this.startScheduledRun(agentId, scheduleId),
+      {
+        // When a schedule fails repeatedly, tell the owner through the agent's existing
+        // delivery targets (best-effort, detached) so a broken schedule can't fail silently.
+        notifyFailure: (schedule, reason) => {
+          const agent = this.agentRegistry.get(schedule.agentId);
+          if (!agent?.deliverTo?.length) return;
+          const body = `Your schedule "${schedule.label}" has failed ${FAIL_STREAK_WARN} times in a row.` +
+            (reason ? ` Latest reason: ${reason}` : "") +
+            ` It is still scheduled — check the agent's configuration.`;
+          void this.deliverOutput(agent.deliverTo, agent.signed.manifest.name, schedule.lastRunId ?? "schedule", `Schedule "${schedule.label}" is failing`, body);
+        },
+      },
     );
     this.capsDir = resolvePath(config.capabilitiesDir ?? join(config.dataDir, "..", "capabilities"));
     mkdirSync(this.capsDir, { recursive: true });
@@ -1163,7 +1200,7 @@ export class KrelvanRuntime {
    * Validates the manifest structurally, signs it with the owner key, and saves it.
    */
   importManifest(manifest: Manifest): { ok: true; agent: AgentRecord } | { ok: false; issues: string[] } {
-    const issues = validateManifest(manifest);
+    const issues = fatalIssues(validateManifest(manifest));
     if (issues.length) return { ok: false, issues: issues.map(i => i.message) };
 
     const id = contentAddress(canonicalize(manifest as unknown));
@@ -1782,6 +1819,7 @@ export class KrelvanRuntime {
       agentId,
       runId,
       manifestName: agent.signed.manifest.name,
+      origin: { kind: "schedule", scheduleId },
     });
 
     log.info({ runId, agentId, scheduleId }, "starting scheduled run");
@@ -1796,6 +1834,9 @@ export class KrelvanRuntime {
     kind: "cron" | "interval";
     spec: string;
     label?: string;
+    /** Missed-run policy across downtime. Defaults to "skip"; the builder passes "runOnce"
+     *  for digest-style daily/weekly schedules (you still want yesterday's digest, once). */
+    onMissed?: OnMissed;
   }): { ok: true; schedule: ScheduleRecord } | { ok: false; error: string } {
     const agent = this.agentRegistry.get(opts.agentId);
     if (!agent) return { ok: false, error: `agent ${opts.agentId} not found` };
@@ -1817,6 +1858,7 @@ export class KrelvanRuntime {
       label: opts.label ?? opts.spec,
       enabled: true,
       createdAt: this.now(),
+      onMissed: opts.onMissed ?? "skip",
     };
 
     this.scheduleRegistry.create(schedule);
@@ -1834,7 +1876,7 @@ export class KrelvanRuntime {
     const agent = this.agentRegistry.get(agentId);
     if (!agent) return { ok: false, error: "agent not found" };
     const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const run = this.runRegistry.create({ agentId, runId, manifestName: agent.signed.manifest.name });
+    const run = this.runRegistry.create({ agentId, runId, manifestName: agent.signed.manifest.name, origin: { kind: "trigger" } });
     void this.executeRun(runId, agent.signed.manifest, initialState, agentId);
     return { ok: true, run };
   }
@@ -1935,20 +1977,50 @@ export class KrelvanRuntime {
       };
       if (deadlineWindowMs > 0) runOpts.deadlineMs = Date.now() + deadlineWindowMs;
       const result = await engine.run(runOpts);
+      const finalStatus: "completed" | "halted" | "failed" =
+        result.status === "completed" ? "completed" : result.status === "halted" ? "halted" : "failed";
       this.runRegistry.update(runId, {
-        status: result.status === "completed" ? "completed" : result.status === "halted" ? "halted" : "failed",
+        status: finalStatus,
         finishedAt: Date.now(),
         spentCents: result.projection.budget.runSpentCents,
         reason: result.reason,
       });
       log.info({ runId, status: result.status, spentCents: result.projection.budget.runSpentCents }, "run finished");
 
-      // Deliver the output to the customer's chosen destinations. Best-effort and detached:
-      // a delivery failure must never affect the run (the output is already in the Inbox).
-      if (result.status === "completed" && agentId) {
-        const agent = this.agentRegistry.get(agentId);
-        if (agent?.deliverTo && agent.deliverTo.length > 0) {
-          void this.deliverOutput(agent.deliverTo, manifest.name, runId, result.projection.state as Record<string, unknown>);
+      // If this run was fired by a schedule, record the outcome so the failure-streak logic
+      // (C1) can warn after repeated failures. A completed run resets the streak.
+      const origin = this.runRegistry.get(runId)?.origin;
+      if (origin?.kind === "schedule" && origin.scheduleId) {
+        this.scheduler.recordRunOutcome(origin.scheduleId, finalStatus, result.reason ?? "");
+      }
+
+      // On a completed NON-CHAT run: extract the deliverable output ONCE (output_map first,
+      // else the heuristic) and make it a first-class Artifact (the Inbox feed). Chat runs
+      // are conversation turns — never artifacts (same exclusion the Inbox already applies).
+      // The SAME extracted title/body is then handed to delivery, so the Inbox and the
+      // email/slack/… copy are guaranteed identical (one extractor, two consumers).
+      if (result.status === "completed") {
+        const isChat = this.runRegistry.get(runId)?.kind === "chat";
+        if (!isChat) {
+          const extracted = extractArtifact(manifest, result.projection.state as Record<string, unknown>);
+          if (extracted) {
+            const agent = agentId ? this.agentRegistry.get(agentId) : undefined;
+            // create() is idempotent by runId — a re-fold/re-serve never duplicates.
+            this.artifactStore.create({
+              agentId: agentId ?? manifest.name,
+              agentName: agent?.signed.manifest.name ?? manifest.name,
+              runId,
+              ...(origin?.kind === "schedule" && origin.scheduleId ? { scheduleId: origin.scheduleId } : {}),
+              title: extracted.title,
+              body: extracted.body,
+              format: extracted.format,
+            });
+            // Deliver to the customer's chosen destinations. Best-effort and detached: a
+            // delivery failure must never affect the run (the output is already in the Inbox).
+            if (agent?.deliverTo && agent.deliverTo.length > 0) {
+              void this.deliverOutput(agent.deliverTo, manifest.name, runId, extracted.title, extracted.body);
+            }
+          }
         }
       }
     } catch (err) {
@@ -1960,29 +2032,19 @@ export class KrelvanRuntime {
     }
   }
 
-  /** Extract a run's human-facing output and push it to the agent's chosen delivery targets. */
+  /**
+   * Push an already-extracted run output to the agent's chosen delivery targets. The title
+   * and body come from the ONE shared extractor (extractArtifact) so the delivered copy is
+   * byte-identical to the Inbox artifact — there is no separate extraction here anymore.
+   */
   private async deliverOutput(
     targets: import("./delivery.js").DeliveryTarget[],
     agentName: string,
     runId: string,
-    state: Record<string, unknown>,
+    title: string,
+    body: string,
   ): Promise<void> {
     try {
-      // Prefer prose output (a *.result / *.body / *.reply / …); else the first notable value.
-      const entries = Object.entries(state);
-      const proseSuffix = [".result", ".briefing", ".body", ".reply", ".answer", ".digest", ".summary", ".message", ".note"];
-      let body = "";
-      for (const suf of proseSuffix) {
-        const hit = entries.find(([k, v]) => k.endsWith(suf) && typeof v === "string" && (v as string).trim().length > 0);
-        if (hit) { body = String(hit[1]).trim(); break; }
-      }
-      if (!body) {
-        const notable = entries
-          .filter(([k, v]) => (typeof v === "string" || typeof v === "number" || typeof v === "boolean") && !k.startsWith("_") && String(v).length > 0 && String(v).length < 200)
-          .slice(0, 5).map(([k, v]) => `${k.split(".").pop()}: ${v}`);
-        body = notable.join("\n") || "Run completed with no text output.";
-      }
-      const title = body.length > 90 ? body.slice(0, 88).trimEnd() + "…" : body;
       // Resolve any *_ref delivery secrets (stored encrypted, never in plaintext on the record)
       // back into their plaintext values only at send time, in memory, for this one delivery.
       const resolvedTargets = targets.map((t) => {

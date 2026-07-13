@@ -8,7 +8,8 @@
   "seed": {
     "competitor_url": "https://example.com/pricing",
     "competitor_label": "the watched competitor page",
-    "webhook_label": "the team intel channel"
+    "webhook_label": "the team intel channel",
+    "output_map": "body=digest.digest,format=markdown"
   },
   "nodes": [
     {

@@ -18,6 +18,7 @@
 
 import {
   validateManifest,
+  fatalIssues,
   type CustomizeField,
   type Manifest,
 } from "./manifest.js";
@@ -67,7 +68,7 @@ export function applyCustomize(template: Manifest, settings: CustomizeSettings):
     }
   }
 
-  const issues = validateManifest(m);
+  const issues = fatalIssues(validateManifest(m));
   if (issues.length > 0) {
     return { ok: false, error: `customized manifest is invalid: ${issues.map((i) => i.message).join("; ")}` };
   }

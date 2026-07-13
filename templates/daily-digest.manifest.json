@@ -11,7 +11,8 @@
     "slack_channel": "#daily-digest",
     "remember_map": "last_top=rank.top_item",
     "source_a": "https://hn.algolia.com/api/v1/search?tags=front_page",
-    "source_b": "https://hn.algolia.com/api/v1/search?query=AI&tags=story"
+    "source_b": "https://hn.algolia.com/api/v1/search?query=AI&tags=story",
+    "output_map": "title=format.title,body=format.digest,format=markdown"
   },
   "nodes": [
     {

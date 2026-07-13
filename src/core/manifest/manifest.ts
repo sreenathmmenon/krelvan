@@ -15,6 +15,7 @@
  */
 
 import type { Expr } from "./expr.js";
+import { outputMapKeys } from "./output-map.js";
 
 /** Side-effect class of a capability — drives admission + replay re-gating. */
 export type SideEffectClass =
@@ -160,6 +161,15 @@ export interface CustomizeField {
 export interface ValidationIssue {
   code: string;
   message: string;
+  /** "error" (default) blocks install/compile/customize; "note" is informational only
+   *  (e.g. an output_map that points at a node that does not exist — the agent still runs,
+   *  its output just falls back to heuristic extraction). Callers gate on errors only. */
+  severity?: "error" | "note";
+}
+
+/** The blocking subset of validation issues (severity "error", the default). */
+export function fatalIssues(issues: ValidationIssue[]): ValidationIssue[] {
+  return issues.filter((i) => (i.severity ?? "error") === "error");
 }
 
 /**
@@ -235,6 +245,18 @@ export function validateManifest(m: Manifest): ValidationIssue[] {
         }
       }
       if (f.rename && f.type !== "text") issues.push({ code: "BAD_CUSTOMIZE", message: `customize '${key}' renames the agent so its type must be 'text'` });
+    }
+  }
+
+  // optional output_map — a NON-FATAL note (same spirit as edge-key validation) when it
+  // references a "nodeId.key" whose node does not exist. The agent still runs; its output
+  // just falls back to heuristic extraction, so this must never block install.
+  for (const refKey of outputMapKeys(m.seed)) {
+    const dot = refKey.indexOf(".");
+    if (dot <= 0) continue; // a bare key isn't node-scoped — nothing to check
+    const nodeId = refKey.slice(0, dot);
+    if (!ids.has(nodeId)) {
+      issues.push({ code: "OUTPUT_MAP_UNKNOWN_NODE", severity: "note", message: `output_map references '${refKey}' but node '${nodeId}' does not exist — output will fall back to heuristic extraction` });
     }
   }
 

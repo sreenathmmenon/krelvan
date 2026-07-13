@@ -10,7 +10,8 @@
     "subject": "Following up on the proposal",
     "body": "Hi — just checking whether you had a chance to review the proposal we sent last week. We'd love to move forward this month if it still makes sense on your end. Let me know either way!",
     "my_name": "Sam",
-    "remember_map": "last_contact=classify.category"
+    "remember_map": "last_contact=classify.category",
+    "output_map": "title=draft.subject,body=draft.reply,format=markdown"
   },
   "nodes": [
     {

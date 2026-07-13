@@ -14,10 +14,13 @@ export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Allowlist: the proxy (self-gated), the auth pages, Next internals, static files.
+  // Public artifact share pages (/share/:token) are read-only and authenticated by the
+  // unguessable token in the URL — a recipient must be able to open one WITHOUT an account.
   if (
     pathname.startsWith("/proxy") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
+    pathname.startsWith("/share/") ||
     pathname.includes(".") || // static assets (.css/.js/.svg/.png …)
     PUBLIC_PATHS.has(pathname)
   ) {

@@ -22,6 +22,7 @@ import { contentAddress, type Signature, type Signer } from "../ledger/crypto.js
 import { referencedKeys } from "../manifest/expr.js";
 import {
   validateManifest,
+  fatalIssues,
   type Manifest,
   type SideEffectClass,
   type ValidationIssue,
@@ -96,7 +97,7 @@ export class Compiler {
     proposal.intent = storedIntent;
 
     // 1. structural validation
-    const vIssues = validateManifest(proposal);
+    const vIssues = fatalIssues(validateManifest(proposal));
     if (vIssues.length) return { ok: false, stage: "validate", issues: vIssues };
 
     // 2. capability monotonicity (the security core)

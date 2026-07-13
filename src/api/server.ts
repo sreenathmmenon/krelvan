@@ -226,6 +226,15 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "GET",    pattern: ["api", "runs", ":id", "explain"],  handler: (q, r, p) => handleRunExplain(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "diagnose"], handler: (q, r, p) => handleRunDiagnose(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "runs", ":id", "retry"],    handler: (q, r, p) => handleRunRetry(q, r, p, runtime) },
+    // Artifacts — the consume side. Admin-gated CRUD + share mint/revoke.
+    { method: "GET",    pattern: ["api", "artifacts"],                 handler: (q, r) => handleListArtifacts(q, r, runtime) },
+    { method: "GET",    pattern: ["api", "artifacts", ":id"],          handler: (q, r, p) => handleGetArtifact(q, r, p, runtime) },
+    { method: "PATCH",  pattern: ["api", "artifacts", ":id"],          handler: (q, r, p) => handlePatchArtifact(q, r, p, runtime) },
+    { method: "DELETE", pattern: ["api", "artifacts", ":id"],          handler: (q, r, p) => handleDeleteArtifact(q, r, p, runtime) },
+    { method: "POST",   pattern: ["api", "artifacts", ":id", "share"], handler: (q, r, p) => handleShareArtifact(q, r, p, runtime) },
+    { method: "DELETE", pattern: ["api", "artifacts", ":id", "share"], handler: (q, r, p) => handleUnshareArtifact(q, r, p, runtime) },
+    // PUBLIC — a share token resolves one artifact's rendered output, no session (allowlisted).
+    { method: "GET",    pattern: ["api", "share", ":token"],           handler: (q, r, p) => handlePublicShare(q, r, p, runtime) },
     // Inbound/interactive: a public, token-authenticated webhook that starts an agent run.
     { method: "POST",   pattern: ["api", "triggers", ":agentId"],     handler: (q, r, p) => handleWebhookTrigger(q, r, p, runtime) },
     // Admin (session-gated): mint / view-status / revoke an agent's webhook trigger token.
@@ -263,6 +272,7 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "GET",    pattern: ["api", "schedules"],               handler: (q, r) => handleListSchedules(q, r, runtime) },
     { method: "POST",   pattern: ["api", "schedules"],               handler: (q, r) => handleCreateSchedule(q, r, runtime) },
     { method: "GET",    pattern: ["api", "schedules", ":id"],        handler: (q, r, p) => handleGetSchedule(q, r, p, runtime) },
+    { method: "GET",    pattern: ["api", "schedules", ":id", "runs"], handler: (q, r, p) => handleScheduleRuns(q, r, p, runtime) },
     { method: "PATCH",  pattern: ["api", "schedules", ":id"],        handler: (q, r, p) => handlePatchSchedule(q, r, p, runtime) },
     { method: "DELETE", pattern: ["api", "schedules", ":id"],        handler: (q, r, p) => handleDeleteSchedule(q, r, p, runtime) },
   ];
@@ -418,7 +428,12 @@ async function handleHealth(_req: IncomingMessage, res: ServerResponse): Promise
 
 /** GET /api/status — readiness for the UI (is a model wired up?). Drives the build gate + pill. */
 async function handleStatus(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
-  json(res, 200, { ...rt.modelStatus });
+  // Schedules evaluate cron in SERVER-LOCAL time, so the UI must show which timezone that is
+  // ("runs in <tz>"). Expose the server's IANA zone (best-effort; falls back to the UTC offset).
+  let serverTz: string;
+  try { serverTz = Intl.DateTimeFormat().resolvedOptions().timeZone || `UTC${new Date().getTimezoneOffset() <= 0 ? "+" : "-"}${Math.abs(new Date().getTimezoneOffset() / 60)}`; }
+  catch { serverTz = "UTC"; }
+  json(res, 200, { ...rt.modelStatus, serverTz });
 }
 
 async function handleGetModel(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
@@ -648,6 +663,100 @@ async function handleStartRun(req: IncomingMessage, res: ServerResponse, rt: Kre
   void rt.executeRun(runRecord.runId, agent.signed.manifest, body.initialState ?? {}, body.agentId);
 
   json(res, 201, { run: runRecord });
+}
+
+// ── Artifacts (the consume side) ────────────────────────────────────────────────
+
+/** GET /api/artifacts?agentId=&archived=&q=&limit=&before=  — newest-first, admin-gated. */
+async function handleListArtifacts(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const q = url.searchParams;
+  const query: import("./artifact-store.js").ArtifactQuery = {};
+  const agentId = q.get("agentId"); if (agentId) query.agentId = agentId;
+  const runId = q.get("runId"); if (runId) query.runId = runId;
+  const archived = q.get("archived"); if (archived === "true" || archived === "false") query.archived = archived === "true";
+  const text = q.get("q"); if (text) query.q = text;
+  const limit = Number(q.get("limit")); if (Number.isFinite(limit) && limit > 0) query.limit = Math.min(limit, 200);
+  const before = Number(q.get("before")); if (Number.isFinite(before) && before > 0) query.before = before;
+  json(res, 200, { artifacts: rt.artifactStore.list(query) });
+}
+
+/** GET /api/artifacts/:id — one artifact (admin). Includes runId so the UI can link the run record. */
+async function handleGetArtifact(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const art = rt.artifactStore.get(params["id"] ?? "");
+  if (!art) { jsonError(res, 404, "artifact not found"); return; }
+  json(res, 200, { artifact: art, shared: art.shareTokenHash !== undefined });
+}
+
+/** PATCH /api/artifacts/:id  { archived?, read? } — server-side read/archive state. */
+async function handlePatchArtifact(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  let body: { archived?: unknown; read?: unknown };
+  try { body = JSON.parse(await readBody(req)); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  const patch: { archived?: boolean; read?: boolean } = {};
+  if (typeof body.archived === "boolean") patch.archived = body.archived;
+  if (typeof body.read === "boolean") patch.read = body.read;
+  const updated = rt.artifactStore.update(params["id"] ?? "", patch);
+  if (!updated) { jsonError(res, 404, "artifact not found"); return; }
+  json(res, 200, { artifact: updated });
+}
+
+/** DELETE /api/artifacts/:id (admin). */
+async function handleDeleteArtifact(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const id = params["id"] ?? "";
+  if (!rt.artifactStore.delete(id)) { jsonError(res, 404, "artifact not found"); return; }
+  json(res, 200, { deleted: id });
+}
+
+/** POST /api/artifacts/:id/share — mint (or rotate) a public share link. Token shown ONCE. */
+async function handleShareArtifact(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const token = rt.artifactStore.mintShare(params["id"] ?? "");
+  if (!token) { jsonError(res, 404, "artifact not found"); return; }
+  // Returned ONCE — only the hash is stored. The path is the public share URL.
+  json(res, 201, { token, url: `/share/${token}`, note: "Anyone with this link can view the output. It is shown only once; rotate to invalidate it." });
+}
+
+/** DELETE /api/artifacts/:id/share — revoke the public link (existing links stop resolving). */
+async function handleUnshareArtifact(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const art = rt.artifactStore.get(params["id"] ?? "");
+  if (!art) { jsonError(res, 404, "artifact not found"); return; }
+  const revoked = rt.artifactStore.revokeShare(params["id"] ?? "");
+  json(res, 200, { revoked });
+}
+
+// Per-IP throttle for the PUBLIC share route (blunts share-token guessing on the open path).
+const shareFails = new Map<string, { count: number; first: number }>();
+function shareThrottled(ip: string): boolean {
+  const now = Date.now();
+  const r = shareFails.get(ip);
+  return !!(r && now - r.first < 60_000 && r.count >= 30);
+}
+function recordShareFail(ip: string): void {
+  const now = Date.now();
+  const r = shareFails.get(ip);
+  if (!r || now - r.first > 60_000) shareFails.set(ip, { count: 1, first: now });
+  else r.count++;
+  if (shareFails.size > 1000) {
+    for (const [k, v] of shareFails) if (now - v.first > 60_000) shareFails.delete(k);
+  }
+}
+
+/**
+ * GET /api/share/:token — PUBLIC. Constant-time lookup by sha256(token). Returns ONLY the
+ * rendered output shape — never runId, never internal ids — so a share link leaks nothing
+ * about the instance. Rate-limited per IP like the trigger route.
+ */
+async function handlePublicShare(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const ip = clientIp(req);
+  if (shareThrottled(ip)) { jsonError(res, 429, "too many requests — slow down"); return; }
+  const art = rt.artifactStore.resolveShare(params["token"] ?? "");
+  if (!art) { recordShareFail(ip); jsonError(res, 404, "not found"); return; }
+  json(res, 200, {
+    title: art.title,
+    body: art.body,
+    format: art.format,
+    agentName: art.agentName,
+    createdAt: art.createdAt,
+  });
 }
 
 // ── Inbound webhook trigger (the interactive/inbound path) ──────────────────────
@@ -1720,7 +1829,7 @@ async function handleListSchedules(_req: IncomingMessage, res: ServerResponse, r
 
 async function handleCreateSchedule(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const raw = await readBody(req);
-  let body: { agentId?: string; kind?: string; spec?: string; label?: string };
+  let body: { agentId?: string; kind?: string; spec?: string; label?: string; onMissed?: string };
   try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
 
   if (!body.agentId?.trim()) { jsonError(res, 400, "agentId is required"); return; }
@@ -1735,6 +1844,7 @@ async function handleCreateSchedule(req: IncomingMessage, res: ServerResponse, r
     kind: body.kind,
     spec: body.spec.trim(),
     label: body.label,
+    ...(body.onMissed === "runOnce" || body.onMissed === "skip" ? { onMissed: body.onMissed } : {}),
   });
 
   if (!result.ok) { json(res, 422, { error: result.error }); return; }
@@ -1745,6 +1855,19 @@ async function handleGetSchedule(_req: IncomingMessage, res: ServerResponse, par
   const schedule = rt.scheduleRegistry.get(params["id"] ?? "");
   if (!schedule) { jsonError(res, 404, "schedule not found"); return; }
   json(res, 200, { schedule: { ...schedule, armed: rt.scheduler.isArmed(schedule.id) } });
+}
+
+/** GET /api/schedules/:id/runs — the last 20 runs this schedule fired, newest-first, each
+ *  with the artifact it produced (if any) so the UI can link run + rendered output. */
+async function handleScheduleRuns(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const id = params["id"] ?? "";
+  if (!rt.scheduleRegistry.get(id)) { jsonError(res, 404, "schedule not found"); return; }
+  const runs = rt.runRegistry.listBySchedule(id, 20).map((r) => {
+    const name = r.manifestName || rt.agentRegistry.get(r.agentId)?.signed.manifest.name || "Untitled agent";
+    const artifactId = rt.artifactStore.getByRun(r.runId)?.id;
+    return { ...r, agentName: name, manifestName: name, ...(artifactId ? { artifactId } : {}) };
+  });
+  json(res, 200, { runs });
 }
 
 async function handlePatchSchedule(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {

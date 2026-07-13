@@ -38,8 +38,13 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
   // (never inject the API token). This makes the copyable URL callable from anywhere.
   const isTrigger = apiPath.startsWith("api/triggers/");
 
-  // GATE: non-public, non-trigger API calls require a valid session cookie.
-  if (!PUBLIC_API.has(apiPath) && !isTrigger && !session) {
+  // A public artifact SHARE link (api/share/:token) is read-only and token-authenticated in the
+  // API by the unguessable token in the path — no admin session, so a logged-out visitor can open
+  // a shared output. It exposes only the rendered output (never a runId/internal id).
+  const isShare = apiPath.startsWith("api/share/");
+
+  // GATE: non-public, non-trigger, non-share API calls require a valid session cookie.
+  if (!PUBLIC_API.has(apiPath) && !isTrigger && !isShare && !session) {
     return json(401, { error: "not authenticated" });
   }
 

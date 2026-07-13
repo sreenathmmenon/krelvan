@@ -9,7 +9,8 @@
     "message": "Hello — what can you help me with?",
     "history": "",
     "persona": "a sharp, helpful assistant — direct, specific, honest. You reason before answering and say when you're unsure.",
-    "sender_id": "default-thread"
+    "sender_id": "default-thread",
+    "output_map": "body=respond.reply,format=markdown"
   },
   "nodes": [
     {

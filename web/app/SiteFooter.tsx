@@ -7,6 +7,8 @@ import { KrelvanLogo } from "./KrelvanLogo";
 export default function SiteFooter() {
   const pathname = usePathname();
   if (pathname === "/login" || pathname === "/setup") return null;
+  // Public share pages carry their own minimal footer ("Made with Krelvan") — no app chrome.
+  if (pathname?.startsWith("/share/")) return null;
   // The canvas is a full-viewport interactive tool (its own 100vh workspace + in-app status
   // chip). The marketing footer must not render beneath it and create a dead scroll region.
   if (pathname?.startsWith("/canvas/")) return null;

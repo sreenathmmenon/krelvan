@@ -8,7 +8,8 @@
   "seed": {
     "topic": "the economics of on-device LLM inference",
     "audience": "a busy technical founder",
-    "remember_map": "last_brief=assemble.result"
+    "remember_map": "last_brief=assemble.result",
+    "output_map": "body=assemble.brief,format=markdown"
   },
   "nodes": [
     {

@@ -3,7 +3,7 @@
 import { useState, useEffect, use, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getRun, getRunEvents, verifyRun, listApprovals, resolveApproval, explainRun, diagnoseRun, retryRunWithFix, startRun, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type RunVerification, type PendingApproval, type RunExplanation, type RunDiagnosis, API_BASE } from "../../../lib/api";
+import { getRun, getRunEvents, verifyRun, listApprovals, resolveApproval, explainRun, diagnoseRun, retryRunWithFix, startRun, listArtifacts, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type RunVerification, type PendingApproval, type RunExplanation, type RunDiagnosis, API_BASE } from "../../../lib/api";
 import { layoutGraph, graphBounds, edgePath } from "../../../lib/layout";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -145,6 +145,8 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [resolving, setResolving] = useState<string | null>(null);
   const [verification, setVerification] = useState<RunVerification | null>(null);
   const [verifying, setVerifying] = useState(false);
+  // The Artifact this run produced (if any) — powers the "Output" chip → rendered page.
+  const [artifactId, setArtifactId] = useState<string | null>(null);
   const sseRef = useRef<EventSource | null>(null);
 
   async function runVerify() {
@@ -237,6 +239,18 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     if (s === "completed" || s === "failed" || s === "halted") void runVerify();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.run.status]);
+
+  // Once the run has completed, look up whether it produced an Artifact so we can offer a
+  // chip that jumps to the rendered output page. Best-effort — a missing artifact is fine.
+  useEffect(() => {
+    if (!detail || artifactId != null) return;
+    if (detail.run.status !== "completed") return;
+    let live = true;
+    listArtifacts({ runId: id, limit: 1 })
+      .then((arts) => { if (live && arts[0]) setArtifactId(arts[0].id); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [detail?.run.status, id, artifactId]);
 
   // Once we have detail, decide whether to open SSE
   useEffect(() => {
@@ -501,6 +515,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               <h1 className="h1" style={{ margin: 0 }}>{run.manifestName || "Untitled agent"}</h1>
               {isLiveSSE && (
                 <span className="badge badge-running"><span className="dot" />live</span>
+              )}
+              {artifactId && (
+                <Link href={`/outputs/${artifactId}`} className="badge badge-info" style={{ textDecoration: "none" }}>Output →</Link>
               )}
             </div>
             <div style={{ display: "flex", gap: "var(--s4)", flexWrap: "wrap", alignItems: "center" }}>

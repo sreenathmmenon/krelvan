@@ -154,7 +154,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     // Keep this in sync with middleware PUBLIC_PATHS. /faq is a public marketing page — a
     // logged-out visitor's FAQ API calls may 401 and must degrade gracefully, NOT bounce the
     // whole window to /login (that made clicking "FAQ" from the nav a dead-end sign-in wall).
-    const isPublic = p === "/" || p === "/faq" || p.startsWith("/login") || p.startsWith("/setup");
+    const isPublic = p === "/" || p === "/faq" || p.startsWith("/login") || p.startsWith("/setup") || p.startsWith("/share/");
     if (!isPublic) window.location.href = "/login";
   }
   if (!res.ok) {
@@ -286,6 +286,89 @@ export async function getRun(runId: string): Promise<RunDetail> {
 export async function getRunEvents(runId: string): Promise<LedgerEvent[]> {
   const data = await apiFetch<{ events: LedgerEvent[] }>(`/api/runs/${runId}/events`);
   return data.events;
+}
+
+// ── Artifacts (the consume side) ────────────────────────────────────────────────
+
+export interface ArtifactRecord {
+  id: string;
+  agentId: string;
+  agentName: string;
+  runId: string;
+  scheduleId?: string;
+  title: string;
+  body: string;
+  format: "markdown" | "text";
+  createdAt: number;
+  archived: boolean;
+  readAt?: number;
+  shareTokenHash?: string;
+}
+
+/** The public share payload — deliberately NO runId / internal ids. */
+export interface SharedArtifact {
+  title: string;
+  body: string;
+  format: "markdown" | "text";
+  agentName: string;
+  createdAt: number;
+}
+
+export interface ArtifactQuery {
+  agentId?: string;
+  runId?: string;
+  archived?: boolean;
+  q?: string;
+  limit?: number;
+  before?: number;
+}
+
+export async function listArtifacts(query: ArtifactQuery = {}): Promise<ArtifactRecord[]> {
+  const p = new URLSearchParams();
+  if (query.agentId) p.set("agentId", query.agentId);
+  if (query.runId) p.set("runId", query.runId);
+  if (query.archived !== undefined) p.set("archived", String(query.archived));
+  if (query.q) p.set("q", query.q);
+  if (query.limit !== undefined) p.set("limit", String(query.limit));
+  if (query.before !== undefined) p.set("before", String(query.before));
+  const qs = p.toString();
+  const data = await apiFetch<{ artifacts: ArtifactRecord[] }>(`/api/artifacts${qs ? `?${qs}` : ""}`);
+  listCache.set("artifacts", data.artifacts);
+  return data.artifacts;
+}
+
+export async function getArtifact(id: string): Promise<{ artifact: ArtifactRecord; shared: boolean }> {
+  return apiFetch<{ artifact: ArtifactRecord; shared: boolean }>(`/api/artifacts/${encodeURIComponent(id)}`);
+}
+
+export async function patchArtifact(id: string, patch: { archived?: boolean; read?: boolean }): Promise<ArtifactRecord> {
+  const data = await apiFetch<{ artifact: ArtifactRecord }>(`/api/artifacts/${encodeURIComponent(id)}`, {
+    method: "PATCH", body: JSON.stringify(patch),
+  });
+  return data.artifact;
+}
+
+export async function deleteArtifact(id: string): Promise<void> {
+  await apiFetch(`/api/artifacts/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** Mint (or rotate) a public share link. Returns the one-time token + its /share URL. */
+export async function shareArtifact(id: string): Promise<{ token: string; url: string }> {
+  return apiFetch<{ token: string; url: string }>(`/api/artifacts/${encodeURIComponent(id)}/share`, { method: "POST" });
+}
+
+export async function unshareArtifact(id: string): Promise<{ revoked: boolean }> {
+  return apiFetch<{ revoked: boolean }>(`/api/artifacts/${encodeURIComponent(id)}/share`, { method: "DELETE" });
+}
+
+/** Fetch a PUBLIC shared artifact. Used by the /share/[token] page — no session, no redirect. */
+export async function getSharedArtifact(token: string): Promise<SharedArtifact> {
+  const res = await fetch(`${API_BASE}/api/share/${encodeURIComponent(token)}`, { cache: "no-store" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
+    throw new Error(err.error ?? `not found`);
+  }
+  return res.json() as Promise<SharedArtifact>;
 }
 
 export interface RunExplanation {

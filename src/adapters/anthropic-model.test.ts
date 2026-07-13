@@ -135,6 +135,59 @@ test("MODEL+COMPILER: a malicious model proposal is parsed but REJECTED by the c
   );
 });
 
+// ── A2: the compiler must guide output_map for prose-composing agents ─────────────
+
+test("MODEL: the compiler prompt instructs output_map for the final composing node", async () => {
+  // Capture the outgoing request body so we can assert on the system prompt the model sees.
+  let seenSystem = "";
+  const capturingFetch = (async (_url: unknown, init: { body?: string }) => {
+    const body = JSON.parse(init.body ?? "{}") as { system?: string };
+    seenSystem = body.system ?? "";
+    return {
+      ok: true, status: 200,
+      async json() { return { content: [{ type: "tool_use", name: "build_manifest", input: JSON.parse(VALID) }] }; },
+      async text() { return VALID; },
+    } as unknown as Response;
+  }) as unknown as typeof fetch;
+
+  const model = new AnthropicModel({
+    apiKey: "k",
+    allowedCapabilities: [{ name: "web_search", sideEffect: "read" }],
+    suggestedRunBudgetCents: 100,
+    fetchImpl: capturingFetch,
+  });
+  await model.propose("write me a brief");
+  assert.ok(seenSystem.includes("output_map"), "prompt must instruct output_map");
+  assert.ok(/final node/i.test(seenSystem), "prompt must tie output_map to the final composing node");
+});
+
+test("MODEL+COMPILER: an output_map in a proposal survives compilation intact", async () => {
+  const withMap = JSON.stringify({
+    version: 1,
+    name: "briefer",
+    intent: "brief me",
+    entry: "write",
+    runBudgetCents: 50,
+    maxNodeVisits: 2,
+    seed: { output_map: "title=write.title,body=write.body,format=markdown" },
+    nodes: [{ id: "write", role: "Write a brief. Output keys: body, title.", autonomy: "full", capabilities: [{ name: "think", sideEffect: "read", budgetCents: 30 }] }],
+    edges: [],
+  });
+  const model = modelWith(withMap);
+  const ring = new HmacKeyring();
+  const compilerSigner = ring.addKey("compiler", "c", { epoch: 1, validFrom: 0, validUntil: null });
+  const compiler = new Compiler(model, compilerSigner);
+  const owner: Principal = {
+    kind: "owner",
+    id: "owner",
+    maxRunBudgetCents: 1000,
+    allowedCapabilities: [{ name: "think", sideEffect: "read", maxBudgetCents: 100 }],
+  };
+  const res = await compiler.compile("brief me", owner, 1);
+  assert.ok(res.ok, !res.ok ? JSON.stringify(res.issues) : "");
+  assert.equal(res.signed.manifest.seed?.["output_map"], "title=write.title,body=write.body,format=markdown", "output_map is preserved through compilation");
+});
+
 test("MODEL+COMPILER: a valid proposal within authority compiles", async () => {
   const model = modelWith(VALID);
   const ring = new HmacKeyring();

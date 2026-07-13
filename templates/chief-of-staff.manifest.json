@@ -9,7 +9,8 @@
     "meetings": "2:00pm — Priya Nair, VP Engineering at Corven Systems (technical evaluation of our platform). 4:00pm — Marcus Webb, CTO at Lumen Data (intro call, they build analytics infra).",
     "my_context": "I sell a self-hosted agentic-AI platform to engineering teams. My goal is to move deals forward and build real relationships.",
     "query": "Corven Systems company",
-    "remember_map": "last_prep=brief.result"
+    "remember_map": "last_prep=brief.result",
+    "output_map": "body=brief.brief,format=markdown"
   },
   "nodes": [
     {

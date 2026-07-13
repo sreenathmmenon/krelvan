@@ -8,7 +8,8 @@
   "seed": {
     "query": "What is our refund window for enterprise customers?",
     "kb": "company-kb",
-    "remember_map": "last_answer=compose_answer.result"
+    "remember_map": "last_answer=compose_answer.result",
+    "output_map": "body=compose_answer.answer,format=markdown"
   },
   "nodes": [
     {

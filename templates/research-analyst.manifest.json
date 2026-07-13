@@ -8,7 +8,8 @@
   "seed": {
     "topic": "the current state of small open-weight language models",
     "audience": "a busy executive who wants a one-page brief",
-    "remember_map": "last_brief=compose.body"
+    "remember_map": "last_brief=compose.body",
+    "output_map": "title=compose.title,body=compose.body,format=markdown"
   },
   "nodes": [
     {

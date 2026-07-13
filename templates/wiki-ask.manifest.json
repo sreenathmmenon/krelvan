@@ -9,7 +9,8 @@
     "wiki": "my-wiki",
     "source": "krelvan-docs",
     "question": "Which LLM providers can I use with Krelvan, and can it run fully local?",
-    "material": "Krelvan is a self-hostable, open-source (Apache-2.0) platform for building and running AI agents you own. You describe a goal in plain English and Krelvan builds a real multi-agent system that researches, drafts, and acts across your tools. It works with any LLM provider — Anthropic, OpenAI, Google Gemini, Groq, Mistral, or any OpenAI-compatible endpoint — configured per install, and can run fully local with Ollama for both the LLM and embeddings so no data leaves your machine. Agents run on a schedule, remember across runs, and deliver output to the Agent Inbox or a channel you connect such as Telegram or email. Each node has an autonomy level: full runs autonomously while suggest pauses for your approval before any irreversible or outbound action."
+    "material": "Krelvan is a self-hostable, open-source (Apache-2.0) platform for building and running AI agents you own. You describe a goal in plain English and Krelvan builds a real multi-agent system that researches, drafts, and acts across your tools. It works with any LLM provider — Anthropic, OpenAI, Google Gemini, Groq, Mistral, or any OpenAI-compatible endpoint — configured per install, and can run fully local with Ollama for both the LLM and embeddings so no data leaves your machine. Agents run on a schedule, remember across runs, and deliver output to the Agent Inbox or a channel you connect such as Telegram or email. Each node has an autonomy level: full runs autonomously while suggest pauses for your approval before any irreversible or outbound action.",
+    "output_map": "body=answer.answer,format=markdown"
   },
   "nodes": [
     {

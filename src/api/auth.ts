@@ -165,6 +165,10 @@ export function authenticate(
   // (checked in the handler, constant-time) and can only START that one agent's run — no
   // session/CSRF, so external systems (forms, relays, automations) can fire an agent.
   if (url.pathname.startsWith("/api/triggers/")) return { ok: true };
+  // Public artifact share links carry their OWN unguessable share token in the path
+  // (checked in the handler, constant-time). A shared output is read-only and returns only
+  // the rendered output + agent name — never a runId or internal id, no session required.
+  if (url.pathname.startsWith("/api/share/")) return { ok: true };
 
   const ip = clientIp(req);
   const now = Date.now();
