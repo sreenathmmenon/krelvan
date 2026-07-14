@@ -85,7 +85,7 @@ export default function NavClient() {
   function openCommand() { window.dispatchEvent(new Event("krelvan:open-command")); }
 
   useEffect(() => {
-    if (pathname === "/login" || pathname === "/setup" || pathname?.startsWith("/share/")) return; // don't poll on auth/public pages
+    if (pathname === "/login" || pathname === "/setup" || pathname?.startsWith("/share/") || pathname?.startsWith("/a/")) return; // don't poll on auth/public pages
     let alive = true;
     async function poll() {
       try {
@@ -178,7 +178,7 @@ export default function NavClient() {
   // Auth pages (login/setup) are standalone — no nav chrome.
   if (pathname === "/login" || pathname === "/setup") return null;
   // Public artifact share pages have no app chrome — a logged-out recipient sees only the output.
-  if (pathname?.startsWith("/share/")) return null;
+  if (pathname?.startsWith("/share/") || pathname?.startsWith("/a/")) return null;
 
   // Public marketing pages (home, FAQ) get a MARKETING nav — a logged-out visitor must not
   // see the authenticated app shell (Dashboard/Runs/Secrets/Approvals + sign-out), which

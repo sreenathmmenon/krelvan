@@ -280,3 +280,110 @@ test("B2: per-thread run cap returns 429 with NO budget numbers", async () => {
     assert.doesNotMatch(body.error, /\d+\s*(cent|cents|\$|budget|token)/i, "429 must not reveal any cost/budget number");
   } finally { delete process.env["KRELVAN_PUBLIC_THREAD_MAX"]; await h.close(); }
 });
+
+// ── B3: the public agent page's data — profile serves the (public) site key for chat ──
+
+test("B3: profile serves the site key ONLY when chat is enabled; the served key actually works", async () => {
+  const h = await harness();
+  try {
+    const { id, slug } = makeAgent(h.rt);
+
+    // Feed-only (no chat): profile has no site key.
+    await enable(h, id, { enabled: true, showFeed: true, chat: false });
+    const noChat = await (await fetch(`${h.base}/api/public/agents/${slug}`)).json() as Record<string, unknown>;
+    assert.equal(noChat["chatEnabled"], false);
+    assert.equal(noChat["siteKey"], undefined, "no key when chat is off");
+
+    // Enable chat: profile now serves the public site key (it's a deliberately-public credential).
+    await enable(h, id, { enabled: true, showFeed: true, chat: true });
+    const withChat = await (await fetch(`${h.base}/api/public/agents/${slug}`)).json() as { chatEnabled: boolean; siteKey?: string };
+    assert.equal(withChat.chatEnabled, true);
+    assert.ok(withChat.siteKey && withChat.siteKey.startsWith("pk_"), "profile serves the site key for the storefront to chat");
+
+    // The served key actually authenticates a public ask (end-to-end).
+    const ask = await fetch(`${h.base}/api/public/agents/${slug}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "hi", siteKey: withChat.siteKey }) });
+    assert.equal(ask.status, 200, "the storefront-served key works for /ask");
+    const reply = await ask.json() as Record<string, unknown>;
+    assert.equal(reply["runId"], undefined, "still no runId leaked");
+
+    // Profile still leaks no internal id.
+    assert.equal(withChat["siteKey"]?.length, withChat.siteKey.length); // key present
+    assert.equal((withChat as Record<string, unknown>)["id"], undefined, "no agent id in the public profile");
+  } finally { await h.close(); }
+});
+
+test("B3: the plaintext site key lives only in the ENCRYPTED secret store, not agents.json", async () => {
+  const h = await harness();
+  try {
+    const { id } = makeAgent(h.rt);
+    const key = await enable(h, id, { enabled: true, showFeed: false, chat: true });
+    const agentsOnDisk = readFileSync(join(h.dir, "data", "agents.json"), "utf8");
+    assert.ok(!agentsOnDisk.includes(key!), "plaintext key never in agents.json");
+    // secrets.json is AES-GCM ciphertext — the plaintext must not appear there either.
+    const secretsOnDisk = readFileSync(join(h.dir, "data", "secrets.json"), "utf8");
+    assert.ok(!secretsOnDisk.includes(key!), "plaintext key never in secrets.json (it's encrypted)");
+    // And the reserved __sitekey__ secret is hidden from the admin secrets list.
+    assert.ok(!h.rt.secretStore.list().some(s => s.name.startsWith("__")), "internal site-key secret is hidden from the admin list");
+  } finally { await h.close(); }
+});
+
+// ── B4: publish toggle drives the public feed ────────────────────────────────────
+
+test("B4: PATCH { published } toggles feed visibility end-to-end", async () => {
+  const h = await harness();
+  try {
+    const { id, slug } = makeAgent(h.rt);
+    await enable(h, id, { enabled: true, showFeed: true, chat: false });
+    const art = h.rt.artifactStore.create({ agentId: id, agentName: "Support Bot", runId: "r1", title: "Draft output", body: "hello", format: "markdown" });
+
+    // Unpublished by default → not in the feed.
+    let feed = await (await fetch(`${h.base}/api/public/agents/${slug}/feed`)).json() as { items: unknown[] };
+    assert.equal(feed.items.length, 0, "unpublished artifact is hidden");
+
+    // Publish via the admin PATCH → now in the feed.
+    const pub = await fetch(`${h.base}/api/artifacts/${art.id}`, { method: "PATCH", headers: authed, body: JSON.stringify({ published: true }) });
+    assert.equal(pub.status, 200);
+    assert.equal((await pub.json() as { artifact: { published: boolean } }).artifact.published, true);
+    feed = await (await fetch(`${h.base}/api/public/agents/${slug}/feed`)).json() as { items: { title: string }[] };
+    assert.equal(feed.items.length, 1, "published artifact appears");
+    assert.equal((feed.items[0] as { title: string }).title, "Draft output");
+
+    // Un-publish → gone again.
+    await fetch(`${h.base}/api/artifacts/${art.id}`, { method: "PATCH", headers: authed, body: JSON.stringify({ published: false }) });
+    feed = await (await fetch(`${h.base}/api/public/agents/${slug}/feed`)).json() as { items: unknown[] };
+    assert.equal(feed.items.length, 0, "un-published artifact disappears from the feed");
+  } finally { await h.close(); }
+});
+
+// ── B5: origin allowlist on the widget ask path ──────────────────────────────────
+
+test("B5: allowedOrigins locks /ask to listed sites; unset allows any", async () => {
+  const h = await harness();
+  try {
+    const { id, slug } = makeAgent(h.rt);
+    // Enable chat WITH an origin allowlist.
+    const put = await (await fetch(`${h.base}/api/agents/${id}/public`, {
+      method: "PUT", headers: authed,
+      body: JSON.stringify({ enabled: true, showFeed: false, chat: true, allowedOrigins: ["https://acme.com"] }),
+    })).json() as { siteKey: string; allowedOrigins: string[] };
+    const key = put.siteKey;
+    assert.deepEqual(put.allowedOrigins, ["https://acme.com"]);
+
+    const ask = (headers: Record<string, string>) => fetch(`${h.base}/api/public/agents/${slug}/ask`, {
+      method: "POST", headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify({ message: "hi", siteKey: key }),
+    });
+
+    // Listed origin → allowed. Trailing slash tolerated.
+    assert.equal((await ask({ origin: "https://acme.com" })).status, 200, "listed origin allowed");
+    assert.equal((await ask({ origin: "https://acme.com/" })).status, 200, "trailing slash tolerated");
+    // Unlisted origin → 403 (even with a valid key). Missing origin → 403.
+    assert.equal((await ask({ origin: "https://evil.com" })).status, 403, "unlisted origin refused");
+    assert.equal((await ask({})).status, 403, "missing origin refused when an allowlist is set");
+
+    // Remove the allowlist → any origin (or none) works again.
+    await fetch(`${h.base}/api/agents/${id}/public`, { method: "PUT", headers: authed, body: JSON.stringify({ enabled: true, showFeed: false, chat: true, allowedOrigins: [] }) });
+    assert.equal((await ask({ origin: "https://anywhere.example" })).status, 200, "no allowlist → any origin ok");
+    assert.equal((await ask({})).status, 200, "no allowlist → missing origin ok");
+  } finally { await h.close(); }
+});

@@ -43,8 +43,13 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
   // a shared output. It exposes only the rendered output (never a runId/internal id).
   const isShare = apiPath.startsWith("api/share/");
 
-  // GATE: non-public, non-trigger, non-share API calls require a valid session cookie.
-  if (!PUBLIC_API.has(apiPath) && !isTrigger && !isShare && !session) {
+  // The public Agent Front Door (api/public/*) — profile/feed reads gated by the agent's own
+  // public flags, and /ask authenticated by a per-agent site key. No admin session; the /a/:slug
+  // page and the widget reach it without cookies. (The API deny-by-defaults a disabled agent.)
+  const isPublicAgent = apiPath.startsWith("api/public/");
+
+  // GATE: non-public API calls require a valid session cookie.
+  if (!PUBLIC_API.has(apiPath) && !isTrigger && !isShare && !isPublicAgent && !session) {
     return json(401, { error: "not authenticated" });
   }
 
@@ -128,6 +133,13 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
     "keep-alive", "access-control-allow-origin"]) {
     respHeaders.delete(h);
   }
+  // The public Agent Front Door is meant to be called cross-origin (the embeddable widget runs
+  // on OTHER sites). Those routes carry no session/cookie — they are site-key-authed — so echo
+  // the API's `*` CORS here too. Everything else stays same-origin only.
+  if (isPublicAgent) {
+    respHeaders.set("access-control-allow-origin", "*");
+    respHeaders.set("vary", "Origin");
+  }
 
   // SSE / event-streams must stay STREAMED (they never "complete").
   const ctype = upstream.headers.get("content-type") ?? "";
@@ -149,3 +161,19 @@ export async function POST(req: NextRequest, ctx: Ctx)   { return forward(req, (
 export async function PUT(req: NextRequest, ctx: Ctx)    { return forward(req, (await ctx.params).path); }
 export async function PATCH(req: NextRequest, ctx: Ctx)  { return forward(req, (await ctx.params).path); }
 export async function DELETE(req: NextRequest, ctx: Ctx) { return forward(req, (await ctx.params).path); }
+
+// CORS preflight. Only the PUBLIC front door (/proxy/api/public/*) answers `*` — the embeddable
+// widget on a third-party site sends a preflighted POST. Every other path is same-origin only,
+// so a preflight there gets no allow-origin and the browser blocks it (as intended).
+export async function OPTIONS(_req: NextRequest, ctx: Ctx) {
+  const apiPath = (await ctx.params).path.join("/");
+  if (apiPath.startsWith("api/public/")) {
+    return new Response(null, { status: 204, headers: {
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
+      "access-control-allow-headers": "Content-Type, X-Site-Key",
+      "vary": "Origin",
+    } });
+  }
+  return new Response(null, { status: 204 });
+}

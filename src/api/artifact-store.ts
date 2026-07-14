@@ -183,11 +183,12 @@ export class ArtifactStore {
     return out;
   }
 
-  /** Patch archive/read state. Returns the updated record, or undefined if absent. */
-  update(id: string, patch: { archived?: boolean; read?: boolean }): ArtifactRecord | undefined {
+  /** Patch archive/read/published state. Returns the updated record, or undefined if absent. */
+  update(id: string, patch: { archived?: boolean; read?: boolean; published?: boolean }): ArtifactRecord | undefined {
     const a = this.artifacts.get(id);
     if (!a) return undefined;
     if (patch.archived !== undefined) a.archived = patch.archived;
+    if (patch.published !== undefined) a.published = patch.published;
     if (patch.read !== undefined) {
       if (patch.read) { if (a.readAt === undefined) a.readAt = Date.now(); }
       else delete a.readAt;

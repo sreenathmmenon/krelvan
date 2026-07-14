@@ -6,9 +6,10 @@ import {
   getAgent, getAgentRuns, startRun, deleteAgent, listSchedules, createSchedule, toggleSchedule, deleteSchedule,
   getTrigger, mintTrigger, revokeTrigger, listApprovals,
   getDelivery, setDelivery, chatWithAgent,
+  getAgentPublic, setAgentPublic, rotateSiteKey,
   timeAgo,
   type AgentRecord, type RunRecord, type ScheduleRecord, type ManifestNode, type ManifestEdge, type PendingApproval,
-  type DeliveryChannel, type DeliveryTarget,
+  type DeliveryChannel, type DeliveryTarget, type AgentPublicView,
 } from "../../../lib/api";
 import MemoryTab from "./MemoryTab";
 import { edgeGeometry, edgeConditionLabel, type Box } from "../../../lib/graph-edges";
@@ -716,7 +717,7 @@ function SchedulePanel({ agentId, schedules, onRefresh }: { agentId: string; sch
   );
 }
 
-const TABS = ["graph", "chat", "runs", "schedules", "trigger", "delivery", "memory"] as const;
+const TABS = ["graph", "chat", "runs", "schedules", "trigger", "delivery", "public", "memory"] as const;
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -738,7 +739,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
   // Toast for a failed primary action (run now) so the click isn't silently lost.
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [tab, setTab] = useState<"graph" | "chat" | "runs" | "schedules" | "trigger" | "delivery" | "memory">("graph");
+  const [tab, setTab] = useState<"graph" | "chat" | "runs" | "schedules" | "trigger" | "delivery" | "public" | "memory">("graph");
   const [running, setRunning] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1001,7 +1002,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
           <div role="tablist" aria-label="Agent sections" style={{ display: "flex", gap: "var(--s5)" }}>
             {TABS.map((t, i) => {
               const active = tab === t;
-              const label = t === "graph" ? "Graph" : t === "chat" ? "Chat" : t === "runs" ? `Runs (${runs.length})` : t === "schedules" ? `Schedules${scheduleCount > 0 ? ` (${scheduleCount})` : ""}` : t === "trigger" ? "Trigger" : t === "delivery" ? "Delivery" : "Memory";
+              const label = t === "graph" ? "Graph" : t === "chat" ? "Chat" : t === "runs" ? `Runs (${runs.length})` : t === "schedules" ? `Schedules${scheduleCount > 0 ? ` (${scheduleCount})` : ""}` : t === "trigger" ? "Trigger" : t === "delivery" ? "Delivery" : t === "public" ? "Public" : "Memory";
               return (
                 <button
                   key={t}
@@ -1178,6 +1179,13 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
         {tab === "delivery" && (
           <div role="tabpanel" id="panel-delivery" aria-labelledby="tab-delivery">
             <DeliveryPanel agentId={id} />
+          </div>
+        )}
+
+        {/* Public tab — make the agent reachable off the admin panel (page + widget) */}
+        {tab === "public" && (
+          <div role="tabpanel" id="panel-public" aria-labelledby="tab-public">
+            <PublicPanel agentId={id} agentName={agent.signed.manifest.name} />
           </div>
         )}
 
@@ -1739,6 +1747,123 @@ function DeliveryPanel({ agentId }: { agentId: string }) {
             )}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Public panel (B1/B5) — make the agent reachable off the admin panel ──────────
+function PublicPanel({ agentId, agentName }: { agentId: string; agentName: string }) {
+  const [cfg, setCfg] = useState<AgentPublicView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [siteKey, setSiteKey] = useState<string | null>(null); // shown once on mint/rotate
+  const [origins, setOrigins] = useState("");
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+
+  const refresh = useCallback(() => {
+    void getAgentPublic(agentId).then(c => { setCfg(c); setOrigins((c.allowedOrigins ?? []).join(", ")); }).catch(() => {});
+  }, [agentId]);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  function copy(text: string, key: string) {
+    void navigator.clipboard?.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(null), 1500); });
+  }
+
+  async function save(next: { enabled: boolean; showFeed: boolean; chat: boolean }) {
+    setBusy(true);
+    try {
+      const allowedOrigins = origins.split(",").map(o => o.trim()).filter(Boolean);
+      const r = await setAgentPublic(agentId, { ...next, allowedOrigins });
+      setCfg(r);
+      if (r.siteKey) setSiteKey(r.siteKey);
+    } finally { setBusy(false); }
+  }
+
+  async function rotate() {
+    setBusy(true);
+    try { const r = await rotateSiteKey(agentId); setSiteKey(r.siteKey); refresh(); } finally { setBusy(false); }
+  }
+
+  if (!cfg) return <div className="skeleton skeleton-line" style={{ height: 40, width: 280 }} />;
+
+  const publicUrl = cfg.slug ? `${origin}/a/${cfg.slug}` : null;
+  // The site key needed for the snippet: freshly minted (siteKey), else nothing to show (we
+  // never re-fetch a stored plaintext into the admin UI — the storefront serves it publicly).
+  const snippetKey = siteKey ?? "pk_your-site-key";
+  const snippet = `<script src="${origin}/widget.js" data-agent="${cfg.slug ?? "your-agent"}" data-key="${snippetKey}"></script>`;
+
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <h2 className="h3" style={{ marginBottom: "var(--s2)" }}>Public page &amp; widget</h2>
+      <p className="small soft" style={{ marginBottom: "var(--s5)", lineHeight: 1.6, maxWidth: "60ch" }}>
+        Make {agentName} reachable off the admin panel: a shareable page at <code className="mono">/a/{cfg.slug}</code>,
+        an optional published-output feed, and an embeddable chat widget for your own site. Everything is off until you turn it on.
+      </p>
+
+      <div className="card" style={{ padding: "var(--s5)", marginBottom: "var(--s4)", display: "flex", flexDirection: "column", gap: "var(--s3)" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: "var(--s2)", cursor: "pointer" }}>
+          <input type="checkbox" checked={cfg.enabled} disabled={busy} onChange={e => void save({ enabled: e.target.checked, showFeed: e.target.checked ? cfg.showFeed : false, chat: e.target.checked ? cfg.chat : false })} />
+          <span className="small" style={{ fontWeight: 600 }}>Public page</span>
+          <span className="small muted">— a live page anyone with the link can open</span>
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: "var(--s2)", cursor: "pointer", opacity: cfg.enabled ? 1 : 0.5, pointerEvents: cfg.enabled ? "auto" : "none" }}>
+          <input type="checkbox" checked={cfg.showFeed} disabled={busy} onChange={e => void save({ enabled: cfg.enabled, showFeed: e.target.checked, chat: cfg.chat })} />
+          <span className="small" style={{ fontWeight: 600 }}>Show output feed</span>
+          <span className="small muted">— published outputs appear on the page</span>
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: "var(--s2)", cursor: "pointer", opacity: cfg.enabled ? 1 : 0.5, pointerEvents: cfg.enabled ? "auto" : "none" }}>
+          <input type="checkbox" checked={cfg.chat} disabled={busy} onChange={e => void save({ enabled: cfg.enabled, showFeed: cfg.showFeed, chat: e.target.checked })} />
+          <span className="small" style={{ fontWeight: 600 }}>Allow chat</span>
+          <span className="small muted">— visitors can ask it questions (mints a site key)</span>
+        </label>
+      </div>
+
+      {siteKey && (
+        <div style={{ marginBottom: "var(--s4)", padding: "var(--s3) var(--s4)", borderRadius: "var(--r)", background: "var(--brand-tint)", border: "1px solid var(--line)" }}>
+          <p className="small" style={{ fontWeight: 600, margin: "0 0 var(--s2)" }}>Site key (shown once — save it now)</p>
+          <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center", flexWrap: "wrap" }}>
+            <code className="mono small" style={{ flex: "1 1 240px", overflow: "hidden", textOverflow: "ellipsis" }}>{siteKey}</code>
+            <button className="btn btn-sm btn-ghost" onClick={() => copy(siteKey, "key")}>{copied === "key" ? "Copied" : "Copy"}</button>
+          </div>
+        </div>
+      )}
+
+      {cfg.enabled && publicUrl && (
+        <div className="card" style={{ padding: "var(--s5)", marginBottom: "var(--s4)" }}>
+          <p className="micro" style={{ marginBottom: "var(--s2)" }}>Public page</p>
+          <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center", flexWrap: "wrap" }}>
+            <a href={publicUrl} target="_blank" rel="noreferrer" className="small mono" style={{ color: "var(--brand)", fontWeight: 500 }}>{publicUrl}</a>
+            <button className="btn btn-sm btn-ghost" onClick={() => copy(publicUrl, "url")}>{copied === "url" ? "Copied" : "Copy"}</button>
+          </div>
+        </div>
+      )}
+
+      {cfg.enabled && cfg.chat && (
+        <>
+          <div className="card" style={{ padding: "var(--s5)", marginBottom: "var(--s4)" }}>
+            <p className="micro" style={{ marginBottom: "var(--s2)" }}>Embed on your site</p>
+            <p className="small soft" style={{ margin: "0 0 var(--s3)", lineHeight: 1.6 }}>Paste this before <code className="mono">&lt;/body&gt;</code>. It shows a chat bubble that talks to this agent.</p>
+            <pre className="mono" style={{ background: "var(--surface-sunken)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "var(--s3)", overflowX: "auto", fontSize: "0.8em", margin: 0 }}>{snippet}</pre>
+            <div style={{ display: "flex", gap: "var(--s2)", marginTop: "var(--s3)" }}>
+              <button className="btn btn-sm btn-secondary" onClick={() => copy(snippet, "snippet")}>{copied === "snippet" ? "Copied" : "Copy snippet"}</button>
+              <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => void rotate()}>Rotate site key</button>
+            </div>
+            {!siteKey && <p className="micro soft" style={{ margin: "var(--s2) 0 0" }}>Rotate to reveal a fresh key for the snippet (the current one keeps working on the public page).</p>}
+          </div>
+
+          <div className="card" style={{ padding: "var(--s5)" }}>
+            <p className="micro" style={{ marginBottom: "var(--s2)" }}>Allowed origins (optional)</p>
+            <p className="small soft" style={{ margin: "0 0 var(--s3)", lineHeight: 1.6 }}>
+              Lock the widget to specific sites — comma-separated (e.g. <code className="mono">https://acme.com</code>). Leave blank to allow any site.
+            </p>
+            <div style={{ display: "flex", gap: "var(--s2)", flexWrap: "wrap" }}>
+              <input className="input" value={origins} onChange={e => setOrigins(e.target.value)} placeholder="https://acme.com, https://app.acme.com" aria-label="Allowed origins" style={{ flex: "1 1 260px" }} />
+              <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => void save({ enabled: cfg.enabled, showFeed: cfg.showFeed, chat: cfg.chat })}>Save</button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

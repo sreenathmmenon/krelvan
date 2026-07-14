@@ -21,6 +21,7 @@ export function middleware(req: NextRequest) {
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
     pathname.startsWith("/share/") ||
+    pathname.startsWith("/a/") ||   // public agent pages (/a/:slug) — no account needed
     pathname.includes(".") || // static assets (.css/.js/.svg/.png …)
     PUBLIC_PATHS.has(pathname)
   ) {

@@ -750,11 +750,12 @@ async function handleGetArtifact(_req: IncomingMessage, res: ServerResponse, par
 
 /** PATCH /api/artifacts/:id  { archived?, read? } — server-side read/archive state. */
 async function handlePatchArtifact(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
-  let body: { archived?: unknown; read?: unknown };
+  let body: { archived?: unknown; read?: unknown; published?: unknown };
   try { body = JSON.parse(await readBody(req)); } catch { jsonError(res, 400, "invalid JSON"); return; }
-  const patch: { archived?: boolean; read?: boolean } = {};
+  const patch: { archived?: boolean; read?: boolean; published?: boolean } = {};
   if (typeof body.archived === "boolean") patch.archived = body.archived;
   if (typeof body.read === "boolean") patch.read = body.read;
+  if (typeof body.published === "boolean") patch.published = body.published;
   const updated = rt.artifactStore.update(params["id"] ?? "", patch);
   if (!updated) { jsonError(res, 404, "artifact not found"); return; }
   json(res, 200, { artifact: updated });
@@ -839,6 +840,18 @@ function recordPublicHit(ip: string): void {
   if (publicFails.size > 1000) { for (const [k, v] of publicFails) if (now - v.first > 60_000) publicFails.delete(k); }
 }
 
+/** Enforce an optional Origin allowlist. Unset → allow all (site-key still required elsewhere).
+ *  Set → the request's Origin header must be listed (deny-by-default; a missing Origin fails). */
+function originAllowed(req: IncomingMessage, allowed: string[] | undefined): boolean {
+  if (!allowed || allowed.length === 0) return true;
+  const origin = req.headers["origin"];
+  if (typeof origin !== "string" || !origin) return false;
+  // Normalize (strip trailing slash) and compare case-insensitively.
+  const norm = (s: string) => s.trim().replace(/\/+$/, "").toLowerCase();
+  const o = norm(origin);
+  return allowed.some((a) => norm(a) === o);
+}
+
 /** Extract the site key from `X-Site-Key` header or the JSON body's `siteKey` (never a query string). */
 function siteKeyFrom(req: IncomingMessage, body: { siteKey?: unknown }): string | undefined {
   const h = req.headers["x-site-key"];
@@ -861,11 +874,18 @@ async function handlePublicProfile(req: IncomingMessage, res: ServerResponse, pa
   const agent = rt.agentRegistry.getBySlug(params["slug"] ?? "");
   // Deny-by-default: an absent OR not-enabled agent is indistinguishable (both 404, no leak).
   if (!agent || !agent.public?.enabled) { jsonPublicError(res, 404, "not found"); return; }
+  const chatEnabled = agent.public.chat === true;
   jsonPublic(res, 200, {
     name: agent.signed.manifest.name,
     intent: oneLiner(agent.signed.manifest.intent),
-    chatEnabled: agent.public.chat === true,
+    chatEnabled,
     feedEnabled: agent.public.showFeed === true,
+    // The site key is a PUBLIC credential by design (the widget embeds it on third-party sites),
+    // so the /a/:slug storefront needs it to chat. It can only start a chat turn under the
+    // agent's existing grants + read the public feed; allowedOrigins (B5) is what stops abuse.
+    // Only surfaced when chat is on. NOTE: this is the key's PLAINTEXT — deliberately public;
+    // the owner already pastes the same key into a public widget snippet.
+    ...(chatEnabled ? { siteKey: rt.publicSiteKey(agent.id) } : {}),
   });
 }
 
@@ -891,6 +911,9 @@ async function handlePublicAsk(req: IncomingMessage, res: ServerResponse, params
   const agent = rt.agentRegistry.getBySlug(params["slug"] ?? "");
   // 404 (not 401/403) when disabled → no oracle about which agents exist or have chat on.
   if (!agent || !agent.public?.enabled || !agent.public.chat) { jsonPublicError(res, 404, "not found"); return; }
+  // Optional origin allowlist (B5): if the owner set allowedOrigins, a widget embedded on any
+  // OTHER site is refused — an unlisted page can't drain runs even with a leaked site key.
+  if (!originAllowed(req, agent.public.allowedOrigins)) { jsonPublicError(res, 403, "this site is not allowed to use this agent"); return; }
   if (!rt.verifySiteKey(agent, siteKeyFrom(req, body))) { jsonPublicError(res, 401, "invalid site key"); return; }
 
   const message = String(body.message ?? "").trim();
@@ -1072,9 +1095,16 @@ async function handleGetPublic(_req: IncomingMessage, res: ServerResponse, param
 /** PUT /api/agents/:id/public { enabled, showFeed, chat } — deny-by-default; mints the site
  *  key once when chat is first enabled (returned ONCE). */
 async function handleSetPublic(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
-  let body: { enabled?: unknown; showFeed?: unknown; chat?: unknown };
+  let body: { enabled?: unknown; showFeed?: unknown; chat?: unknown; allowedOrigins?: unknown };
   try { body = JSON.parse(await readBody(req)); } catch { jsonError(res, 400, "invalid JSON"); return; }
-  const desired = { enabled: body.enabled === true, showFeed: body.showFeed === true, chat: body.chat === true };
+  // allowedOrigins: accept an array of non-empty strings only (drop anything malformed).
+  const allowedOrigins = Array.isArray(body.allowedOrigins)
+    ? body.allowedOrigins.filter((o): o is string => typeof o === "string" && o.trim().length > 0).map(o => o.trim())
+    : undefined;
+  const desired = {
+    enabled: body.enabled === true, showFeed: body.showFeed === true, chat: body.chat === true,
+    ...(allowedOrigins ? { allowedOrigins } : {}),
+  };
   const result = rt.setAgentPublic(params["id"] ?? "", desired);
   if (!result.ok) { jsonError(res, 404, result.error); return; }
   const p = result.agent.public;
@@ -1085,6 +1115,7 @@ async function handleSetPublic(req: IncomingMessage, res: ServerResponse, params
     showFeed: p?.showFeed ?? false,
     chat: p?.chat ?? false,
     hasSiteKey: p?.siteKeyHash !== undefined,
+    allowedOrigins: p?.allowedOrigins ?? [],
     // Present ONLY when a key was just minted. Save it now — it is never shown again.
     ...(result.siteKey ? { siteKey: result.siteKey, note: "Save this key now — it is shown only once." } : {}),
   });

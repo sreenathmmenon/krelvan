@@ -96,6 +96,12 @@ function atomicWrite(dest: string, content: string): void {
   renameSync(tmp, dest);
 }
 
+/** Reserved SecretStore name for an agent's public site-key plaintext (encrypted at rest).
+ *  Agent ids are content addresses ("sha256:…") — sanitize to the store's allowed name charset. */
+function siteKeySecretName(agentId: string): string {
+  return `__sitekey__${agentId.replace(/[^a-zA-Z0-9_.-]/g, "_")}`;
+}
+
 /**
  * Load (or generate-and-persist) a per-install ledger signing secret. The ledger's
  * tamper-evidence is only as strong as this secret, so it must NOT be a shared repo
@@ -200,6 +206,10 @@ export interface AgentPublicConfig {
   chat: boolean;
   /** sha256 of the live site key (`pk_…`); absent = no key minted. Never the plaintext. */
   siteKeyHash?: string;
+  /** if set, /ask only accepts requests whose Origin is in this allowlist (deny-by-default:
+   *  an unlisted site can't embed the widget and drain runs). Unset = any origin (the widget
+   *  is site-key-authed regardless; this is an extra, opt-in lock). */
+  allowedOrigins?: string[];
 }
 
 export interface AgentRecord {
@@ -1284,25 +1294,46 @@ export class KrelvanRuntime {
    */
   setAgentPublic(
     agentId: string,
-    desired: { enabled: boolean; showFeed: boolean; chat: boolean },
+    desired: { enabled: boolean; showFeed: boolean; chat: boolean; allowedOrigins?: string[] },
   ): { ok: true; agent: AgentRecord; siteKey?: string } | { ok: false; error: string } {
     const agent = this.agentRegistry.get(agentId);
     if (!agent) return { ok: false, error: "agent not found" };
     const prev = agent.public;
-    const cfg: AgentPublicConfig = { enabled: desired.enabled, showFeed: desired.showFeed, chat: desired.chat };
+    const cfg: AgentPublicConfig = {
+      enabled: desired.enabled, showFeed: desired.showFeed, chat: desired.chat,
+      ...(desired.allowedOrigins && desired.allowedOrigins.length > 0 ? { allowedOrigins: desired.allowedOrigins } : {}),
+    };
     let siteKey: string | undefined;
     if (desired.chat) {
       if (prev?.siteKeyHash) {
         cfg.siteKeyHash = prev.siteKeyHash; // keep the existing key when chat stays on
       } else {
-        siteKey = `pk_${randomBytes(24).toString("base64url")}`;
+        siteKey = this.mintAndStoreSiteKey(agentId);
         cfg.siteKeyHash = createHash("sha256").update(siteKey, "utf8").digest("hex");
       }
+    } else {
+      // chat off → drop the key entirely (any embedded widget stops working immediately).
+      this.secretStore.delete(siteKeySecretName(agentId));
     }
-    // chat off → siteKeyHash is dropped (any embedded widget stops working immediately).
     const updated = this.agentRegistry.setPublicConfig(agentId, cfg);
     if (!updated) return { ok: false, error: "agent not found" };
     return siteKey ? { ok: true, agent: updated, siteKey } : { ok: true, agent: updated };
+  }
+
+  /** Mint a fresh site key, store its plaintext ENCRYPTED (it's a public credential the
+   *  storefront/widget re-serve), and return the plaintext. */
+  private mintAndStoreSiteKey(agentId: string): string {
+    const siteKey = `pk_${randomBytes(24).toString("base64url")}`;
+    this.secretStore.set(siteKeySecretName(agentId), siteKey);
+    return siteKey;
+  }
+
+  /** The live plaintext site key for an agent (for the public storefront/widget snippet), or
+   *  undefined if chat isn't enabled. It is a deliberately-public credential. */
+  publicSiteKey(agentId: string): string | undefined {
+    const agent = this.agentRegistry.get(agentId);
+    if (!agent?.public?.enabled || !agent.public.chat) return undefined;
+    return this.secretStore.resolve(siteKeySecretName(agentId));
   }
 
   /** Rotate an agent's site key (invalidates the old one). Chat must be enabled. */
@@ -1310,7 +1341,7 @@ export class KrelvanRuntime {
     const agent = this.agentRegistry.get(agentId);
     if (!agent) return { ok: false, error: "agent not found" };
     if (!agent.public?.enabled || !agent.public.chat) return { ok: false, error: "public chat is not enabled for this agent" };
-    const siteKey = `pk_${randomBytes(24).toString("base64url")}`;
+    const siteKey = this.mintAndStoreSiteKey(agentId);
     this.agentRegistry.setPublicConfig(agentId, { ...agent.public, siteKeyHash: createHash("sha256").update(siteKey, "utf8").digest("hex") });
     return { ok: true, siteKey };
   }

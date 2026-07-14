@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
-  getArtifact, patchArtifact, shareArtifact, unshareArtifact,
+  getArtifact, patchArtifact, shareArtifact, unshareArtifact, getAgentPublic,
   timeAgo, type ArtifactRecord,
 } from "../../../lib/api";
 import { renderMarkdown } from "../../../lib/markdown";
@@ -24,6 +24,8 @@ export default function ArtifactPage() {
   const [copied, setCopied] = useState(false);
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Publishing to the agent's public feed is only offered when that agent's feed is enabled.
+  const [feedEnabled, setFeedEnabled] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -33,6 +35,8 @@ export default function ArtifactPage() {
       setError(null);
       // Mark read once loaded (best-effort — never blocks the view).
       if (a.readAt === undefined) void patchArtifact(id, { read: true }).catch(() => {});
+      // Is this artifact's agent showing a public feed? Only then offer "Publish".
+      void getAgentPublic(a.agentId).then(p => setFeedEnabled(p.enabled && p.showFeed)).catch(() => setFeedEnabled(false));
     } catch (e) {
       setError((e as Error).message || "Could not load this output.");
     } finally {
@@ -53,6 +57,13 @@ export default function ArtifactPage() {
     if (!artifact) return;
     setBusy(true);
     try { const updated = await patchArtifact(id, { archived: !artifact.archived }); setArtifact(updated); }
+    catch { /* surfaced by reload */ } finally { setBusy(false); }
+  }
+
+  async function togglePublish() {
+    if (!artifact) return;
+    setBusy(true);
+    try { const updated = await patchArtifact(id, { published: !artifact.published }); setArtifact(updated); }
     catch { /* surfaced by reload */ } finally { setBusy(false); }
   }
 
@@ -114,6 +125,11 @@ export default function ArtifactPage() {
         <button className={`btn btn-sm ${shared ? "btn-secondary" : "btn-ghost"}`} onClick={() => void toggleShare()} disabled={busy} aria-pressed={shared}>
           {shared ? "Sharing · turn off" : "Share"}
         </button>
+        {feedEnabled && (
+          <button className={`btn btn-sm ${artifact.published ? "btn-secondary" : "btn-ghost"}`} onClick={() => void togglePublish()} disabled={busy} aria-pressed={artifact.published ?? false} title="Show this output on the agent's public page">
+            {artifact.published ? "On agent page ✓" : "Publish to agent page"}
+          </button>
+        )}
         <Link href={`/runs/${artifact.runId}`} className="small" style={{ color: "var(--ink-muted)", marginLeft: "auto" }}>
           How this was made →
         </Link>

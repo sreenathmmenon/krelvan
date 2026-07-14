@@ -313,6 +313,34 @@ export interface ArtifactRecord {
   archived: boolean;
   readAt?: number;
   shareTokenHash?: string;
+  published?: boolean;
+}
+
+/** Admin public-config view for an agent (the toggle UI checks feedEnabled). */
+export interface AgentPublicView {
+  slug?: string;
+  publicUrl: string | null;
+  enabled: boolean;
+  showFeed: boolean;
+  chat: boolean;
+  hasSiteKey: boolean;
+  allowedOrigins?: string[];
+  siteKey?: string;
+  note?: string;
+}
+
+export async function getAgentPublic(agentId: string): Promise<AgentPublicView> {
+  return apiFetch<AgentPublicView>(`/api/agents/${encodeURIComponent(agentId)}/public`);
+}
+
+/** Update an agent's public config. Returns the view (+ siteKey ONCE when chat is first enabled). */
+export async function setAgentPublic(agentId: string, cfg: { enabled: boolean; showFeed: boolean; chat: boolean; allowedOrigins?: string[] }): Promise<AgentPublicView> {
+  return apiFetch<AgentPublicView>(`/api/agents/${encodeURIComponent(agentId)}/public`, { method: "PUT", body: JSON.stringify(cfg) });
+}
+
+/** Rotate the site key (invalidates the old one). Returns the new key ONCE. */
+export async function rotateSiteKey(agentId: string): Promise<{ siteKey: string }> {
+  return apiFetch<{ siteKey: string }>(`/api/agents/${encodeURIComponent(agentId)}/public/rotate-key`, { method: "POST" });
 }
 
 /** The public share payload — deliberately NO runId / internal ids. */
@@ -351,7 +379,7 @@ export async function getArtifact(id: string): Promise<{ artifact: ArtifactRecor
   return apiFetch<{ artifact: ArtifactRecord; shared: boolean }>(`/api/artifacts/${encodeURIComponent(id)}`);
 }
 
-export async function patchArtifact(id: string, patch: { archived?: boolean; read?: boolean }): Promise<ArtifactRecord> {
+export async function patchArtifact(id: string, patch: { archived?: boolean; read?: boolean; published?: boolean }): Promise<ArtifactRecord> {
   const data = await apiFetch<{ artifact: ArtifactRecord }>(`/api/artifacts/${encodeURIComponent(id)}`, {
     method: "PATCH", body: JSON.stringify(patch),
   });
@@ -379,6 +407,58 @@ export async function getSharedArtifact(token: string): Promise<SharedArtifact> 
     throw new Error(err.error ?? `not found`);
   }
   return res.json() as Promise<SharedArtifact>;
+}
+
+// ── Public agent front door (B3) — all go through the proxy but need NO session; a 404
+//    (agent private/disabled) is expected and must NOT redirect to login. ─────────────
+
+export interface PublicAgentProfile { name: string; intent: string; chatEnabled: boolean; feedEnabled: boolean; siteKey?: string }
+export interface PublicFeedItem { title: string; body: string; createdAt: number }
+
+/** GET a public agent's profile by slug. Throws on 404 (disabled/absent). Public — no redirect. */
+export async function getPublicAgent(slug: string): Promise<PublicAgentProfile> {
+  const res = await fetch(`${API_BASE}/api/public/agents/${encodeURIComponent(slug)}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("not found");
+  return res.json() as Promise<PublicAgentProfile>;
+}
+
+/** GET a public agent's published-artifact feed (404 when the feed is off). */
+export async function getPublicFeed(slug: string): Promise<PublicFeedItem[]> {
+  const res = await fetch(`${API_BASE}/api/public/agents/${encodeURIComponent(slug)}/feed`, { cache: "no-store" });
+  if (!res.ok) throw new Error("not found");
+  const data = await res.json() as { items: PublicFeedItem[] };
+  return data.items;
+}
+
+export type PublicAskResult =
+  | { status: "reply"; reply: string; thread: string }
+  | { status: "pending"; thread: string; poll: string }
+  | { status: "awaiting-approval"; thread: string }
+  | { status: "rate-limited" }
+  | { status: "error"; message: string };
+
+/** POST a public chat turn (site-key-authed). Returns the reply, a 202 status, or an error. */
+export async function publicAsk(slug: string, message: string, siteKey: string, thread?: string): Promise<PublicAskResult> {
+  const res = await fetch(`${API_BASE}/api/public/agents/${encodeURIComponent(slug)}/ask`, {
+    method: "POST", headers: { "content-type": "application/json" }, cache: "no-store",
+    body: JSON.stringify({ message, siteKey, ...(thread ? { thread } : {}) }),
+  });
+  const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+  if (res.status === 200) return { status: "reply", reply: String(body["reply"] ?? ""), thread: String(body["thread"] ?? "") };
+  if (res.status === 202 && body["status"] === "awaiting-approval") return { status: "awaiting-approval", thread: String(body["thread"] ?? "") };
+  if (res.status === 202) return { status: "pending", thread: String(body["thread"] ?? ""), poll: String(body["poll"] ?? "") };
+  if (res.status === 429) return { status: "rate-limited" };
+  return { status: "error", message: String(body["error"] ?? "could not reach the agent") };
+}
+
+/** Poll a pending public ask thread. */
+export async function publicAskPoll(slug: string, thread: string): Promise<PublicAskResult> {
+  const res = await fetch(`${API_BASE}/api/public/agents/${encodeURIComponent(slug)}/ask/${encodeURIComponent(thread)}`, { cache: "no-store" });
+  const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+  if (res.status === 200) return { status: "reply", reply: String(body["reply"] ?? ""), thread };
+  if (res.status === 202 && body["status"] === "awaiting-approval") return { status: "awaiting-approval", thread };
+  if (res.status === 202) return { status: "pending", thread, poll: "" };
+  return { status: "error", message: String(body["error"] ?? "not found") };
 }
 
 export interface RunExplanation {

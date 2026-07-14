@@ -140,6 +140,9 @@ export class SecretStore {
   /** Public metadata only — never the plaintext. */
   list(): SecretMeta[] {
     return [...this.secrets.values()]
+      // Internal reserved secrets (e.g. __sitekey__<agentId>) are managed by the product, not
+      // the operator — hide them from the Secrets admin list so it only shows user-set values.
+      .filter(s => !s.name.startsWith("__"))
       .map(s => ({ name: s.name, preview: this.previewOf(s), updatedAt: s.updatedAt }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
