@@ -33,3 +33,7 @@ secrets.json
 web/.env
 web/.env.*
 !web/.env.example
+
+# Local rule-1 UI evidence (Playwright screenshots) — kept out of the repo; the curated
+# launch screenshots live in docs/screenshots/ instead.
+web/audit/

@@ -54,6 +54,26 @@ On top of that, Krelvan does things only an agentic platform can:
 
 ---
 
+## What it looks like
+
+_Every agent output lands in one Inbox — read it, copy it, or send it on._
+
+![The Agent Inbox](docs/screenshots/inbox.png)
+
+_Each output is a clean, rendered page you can copy, share with a one-time link, or publish._
+
+![A rendered agent output](docs/screenshots/artifact.png)
+
+_Turn an agent public and it gets a shareable page with a live chat and its published output._
+
+![A public agent page](docs/screenshots/public-agent-page.png)
+
+_Drop the dependency-free widget on any site — shadow-DOM isolated, talks only to your agent._
+
+![The embeddable chat widget on a third-party site](docs/screenshots/widget.png)
+
+---
+
 ## Run it
 
 The web UI and API boot with **no secrets**. LLM features (building agents, explanations,
