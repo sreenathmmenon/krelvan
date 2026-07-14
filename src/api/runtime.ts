@@ -426,6 +426,12 @@ export class RunRegistry {
     return [...this.runs.values()].filter(r => r.kind !== "chat").sort((a, b) => b.createdAt - a.createdAt);
   }
 
+  /** All halted runs, INCLUDING chat runs — a public-ask (chat-kind) turn that parks for approval
+   *  must still surface in the admin Approvals page so the owner can release it. */
+  listHalted(): RunRecord[] {
+    return [...this.runs.values()].filter(r => r.status === "halted").sort((a, b) => b.createdAt - a.createdAt);
+  }
+
   update(runId: string, patch: Partial<RunRecord>): void {
     const r = this.runs.get(runId);
     if (r) { Object.assign(r, patch); this.persist(); }
@@ -1561,7 +1567,9 @@ export class KrelvanRuntime {
    * Scans every halted run's ledger for open AwaitRequested events.
    */
   async listPendingApprovals(): Promise<PendingApproval[]> {
-    const halted = this.runRegistry.list().filter(r => r.status === "halted");
+    // Include chat-kind runs: a public /ask that parks at the human gate is a chat run, and the
+    // owner must be able to see and release it here (it's excluded from the Inbox/runs list only).
+    const halted = this.runRegistry.listHalted();
     const results: PendingApproval[] = [];
 
     const { project } = await import("../core/kernel/project.js");

@@ -202,3 +202,58 @@ Fake-clock tests for sleep-chaining and both `onMissed` policies; phrase-parser 
 Non-negotiables carried from `AGENTS.md` into every task: no `eval` (schedule phrases and output maps are parsed data); kernel/core additions stay pure (no clock/random in `src/core/`); no floats or costs anywhere user-visible; deny-by-default on every public surface; hash-only credential storage with constant-time compare; design tokens only, amber = live only; and rule 1 — nothing is "done" until the test ran and the screenshot was looked at. When any template manifest changes (A2), update its test rig in the same commit — that's the drift class that produced the 9 failures found in review.
 
 **Explicitly out of scope here** (fast follows, don't let them creep in): inbound email/Telegram *channels* (webhook trigger + public ask cover inbound for now), per-schedule timezones, PostgreSQL/multi-tenant, marketplace publisher signing, hosted offering.
+
+---
+
+## Build status — what was actually shipped (2026-07)
+
+**Workstreams A, B, and C are complete.** Full suite green (526 tests; 1 requires Ollama and
+skips without it), both typechecks clean, web build green, launch surfaces screenshot-verified
+(archived under `web/audit/`).
+
+| Workstream | Status | Where |
+|---|---|---|
+| A — Artifacts & Deliverables (A1–A6) | ✅ complete | `artifact-store.ts`, `artifact-extractor.ts`, `output-map.ts`, `web/app/inbox`, `/outputs/[id]`, `/share/[token]` |
+| B — Agent Front Door (B1–B6) | ✅ complete | slug/site-key in `runtime.ts`, `/api/public/*` in `server.ts`, `web/app/a/[slug]`, `web/public/widget.js`, admin Public panel |
+| C — Scheduler v2 (C1–C5) | ✅ complete | `scheduler.ts`, `schedule-phrase.ts`, `web/app/schedules`, builder schedule card |
+
+Acceptance journeys are automated as e2e in `src/api/acceptance.test.ts` (A: run → inbox →
+rendered → share → revoke → 404 → run reachable; B: enable → page → ask → disable kills
+everything). The public-surface security posture is in `src/api/public-surface.test.ts` and
+documented in `docs/PUBLIC_SURFACE.md`.
+
+### Deviations from this plan (the truth about what was built)
+
+1. **Site-key storage (B1/B3).** The plan said hash-only. But B3's `/a/:slug` page and the widget
+   both need the plaintext key to chat, and the key is *public by design*. So the plaintext is
+   stored **encrypted** (AES-256-GCM) in the secret store under a reserved `__sitekey__<agentId>`
+   name; `agents.json` still keeps only the hash. Reserved secrets are hidden from the admin list.
+   The full trust model is in `docs/PUBLIC_SURFACE.md`.
+2. **Proxy CORS for `/api/public/*` (B5).** The widget runs cross-origin on third-party sites, so
+   the same-origin proxy was given `Access-Control-Allow-Origin: *` (response + OPTIONS preflight)
+   for public paths only. Not in the plan's letter; required for the widget to work.
+3. **Approvals visibility fix (found in C5).** Public-ask runs are `kind:"chat"`, which the runs
+   list excludes — so a parked public ask was invisible in the admin Approvals page. Fixed:
+   `listPendingApprovals` now uses `listHalted()` (includes chat runs). Covered by a C5 e2e test.
+4. **Publish toggle placement (B4).** Put on the artifact page (its natural home); the inbox-card
+   variant the plan also mentions is a fast-follow (per-card public-config lookups are an N+1).
+5. **`validateManifest` note severity (A2).** Added an optional `severity: "note"` + `fatalIssues()`
+   so the output_map "unknown node" note is genuinely non-fatal (doesn't block install), rather than
+   forcing it into the fatal issue list.
+6. **Test-count claims softened.** Doc status lines say "all tests pass (1 requires Ollama…)"
+   instead of a hardcoded number that goes stale; exact counts live in commit messages.
+
+### Manual-check list (not automatable)
+
+Verified by looking at screenshots (`web/audit/`), re-check on any UI change:
+
+- `/a/:slug` and the widget render with **no admin chrome** (also asserted in the e2e DOM check).
+- The widget mounts + chats **cross-origin** from a real served origin (Chrome's Private Network
+  Access blocks the `data:`→loopback dev case, so this is checked from a served page).
+- A **real** chat answer needs a configured LLM; without one the full request/park/reply mechanism
+  runs and returns the graceful "couldn't answer just now" fallback.
+
+### Still out of scope (unchanged)
+
+Inbound email/Telegram channels, per-schedule timezones, PostgreSQL/multi-tenant, marketplace
+publisher signing, hosted offering. **Workstream D not started.**

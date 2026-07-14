@@ -387,3 +387,83 @@ test("B5: allowedOrigins locks /ask to listed sites; unset allows any", async ()
     assert.equal((await ask({})).status, 200, "no allowlist → missing origin ok");
   } finally { await h.close(); }
 });
+
+// ── C5.2: trust-model binding controls (the ones that actually stop abuse) ────────
+
+test("C5: the PER-AGENT run cap trips on the public-ask path (429, no numbers)", async () => {
+  const h = await harness();
+  try {
+    // Tiny per-agent cap; distinct threads so the per-thread cap is NOT what trips.
+    process.env["KRELVAN_PUBLIC_AGENT_MAX"] = "2";
+    const { id, slug } = makeAgent(h.rt);
+    const key = await enable(h, id, { enabled: true, showFeed: false, chat: true });
+    const ask = (t: string) => fetch(`${h.base}/api/public/agents/${slug}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "hi", siteKey: key, thread: t }) });
+    assert.equal((await ask("t1")).status, 200, "1st ask ok");
+    assert.equal((await ask("t2")).status, 200, "2nd ask ok");
+    const third = await ask("t3"); // different thread → only the AGENT cap can trip
+    assert.equal(third.status, 429, "3rd ask trips the per-agent cap");
+    const body = await third.json() as { error: string };
+    assert.doesNotMatch(body.error, /\d+\s*(cent|cents|\$|budget|token)/i, "429 reveals no cost/budget number");
+  } finally { delete process.env["KRELVAN_PUBLIC_AGENT_MAX"]; await h.close(); }
+});
+
+test("C5: rotate-key invalidates the OLD key on the live /ask route while chat stays enabled", async () => {
+  const h = await harness();
+  try {
+    const { id, slug } = makeAgent(h.rt);
+    const k1 = await enable(h, id, { enabled: true, showFeed: false, chat: true });
+    // Old key works before rotation.
+    assert.equal((await fetch(`${h.base}/api/public/agents/${slug}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "hi", siteKey: k1 }) })).status, 200);
+
+    const k2 = (await (await fetch(`${h.base}/api/agents/${id}/public/rotate-key`, { method: "POST", headers: authed })).json() as { siteKey: string }).siteKey;
+    assert.notEqual(k1, k2);
+
+    // Chat is STILL enabled — the route is live — but the OLD key is now refused and the NEW works.
+    const profile = await (await fetch(`${h.base}/api/public/agents/${slug}`)).json() as { chatEnabled: boolean };
+    assert.equal(profile.chatEnabled, true, "chat stays enabled across a rotate");
+    assert.equal((await fetch(`${h.base}/api/public/agents/${slug}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "hi", siteKey: k1 }) })).status, 401, "old key refused after rotate");
+    assert.equal((await fetch(`${h.base}/api/public/agents/${slug}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "hi", siteKey: k2 }) })).status, 200, "new key works after rotate");
+  } finally { await h.close(); }
+});
+
+test("C5: a parked public ask releases end-to-end when the admin approves; approval is ledger-recorded", async () => {
+  const h = await harness();
+  try {
+    const imp = h.rt.importManifest(chatManifest("Gated Bot", true)); // suggest + message-human → parks
+    assert.ok(imp.ok);
+    const id = imp.agent.id, slug = imp.agent.slug!;
+    const key = await enable(h, id, { enabled: true, showFeed: false, chat: true });
+
+    // Public ask parks (nothing sent).
+    const res = await fetch(`${h.base}/api/public/agents/${slug}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "email the team", siteKey: key }) });
+    assert.equal(res.status, 202);
+    assert.equal((await res.json() as { status: string }).status, "awaiting-approval");
+
+    // The admin sees the pending approval (with the runId + correlationId the public caller never got).
+    // Poll briefly — the parked run registers the AwaitRequested as the background run halts.
+    let approvals: { correlationId: string; runId: string }[] = [];
+    for (let i = 0; i < 50; i++) {
+      approvals = (await (await fetch(`${h.base}/api/approvals`, { headers: authed })).json() as { approvals: { correlationId: string; runId: string }[] }).approvals;
+      if (approvals.length > 0) break;
+      await new Promise(r => setTimeout(r, 20));
+    }
+    assert.equal(approvals.length, 1, "one approval is pending");
+    const { correlationId, runId } = approvals[0]!;
+
+    // The admin APPROVES → the run resumes and completes.
+    const resolve = await fetch(`${h.base}/api/approvals/${correlationId}/resolve`, { method: "POST", headers: authed, body: JSON.stringify({ runId, decision: "approve" }) });
+    assert.equal(resolve.status, 200, "admin approval accepted");
+    // Give the resumed run a moment to finish.
+    for (let i = 0; i < 100; i++) { if (h.rt.runRegistry.get(runId)?.status === "completed") break; await new Promise(r => setTimeout(r, 20)); }
+    assert.equal(h.rt.runRegistry.get(runId)?.status, "completed", "the run completed after approval");
+
+    // The approval is recorded in the signed ledger (an AwaitResolved event for this run).
+    const events = await h.rt.store.readRun("default", runId);
+    const resolved = events.find(e => e.type === "AwaitResolved");
+    assert.ok(resolved, "an AwaitResolved event is written to the ledger");
+    assert.equal((resolved!.payload as { decision?: string }).decision, "approve", "the ledger records the approve decision");
+    // No approvals remain pending.
+    const after = await (await fetch(`${h.base}/api/approvals`, { headers: authed })).json() as { approvals: unknown[] };
+    assert.equal(after.approvals.length, 0, "the approval is cleared once resolved");
+  } finally { await h.close(); }
+});

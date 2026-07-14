@@ -866,7 +866,24 @@ function oneLiner(intent: string): string {
   return s.length > 140 ? `${s.slice(0, 138).trimEnd()}…` : s;
 }
 
-/** GET /api/public/agents/:slug — profile. 404 unless the agent exists AND is public-enabled. */
+/**
+ * GET /api/public/agents/:slug — profile. 404 unless the agent exists AND is public-enabled.
+ *
+ * SITE-KEY TRUST MODEL (see docs/PUBLIC_SURFACE.md for the full write-up):
+ *  - Once chat is enabled the site key is DISCOVERY-PUBLIC by design. It is embedded in the
+ *    public widget snippet and returned by this endpoint, so anyone who can reach the storefront
+ *    can obtain it. That is intentional: it is a weak, public credential.
+ *  - Its ONLY power is to start a chat turn under the agent's EXISTING grants (zero capability
+ *    widening) and read the public feed. It cannot read runs, cannot approve, cannot mutate config.
+ *  - Rotating the key is a RE-KEY (mint a new one, the old stops working) — a hygiene/refresh
+ *    action, NOT a revocation lever against an abuser (the new key is just as public). To turn an
+ *    agent off, disable chat (which drops the key entirely).
+ *  - allowedOrigins constrains BROWSERS only (it checks the Origin header) — it stops the widget
+ *    running on unlisted sites, but a non-browser client can forge Origin, so it is a UX/embedding
+ *    control, not a hard auth boundary.
+ *  - The binding ABUSE controls are therefore per-IP + per-key/per-thread RATE LIMITS and per-run
+ *    CAPS (429 with no numbers), enforced on the ask path — those are what actually stop cost drain.
+ */
 async function handlePublicProfile(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const ip = clientIp(req);
   if (publicThrottled(ip)) { jsonPublicError(res, 429, "too many requests — slow down"); return; }
@@ -880,11 +897,7 @@ async function handlePublicProfile(req: IncomingMessage, res: ServerResponse, pa
     intent: oneLiner(agent.signed.manifest.intent),
     chatEnabled,
     feedEnabled: agent.public.showFeed === true,
-    // The site key is a PUBLIC credential by design (the widget embeds it on third-party sites),
-    // so the /a/:slug storefront needs it to chat. It can only start a chat turn under the
-    // agent's existing grants + read the public feed; allowedOrigins (B5) is what stops abuse.
-    // Only surfaced when chat is on. NOTE: this is the key's PLAINTEXT — deliberately public;
-    // the owner already pastes the same key into a public widget snippet.
+    // Discovery-public site key (see the trust-model note above) — surfaced only when chat is on.
     ...(chatEnabled ? { siteKey: rt.publicSiteKey(agent.id) } : {}),
   });
 }
