@@ -72,8 +72,14 @@ const WEB = join(ROOT, "web");
 //   - $PORT (PaaS-injected)        -> web UI port            (public)
 //   - KRELVAN_WEB_PORT             -> web UI port override   (default 3100 locally)
 //   - KRELVAN_API_PORT             -> internal API port      (default 3201)
-const API_PORT = process.env.KRELVAN_API_PORT ?? "3201";
 const WEB_PORT = process.env.PORT ?? process.env.KRELVAN_WEB_PORT ?? "3100";
+// The API runs on a fixed INTERNAL port. If a PaaS injects PORT equal to the API's default
+// (e.g. Railway sets PORT=3201), the web and API would bind the SAME port and the container
+// crashes with EADDRINUSE. Guard against that: if the API port collides with the public web
+// port, move the API to a different internal port. (The web proxy reads KRELVAN_API_ORIGIN,
+// which the launcher derives from API_PORT below, so this stays consistent.)
+let API_PORT = process.env.KRELVAN_API_PORT ?? "3201";
+if (API_PORT === WEB_PORT) API_PORT = WEB_PORT === "3211" ? "3212" : "3211";
 const DATA_DIR = process.env.KRELVAN_DATA_DIR ?? join(ROOT, "data");
 const SKIP_BUILD = process.env.KRELVAN_SKIP_BUILD === "1";
 
@@ -274,18 +280,31 @@ async function up() {
     //
     // Bind the web UI to LOOPBACK by default — exposing it to a network is a DELIBERATE act,
     // mirroring the API. Otherwise `npx krelvan` on a shared/cloud box would silently put the
-    // login page and session cookie on the network in plain HTTP. To expose (e.g. on a PaaS or
-    // behind a reverse proxy), set KRELVAN_WEB_HOST=0.0.0.0 — and front it with HTTPS.
-    const WEB_HOST = process.env.KRELVAN_WEB_HOST ?? "127.0.0.1";
+    // login page and session cookie on the network in plain HTTP. To expose (e.g. behind a
+    // reverse proxy), set KRELVAN_WEB_HOST=0.0.0.0 — and front it with HTTPS.
+    //
+    // EXCEPTION — a PaaS (Railway/Render/Fly/Heroku) injects PORT and terminates HTTPS at its
+    // edge, then routes to the container. There the process MUST bind 0.0.0.0 or the edge gets a
+    // 502 ("application failed to respond"). So when PORT is injected and no explicit web host is
+    // set, default to 0.0.0.0 — the PaaS edge already provides HTTPS.
+    const onPaaS = !!process.env.PORT;
+    const WEB_HOST = process.env.KRELVAN_WEB_HOST ?? (onPaaS ? "0.0.0.0" : "127.0.0.1");
     const webLoopback = WEB_HOST === "127.0.0.1" || WEB_HOST === "::1" || WEB_HOST === "localhost";
     if (!webLoopback) {
       log(`⚠  web UI is binding to ${WEB_HOST} (network-exposed). Put it behind HTTPS (e.g. Caddy/nginx) and set KRELVAN_SECURE_COOKIES=1 — the login and session cookie are plain HTTP otherwise.`);
     }
     startProcess("web", nextBin, ["start", "-p", WEB_PORT, "-H", WEB_HOST], {
       cwd: WEB,
-      // KRELVAN_SECURE_COOKIES=1 (set it when fronted by HTTPS, e.g. behind Caddy) makes the
-      // session cookie Secure. KRELVAN_WEB_ORIGIN is the public origin for the CSRF/Origin check.
-      env: { ...process.env, KRELVAN_API_ORIGIN: apiOrigin, KRELVAN_AUTH_TOKEN: AUTH_TOKEN },
+      // KRELVAN_SECURE_COOKIES=1 makes the session cookie Secure. On a PaaS the edge terminates
+      // HTTPS, so default it on there (unless explicitly overridden) — otherwise the browser
+      // sends the login form over HTTPS but the Secure-less cookie handling can misbehave behind
+      // the proxy. KRELVAN_WEB_ORIGIN is the public origin for the CSRF/Origin check.
+      env: {
+        ...process.env,
+        KRELVAN_API_ORIGIN: apiOrigin,
+        KRELVAN_AUTH_TOKEN: AUTH_TOKEN,
+        ...(onPaaS && process.env.KRELVAN_SECURE_COOKIES === undefined ? { KRELVAN_SECURE_COOKIES: "1" } : {}),
+      },
     });
   }
 
