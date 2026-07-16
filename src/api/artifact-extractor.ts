@@ -26,9 +26,26 @@ export interface ExtractedArtifact {
 }
 
 /** Clamp a body down to a short, single-line-ish title. */
+/**
+ * A SHORT, human title for an output — never the whole body. Takes the first non-empty line,
+ * strips leading markdown heading/list/emphasis markers, cuts to the first sentence, and caps at
+ * ~70 chars on a word boundary. This keeps the title distinct from the body (a failure message or
+ * a long paragraph must not become a giant, truncated headline that just repeats the body).
+ */
 function deriveTitle(body: string): string {
-  const firstLine = body.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? body.trim();
-  return firstLine.length > 90 ? `${firstLine.slice(0, 88).trimEnd()}…` : firstLine;
+  let line = body.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? body.trim();
+  // strip leading markdown: #, >, -, *, 1. and surrounding ** emphasis
+  line = line.replace(/^#{1,6}\s+/, "").replace(/^>\s+/, "").replace(/^[-*]\s+/, "").replace(/^\d+\.\s+/, "").trim();
+  line = line.replace(/\*\*/g, "").replace(/[*_`]/g, "").trim();
+  // first sentence, if the line is long
+  const sentence = line.match(/^(.{20,}?[.!?])(\s|$)/);
+  const firstSentence = sentence?.[1];
+  if (firstSentence && firstSentence.length <= 80) line = firstSentence.trim();
+  if (line.length <= 70) return line;
+  // cut at a word boundary before 70 chars
+  const cut = line.slice(0, 70);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
 }
 
 function isNonEmptyString(v: unknown): v is string {
@@ -53,8 +70,7 @@ function extractHeuristic(state: Record<string, unknown>): { title: string; body
   const primary = pick([".result", ".briefing", ".body", ".reply", ".answer", ".digest", ".summary", ".message", ".note", ".text", ".output"]);
   if (primary) {
     const full = primary.trim();
-    const headline = full.length > 180 ? full.slice(0, 178).trimEnd() + "…" : full;
-    return { title: headline, body: full };
+    return { title: deriveTitle(full), body: full };
   }
   // Still nothing under a known key — a non-standard agent may put its answer under an unusual
   // key. Fall back to the LONGEST substantial string value in the state (real prose output) so a
@@ -65,8 +81,7 @@ function extractHeuristic(state: Record<string, unknown>): { title: string; body
     .filter((s) => s.length >= 40)
     .sort((a, b) => b.length - a.length)[0];
   if (longest) {
-    const headline = longest.length > 180 ? longest.slice(0, 178).trimEnd() + "…" : longest;
-    return { title: headline, body: longest };
+    return { title: deriveTitle(longest), body: longest };
   }
   // No prose output — summarise the run's notable result values so the card still says
   // something ("price: $19.99 · ok: true") instead of looking empty.

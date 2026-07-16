@@ -37,7 +37,9 @@ export default function LoginPage() {
       }
       const d = await res.json();
       if (d.csrf) sessionStorage.setItem("krelvan_csrf", d.csrf);
-      router.replace("/");
+      // Land in the actual workspace, not the marketing homepage — otherwise a signed-in user
+      // sees the logged-out landing page and can't tell login succeeded.
+      router.replace("/dashboard");
     } catch {
       setError("Could not reach the server.");
       setBusy(false);

@@ -6,6 +6,7 @@
  * the exact same data/API logic instead of duplicating it.
  */
 import { useState, useEffect, useRef, Fragment } from "react";
+import Link from "next/link";
 import {
   deleteAgent, explainBuild, timeAgo, createSchedule, setDelivery,
   type AgentRecord, type RunRecord, type BuildResult, type ManifestNode, type ManifestEdge,
@@ -728,34 +729,41 @@ export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
   }, []);
 
   return (
-    <a href={`/agents/${agent.id}`} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
-      <div
-        className="card card-hover"
-        style={{ padding: "var(--s5)", minHeight: 200, display: "flex", flexDirection: "column", gap: "var(--s4)", cursor: "pointer" }}
-      >
-        {/* header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s2)" }}>
-          <span className="h3" title={agent.signed.manifest.name} style={{
-            color: "var(--ink)", flex: 1, minWidth: 0,
+    // The card is a plain container (NOT an anchor). The agent NAME is the primary link, and its
+    // ::after (.stretched-link) covers the whole card so the entire surface is clickable — WITHOUT
+    // nesting the Canvas/reasoning links or the buttons inside an anchor (that produced invalid
+    // nested <a> and a hydration error). Interactive children sit above via position:relative.
+    <div
+      className="card card-hover"
+      style={{ position: "relative", padding: "var(--s5)", minHeight: 200, display: "flex", flexDirection: "column", gap: "var(--s4)" }}
+    >
+      {/* header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s3)" }}>
+        <Link
+          href={`/agents/${agent.id}`}
+          className="h3 stretched-link"
+          title={agent.signed.manifest.name}
+          style={{
+            color: "var(--ink)", flex: 1, minWidth: 0, textDecoration: "none",
             display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
-            overflow: "hidden", lineHeight: 1.25,
-          }}>
-            {agent.signed.manifest.name}
+            overflow: "hidden", lineHeight: 1.25, wordBreak: "break-word",
+          }}
+        >
+          {agent.signed.manifest.name}
+        </Link>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexShrink: 0, position: "relative", zIndex: 1 }}>
+          <Link
+            href={`/canvas/${agent.id}`}
+            title="Open canvas"
+            style={{ fontSize: 11, color: "var(--brand)", fontWeight: 600, padding: "var(--s1) var(--s2)", background: "var(--brand-tint)", borderRadius: "var(--r-pill)", textDecoration: "none", lineHeight: 1.6, whiteSpace: "nowrap" }}
+          >
+            Canvas ↗
+          </Link>
+          <span className={`badge badge-${status === "completed" ? "done" : status === "running" ? "running" : "neutral"}`}>
+            {status === "running" && <span className="dot" />}{status}
           </span>
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexShrink: 0 }}>
-            <a
-              href={`/canvas/${agent.id}`}
-              onClick={e => e.stopPropagation()}
-              title="Open canvas"
-              style={{ fontSize: 11, color: "var(--brand)", fontWeight: 600, padding: "var(--s1) var(--s2)", background: "var(--brand-tint)", borderRadius: "var(--r-pill)", textDecoration: "none", lineHeight: 1.6 }}
-            >
-              Canvas ↗
-            </a>
-            <span className={`badge badge-${status === "completed" ? "done" : status === "running" ? "running" : "neutral"}`}>
-              {status === "running" && <span className="dot" />}{status}
-            </span>
-          </div>
         </div>
+      </div>
 
         {/* flow strip — a clean, readable capability sequence (a dense 12-node graph
             crammed into a 90px card thumbnail was an illegible grey smear). */}
@@ -775,13 +783,12 @@ export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
               {summary}
             </p>
             {lastRun && (
-              <a
+              <Link
                 href={`/runs/${lastRun.runId}?tab=explain`}
-                onClick={e => e.stopPropagation()}
-                style={{ fontSize: 11, color: "var(--brand)", fontWeight: 500, display: "inline-block", marginTop: "var(--s1)" }}
+                style={{ fontSize: 11, color: "var(--brand)", fontWeight: 500, display: "inline-block", marginTop: "var(--s1)", position: "relative", zIndex: 1 }}
               >
                 View reasoning trace →
-              </a>
+              </Link>
             )}
           </div>
         ) : (
@@ -793,11 +800,11 @@ export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
         )}
 
         {/* footer */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto" }}>
           <div>
             {lastRun && <div className="small muted">last run {timeAgo(lastRun.createdAt)}</div>}
           </div>
-          <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center", position: "relative", zIndex: 1 }}>
             <button
               onClick={handleDeleteClick}
               disabled={deleting || status === "running"}
@@ -815,8 +822,7 @@ export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
             </button>
           </div>
         </div>
-      </div>
-    </a>
+    </div>
   );
 }
 

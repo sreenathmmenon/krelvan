@@ -507,6 +507,16 @@ kbd, .kbd {
   box-shadow: var(--shadow-md); border-color: var(--line-strong); transform: translateY(-1px);
 }
 
+/* Stretched link: a link whose ::after covers its nearest positioned ancestor, making a whole
+   card clickable WITHOUT wrapping the card in an <a> (which nests anchors and breaks hydration).
+   Other interactive children of the card must set position:relative; z-index:1 to stay clickable. */
+.stretched-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
 /* formal table — for Runs / Capabilities / Approvals data grids */
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .table thead th {

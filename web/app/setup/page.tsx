@@ -44,7 +44,8 @@ function SetupForm() {
       }
       const d = await res.json();
       if (d.csrf) sessionStorage.setItem("krelvan_csrf", d.csrf);
-      router.replace("/");
+      // Straight into the workspace after first-run setup, not the marketing homepage.
+      router.replace("/dashboard");
     } catch {
       setError("Could not reach the server.");
       setBusy(false);
