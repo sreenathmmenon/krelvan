@@ -257,6 +257,12 @@ export class Supervisor {
     return [...this.#plugins.keys()];
   }
 
+  /** The current plugin snapshot as a fresh map — for building a derived (e.g. synthetic
+   *  rehearsal) Supervisor from the exact live set, without exposing the internal reference. */
+  snapshot(): ReadonlyMap<string, CapabilityPlugin> {
+    return new Map(this.#plugins);
+  }
+
   /** Private — only callable via the handle returned by createSupervisor(). */
   #replaceSnapshot(plugins: ReadonlyMap<string, CapabilityPlugin>): void {
     this.#plugins = plugins;

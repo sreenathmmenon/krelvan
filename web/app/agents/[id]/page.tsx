@@ -945,6 +945,14 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               >
                 Canvas
               </Link>
+              <Link
+                href={`/rehearse/${id}`}
+                className="btn btn-secondary"
+                style={{ textDecoration: "none" }}
+                title="Run synthetic users through this agent — real graph, faked world, nothing sent"
+              >
+                Rehearse
+              </Link>
               <button
                 className={confirmDelete ? "btn btn-danger" : "btn btn-secondary"}
                 onClick={() => void handleDelete()}
