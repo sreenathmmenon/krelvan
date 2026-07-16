@@ -3,7 +3,7 @@
 import { useState, useEffect, use, useRef, useReducer, useMemo } from "react";
 import Link from "next/link";
 import {
-  getAgent, getAgentRuns, getRun, getRunEvents, startRun, verifyRun, timeAgo,
+  getAgent, getAgentRuns, getRun, getRunEvents, startRun, verifyRun, forkRun, timeAgo,
   type AgentRecord, type RunRecord, type RunDetail, type LedgerEvent, type RunVerification,
   type ManifestNode, type ManifestEdge, API_BASE,
 } from "../../../lib/api";
@@ -1431,7 +1431,9 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
           projection={activeProjection}
           liveProjection={liveProjection}
           events={events}
+          runId={selectedRunId}
           onClose={() => setSelectedNode(null)}
+          onForked={(newRunId) => { window.location.assign(`/canvas/${encodeURIComponent(agentId)}?run=${encodeURIComponent(newRunId)}`); }}
         />
       )}
     </div>
@@ -1754,12 +1756,14 @@ function CloseButton({ onClose }: { onClose: () => void }) {
   );
 }
 
-function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }: {
+function CanvasNodeDetail({ node, projection, liveProjection, events, runId, onClose, onForked }: {
   node: ManifestNode;
   projection: ReplayState | null;
   liveProjection: RunDetail["projection"] | null;
   events: LedgerEvent[];
+  runId: string | null;
   onClose: () => void;
+  onForked: (newRunId: string) => void;
 }) {
   const ns = projection?.nodes[node.id];
   const status = ns?.concluded ? "done" : ns?.entered ? "running" : "idle";
@@ -1858,6 +1862,16 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
           </section>
         )}
 
+        {/* Time-travel: fork this run at this node and re-run forward, optionally editing an output */}
+        {status === "done" && runId && (
+          <ForkFromHere
+            runId={runId}
+            nodeId={node.id}
+            outputs={nodeState}
+            onForked={onForked}
+          />
+        )}
+
         {/* Effect results */}
         {effectOutputs.length > 0 && (
           <section>
@@ -1951,4 +1965,107 @@ function CanvasNodeDetail({ node, projection, liveProjection, events, onClose }:
       </div>
     </div>
   );
+}
+
+// ── Time-travel: fork-from-here panel ─────────────────────────────────────────
+// Lives in the node drawer for a CONCLUDED node. "Re-run from here" copies the run
+// up through this node onto a new run and runs it forward. Optionally override ONE of
+// this node's outputs first to explore a what-if — the change flows to everything
+// downstream, which genuinely re-executes (and re-asks for approval on real actions).
+
+function ForkFromHere({ runId, nodeId, outputs, onForked }: {
+  runId: string;
+  nodeId: string;
+  outputs: { key: string; value: unknown }[];
+  onForked: (newRunId: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editKey, setEditKey] = useState<string>(outputs[0]?.key ?? "");
+  const [editValue, setEditValue] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // When the user picks a key to edit, seed the field with its current value.
+  function pickKey(k: string) {
+    setEditKey(k);
+    const cur = outputs.find(o => o.key === k)?.value;
+    setEditValue(cur === undefined || cur === null ? "" : String(cur));
+  }
+
+  async function doFork(withEdit: boolean) {
+    setBusy(true); setErr(null);
+    try {
+      const edit = withEdit ? { key: editKey, value: coerceScalar(editValue) } : undefined;
+      const res = await forkRun(runId, nodeId, edit);
+      onForked(res.run.runId);
+    } catch (e) {
+      setErr((e as Error)?.message ?? "Could not re-run from here.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section style={{ borderTop: "1px solid var(--line)", paddingTop: "var(--s4)" }}>
+      <div className="micro" style={{ marginBottom: "var(--s2)" }}>Time-travel</div>
+      <p className="small soft" style={{ margin: "0 0 var(--s3)", lineHeight: 1.5 }}>
+        Go back to this step and run forward again — everything after it re-runs.
+      </p>
+
+      {!editing && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => doFork(false)}>
+            {busy ? "Re-running…" : "Re-run from here"}
+          </button>
+          {outputs.length > 0 && (
+            <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => { pickKey(outputs[0]!.key); setEditing(true); }}>
+              Change an output & re-run…
+            </button>
+          )}
+        </div>
+      )}
+
+      {editing && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)", background: "var(--surface-sunken)", borderRadius: "var(--r)", padding: "var(--s3)" }}>
+          <label className="micro" style={{ textTransform: "none", letterSpacing: 0 }}>Which output</label>
+          <select
+            className="mono small"
+            value={editKey}
+            onChange={e => pickKey(e.target.value)}
+            style={{ padding: "var(--s2)", borderRadius: "var(--r)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)" }}
+          >
+            {outputs.map(o => <option key={o.key} value={o.key}>{o.key}</option>)}
+          </select>
+          <label className="micro" style={{ textTransform: "none", letterSpacing: 0 }}>New value</label>
+          <textarea
+            value={editValue}
+            onChange={e => setEditValue(e.target.value)}
+            rows={3}
+            className="mono small"
+            style={{ padding: "var(--s2)", borderRadius: "var(--r)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", resize: "vertical", width: "100%", boxSizing: "border-box" }}
+          />
+          <div style={{ display: "flex", gap: "var(--s2)" }}>
+            <button className="btn btn-primary btn-sm" disabled={busy || !editKey} onClick={() => doFork(true)} style={{ flex: 1 }}>
+              {busy ? "Re-running…" : "Edit & re-run"}
+            </button>
+            <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { setEditing(false); setErr(null); }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {err && <div className="small" style={{ color: "var(--danger)", marginTop: "var(--s2)" }}>{err}</div>}
+    </section>
+  );
+}
+
+/** Parse a user-typed value into the tightest scalar: number, boolean, null, else the raw string. */
+function coerceScalar(raw: string): string | number | boolean | null {
+  const t = raw.trim();
+  if (t === "") return "";
+  if (t === "true") return true;
+  if (t === "false") return false;
+  if (t === "null") return null;
+  if (/^-?\d+(\.\d+)?$/.test(t) && Number.isFinite(Number(t))) return Number(t);
+  return raw;
 }

@@ -41,8 +41,9 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { getLogger } from "../core/observability/logger.js";
-import type { KrelvanRuntime } from "./runtime.js";
+import type { KrelvanRuntime, RunRecord } from "./runtime.js";
 import type { Manifest } from "../core/manifest/manifest.js";
+import { diffManifests } from "./manifest-diff.js";
 import { applyCustomize } from "../core/manifest/customize.js";
 import { parseSchedulePhrase, isDigestCadence } from "../core/manifest/schedule-phrase.js";
 import { validateCron } from "./scheduler.js";
@@ -237,6 +238,12 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "GET",    pattern: ["api", "runs", ":id", "explain"],  handler: (q, r, p) => handleRunExplain(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "runs", ":id", "diagnose"], handler: (q, r, p) => handleRunDiagnose(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "runs", ":id", "retry"],    handler: (q, r, p) => handleRunRetry(q, r, p, runtime) },
+    { method: "POST",   pattern: ["api", "runs", ":id", "propose-fix"], handler: (q, r, p) => handleProposeFix(q, r, p, runtime) },
+    { method: "POST",   pattern: ["api", "runs", ":id", "fork"],     handler: (q, r, p) => handleRunFork(q, r, p, runtime) },
+    { method: "POST",   pattern: ["api", "runs", ":id", "share"],    handler: (q, r, p) => handleRunShare(q, r, p, runtime) },
+    { method: "DELETE", pattern: ["api", "runs", ":id", "share"],    handler: (q, r, p) => handleRunShare(q, r, p, runtime) },
+    // PUBLIC — a run-share token resolves one run's plain-English one-pager, no session (allowlisted).
+    { method: "GET",    pattern: ["api", "run-share", ":token"],     handler: (q, r, p) => handleRunShareResolve(q, r, p, runtime) },
     // Artifacts — the consume side. Admin-gated CRUD + share mint/revoke.
     { method: "GET",    pattern: ["api", "artifacts"],                 handler: (q, r) => handleListArtifacts(q, r, runtime) },
     { method: "GET",    pattern: ["api", "artifacts", ":id"],          handler: (q, r, p) => handleGetArtifact(q, r, p, runtime) },
@@ -260,6 +267,7 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "GET",    pattern: ["api", "agents", ":id", "public"],  handler: (q, r, p) => handleGetPublic(q, r, p, runtime) },
     { method: "PUT",    pattern: ["api", "agents", ":id", "public"],  handler: (q, r, p) => handleSetPublic(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "agents", ":id", "public", "rotate-key"], handler: (q, r, p) => handleRotateSiteKey(q, r, p, runtime) },
+    { method: "POST",   pattern: ["api", "agents", ":id", "rehearse"], handler: (q, r, p) => handleRehearseAgent(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleGetTrigger(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleMintTrigger(q, r, p, runtime) },
     { method: "DELETE", pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleRevokeTrigger(q, r, p, runtime) },
@@ -1337,15 +1345,19 @@ async function handleExportRun(_req: IncomingMessage, res: ServerResponse, param
   res.end(JSON.stringify(result.bundle, null, 2));
 }
 
-async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
-  const record = rt.runRegistry.get(params["id"] ?? "");
-  if (!record) { jsonError(res, 404, "run not found"); return; }
-
-  if (!rt.hasLlm) { jsonError(res, 503, "no LLM provider configured — set KRELVAN_LLM_PROVIDER + KRELVAN_LLM_API_KEY (or KRELVAN_ANTHROPIC_KEY for Anthropic)"); return; }
+/**
+ * Generate the plain-English one-pager for a run from its signed ledger. Shared by the Explain
+ * panel (GET /explain) and the "Share this run" one-pager (POST /share). Returns the explanation
+ * text, or a typed error the caller maps to an HTTP status. No side effects.
+ */
+async function generateRunExplanation(
+  rt: KrelvanRuntime,
+  record: RunRecord,
+): Promise<{ ok: true; explanation: string } | { ok: false; status: number; error: string }> {
+  if (!rt.hasLlm) return { ok: false, status: 503, error: "no LLM provider configured — set KRELVAN_LLM_PROVIDER + KRELVAN_LLM_API_KEY (or KRELVAN_ANTHROPIC_KEY for Anthropic)" };
 
   const events = await rt.store.readRun("default", record.runId);
 
-  // Build a concise event summary for the prompt
   const eventLines = events.map(e => {
     const base = `[${e.offset}] ${e.type}`;
     const nodePrefix = e.scope.nodeId ? ` node=${e.scope.nodeId}` : "";
@@ -1390,15 +1402,10 @@ async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, para
     eventLines.join("\n"),
   ].join("\n");
 
-  let explanation: string;
   try {
     const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
     const model = process.env["KRELVAN_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
     const client = getLLMClient();
-    // Bound how long explain may hold this request. It is a NON-essential "nice to have"
-    // summary that the dashboard fetches in the background; if the LLM is slow/overloaded we
-    // must NOT block the single-threaded server for minutes (which would starve fast endpoints
-    // like /api/capabilities). Time it out fast and return 503; the UI just shows no summary.
     const EXPLAIN_TIMEOUT_MS = Math.max(2000, Number(process.env["KRELVAN_EXPLAIN_TIMEOUT_MS"]) || 25_000);
     const response = await Promise.race([
       client.complete({
@@ -1410,16 +1417,65 @@ async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, para
       }),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("explain timed out")), EXPLAIN_TIMEOUT_MS)),
     ]);
-    explanation = response.text;
-    if (!explanation) { jsonError(res, 502, "LLM returned no content"); return; }
+    const explanation = response.text;
+    if (!explanation) return { ok: false, status: 502, error: "LLM returned no content" };
+    return { ok: true, explanation };
   } catch (err) {
     const msg = (err as Error).message;
     log.warn({ err: msg }, "explain LLM failed");
-    jsonError(res, msg.includes("timed out") ? 504 : 502, `explain unavailable: ${msg}`);
+    return { ok: false, status: msg.includes("timed out") ? 504 : 502, error: `explain unavailable: ${msg}` };
+  }
+}
+
+async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const record = rt.runRegistry.get(params["id"] ?? "");
+  if (!record) { jsonError(res, 404, "run not found"); return; }
+
+  const gen = await generateRunExplanation(rt, record);
+  if (!gen.ok) { jsonError(res, gen.status, gen.error); return; }
+  json(res, 200, { explanation: gen.explanation, generatedAt: Date.now(), runId: record.runId });
+}
+
+/**
+ * POST /api/runs/:id/share — mint (or rotate) a public "share this run" link and cache the
+ * plain-English one-pager on the run. Returns { token, url }. The one-pager is generated once
+ * here so the public /r/:token page needs no LLM.
+ * DELETE /api/runs/:id/share — revoke the link (and drop the cached one-pager).
+ */
+async function handleRunShare(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const record = rt.runRegistry.get(params["id"] ?? "");
+  if (!record) { jsonError(res, 404, "run not found"); return; }
+
+  if (req.method === "DELETE") {
+    const existed = rt.runRegistry.revokeShare(record.runId);
+    json(res, 200, { revoked: existed });
     return;
   }
 
-  json(res, 200, { explanation, generatedAt: Date.now(), runId: record.runId });
+  const gen = await generateRunExplanation(rt, record);
+  if (!gen.ok) { jsonError(res, gen.status, gen.error); return; }
+  const token = rt.runRegistry.mintShare(record.runId, gen.explanation);
+  if (!token) { jsonError(res, 404, "run not found"); return; }
+  json(res, 201, { token, url: `/r/${token}` });
+}
+
+/**
+ * GET /api/run-share/:token — resolve a shared run one-pager for a LOGGED-OUT visitor. Returns
+ * only the public shape: agent name, status, when, and the plain-English explanation. NEVER the
+ * runId or any internal id. 404 for an unknown/revoked token.
+ */
+async function handleRunShareResolve(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const record = rt.runRegistry.resolveShare(params["token"] ?? "");
+  if (!record || !record.sharedExplanation) { jsonError(res, 404, "not found"); return; }
+  const agent = rt.agentRegistry.get(record.agentId);
+  json(res, 200, {
+    agentName: record.manifestName,
+    agentSlug: agent?.slug ?? null,
+    status: record.status,
+    explanation: record.sharedExplanation,
+    createdAt: record.createdAt,
+    sharedAt: record.sharedAt ?? record.createdAt,
+  });
 }
 
 /**
@@ -1511,23 +1567,27 @@ async function handleRunDiagnose(_req: IncomingMessage, res: ServerResponse, par
  * of the same broken graph — a new attempt informed by reasoning over what went wrong.
  * Body (optional): { fixStrategy?: string } — if omitted, the endpoint diagnoses first.
  */
-async function handleRunRetry(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
-  const record = rt.runRegistry.get(params["id"] ?? "");
-  if (!record) { jsonError(res, 404, "run not found"); return; }
+/**
+ * Determine the fix strategy for a failed/halted run — from the caller, or by diagnosing the
+ * signed log now. Returns fixStrategy + the fail reason, or a typed error. Shared by retry
+ * (build + run) and propose-fix (build + diff, no run). Also returns the failed run's agent so
+ * the caller can compute a before/after manifest diff.
+ */
+async function resolveFixStrategy(
+  rt: KrelvanRuntime,
+  record: RunRecord,
+  callerFix?: string,
+): Promise<{ ok: true; fixStrategy: string; failReason: string; originalIntent: string; beforeManifest: Manifest } | { ok: false; status: number; error: string }> {
   if (record.status !== "failed" && record.status !== "halted") {
-    jsonError(res, 409, "retry-with-fix is only available for failed or halted runs"); return;
+    return { ok: false, status: 409, error: "this is only available for failed or halted runs" };
   }
-  if (!rt.hasLlm) { jsonError(res, 503, "no LLM provider configured"); return; }
+  if (!rt.hasLlm) return { ok: false, status: 503, error: "no LLM provider configured" };
 
   const agent = rt.agentRegistry.get(record.agentId);
-  if (!agent) { jsonError(res, 404, "the agent for this run no longer exists"); return; }
+  if (!agent) return { ok: false, status: 404, error: "the agent for this run no longer exists" };
   const originalIntent = agent.signed.manifest.intent;
 
-  let body: { fixStrategy?: string } = {};
-  try { const raw = await readBody(req); if (raw) body = JSON.parse(raw); } catch { /* optional body */ }
-
-  // Get the fix: from the caller, or by diagnosing now.
-  let fixStrategy = body.fixStrategy?.trim();
+  let fixStrategy = callerFix?.trim();
   let failReason = record.reason ?? "";
   if (!fixStrategy) {
     const events = await rt.store.readRun("default", record.runId);
@@ -1552,21 +1612,115 @@ async function handleRunRetry(req: IncomingMessage, res: ServerResponse, params:
         model, maxTokens: 200, temperature: 0,
       });
       fixStrategy = (r.text ?? "").trim();
-    } catch (err) { jsonError(res, 502, `diagnosis failed: ${(err as Error).message}`); return; }
+    } catch (err) { return { ok: false, status: 502, error: `diagnosis failed: ${(err as Error).message}` }; }
   }
-  if (!fixStrategy) { jsonError(res, 502, "could not determine a fix"); return; }
+  if (!fixStrategy) return { ok: false, status: 502, error: "could not determine a fix" };
+  return { ok: true, fixStrategy, failReason, originalIntent, beforeManifest: agent.signed.manifest };
+}
 
-  // Rebuild a corrected agent with the fix folded into the goal, then run it.
-  const revisedIntent = `${originalIntent}\n\nIMPORTANT — a previous attempt failed because: ${failReason}. Apply this fix when designing the agent: ${fixStrategy}`;
-  const built = await rt.buildAgent(revisedIntent);
-  if (!built.ok) { json(res, 422, { error: "rebuild_failed", message: built.error, fixStrategy }); return; }
+/** Fold the failure + fix into the original goal so a rebuild targets the corrected design. */
+function revisedIntentFor(originalIntent: string, failReason: string, fixStrategy: string): string {
+  return `${originalIntent}\n\nIMPORTANT — a previous attempt failed because: ${failReason}. Apply this fix when designing the agent: ${fixStrategy}`;
+}
+
+async function handleRunRetry(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const record = rt.runRegistry.get(params["id"] ?? "");
+  if (!record) { jsonError(res, 404, "run not found"); return; }
+
+  let body: { fixStrategy?: string } = {};
+  try { const raw = await readBody(req); if (raw) body = JSON.parse(raw); } catch { /* optional body */ }
+
+  const fix = await resolveFixStrategy(rt, record, body.fixStrategy);
+  if (!fix.ok) { jsonError(res, fix.status, fix.error); return; }
+
+  const built = await rt.buildAgent(revisedIntentFor(fix.originalIntent, fix.failReason, fix.fixStrategy));
+  if (!built.ok) { json(res, 422, { error: "rebuild_failed", message: built.error, fixStrategy: fix.fixStrategy }); return; }
 
   const newAgent = built.agent;
   const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const runRecord = rt.runRegistry.create({ agentId: newAgent.id, runId, manifestName: newAgent.signed.manifest.name });
   void rt.executeRun(runRecord.runId, newAgent.signed.manifest, {}, newAgent.id);
 
-  json(res, 201, { run: runRecord, agent: newAgent, fixStrategy, basedOnRun: record.runId });
+  json(res, 201, { run: runRecord, agent: newAgent, fixStrategy: fix.fixStrategy, basedOnRun: record.runId });
+}
+
+/**
+ * POST /api/runs/:id/propose-fix — the VISIBLE self-improvement step.
+ *
+ * Same reasoning as retry (diagnose → fix → rebuild a corrected agent), but it does NOT run.
+ * Instead it returns the proposed agent, the fix explanation, and a before→after manifest DIFF
+ * so the owner can see exactly what changed and decide. Accepting is a separate, explicit action
+ * (POST /api/runs with the proposed agentId). This is "propose, then wait for consent."
+ */
+async function handleProposeFix(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const record = rt.runRegistry.get(params["id"] ?? "");
+  if (!record) { jsonError(res, 404, "run not found"); return; }
+
+  let body: { fixStrategy?: string } = {};
+  try { const raw = await readBody(req); if (raw) body = JSON.parse(raw); } catch { /* optional body */ }
+
+  const fix = await resolveFixStrategy(rt, record, body.fixStrategy);
+  if (!fix.ok) { jsonError(res, fix.status, fix.error); return; }
+
+  const built = await rt.buildAgent(revisedIntentFor(fix.originalIntent, fix.failReason, fix.fixStrategy));
+  if (!built.ok) { json(res, 422, { error: "rebuild_failed", message: built.error, fixStrategy: fix.fixStrategy }); return; }
+
+  const diff = diffManifests(fix.beforeManifest, built.agent.signed.manifest);
+  json(res, 200, {
+    proposedAgentId: built.agent.id,
+    proposedAgentName: built.agent.signed.manifest.name,
+    fixStrategy: fix.fixStrategy,
+    failReason: fix.failReason,
+    basedOnRun: record.runId,
+    diff,
+  });
+}
+
+/**
+ * POST /api/agents/:id/rehearse — run a full REHEARSAL: cast synthetic users and run each through
+ * the agent's real graph against a synthetic world (nothing delivered/charged/written). Returns a
+ * report of per-persona verdicts + findings and a roll-up. Body (optional): { count }.
+ */
+async function handleRehearseAgent(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const id = params["id"] ?? "";
+  if (!rt.agentRegistry.get(id)) { jsonError(res, 404, "agent not found"); return; }
+  let body: { count?: unknown } = {};
+  try { const raw = await readBody(req); if (raw) body = JSON.parse(raw); } catch { /* optional body */ }
+  const count = typeof body.count === "number" && Number.isFinite(body.count) ? Math.round(body.count) : undefined;
+
+  const result = await rt.rehearseAgent(id, count);
+  if (!result.ok) { jsonError(res, 422, result.error); return; }
+  json(res, 200, { report: result.report });
+}
+
+/**
+ * POST /api/runs/:id/fork — time-travel: fork this run at a chosen node and re-run forward,
+ * optionally editing one of that node's outputs. Body: { throughNodeId, edit?: {key, value} }.
+ * Returns the new run so the UI can navigate to it. No LLM needed.
+ */
+async function handleRunFork(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const id = params["id"] ?? "";
+  if (!rt.runRegistry.get(id)) { jsonError(res, 404, "run not found"); return; }
+  let body: { throughNodeId?: unknown; edit?: { key?: unknown; value?: unknown } };
+  try { body = JSON.parse(await readBody(req)); } catch { jsonError(res, 400, "invalid JSON"); return; }
+  const throughNodeId = typeof body.throughNodeId === "string" ? body.throughNodeId.trim() : "";
+  if (!throughNodeId) { jsonError(res, 400, "throughNodeId is required"); return; }
+
+  // Optional edit: a single scalar override of that node's output key.
+  let edit: { key: string; value: string | number | boolean | null } | undefined;
+  if (body.edit && typeof body.edit === "object") {
+    const k = body.edit.key;
+    const v = body.edit.value;
+    if (typeof k !== "string" || !k.trim()) { jsonError(res, 400, "edit.key must be a non-empty string"); return; }
+    if (v !== null && typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") {
+      jsonError(res, 400, "edit.value must be a scalar (string/number/boolean/null)"); return;
+    }
+    edit = { key: k.trim(), value: v };
+  }
+
+  const result = await rt.forkRun(id, throughNodeId, edit);
+  if (!result.ok) { jsonError(res, 422, result.error); return; }
+  json(res, 201, { run: result.run, forkedFrom: id, throughNodeId, edited: !!edit });
 }
 
 async function handleExplainBuild(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {

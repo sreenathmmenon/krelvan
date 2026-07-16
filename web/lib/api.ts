@@ -164,7 +164,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     // Keep this in sync with middleware PUBLIC_PATHS. /faq is a public marketing page — a
     // logged-out visitor's FAQ API calls may 401 and must degrade gracefully, NOT bounce the
     // whole window to /login (that made clicking "FAQ" from the nav a dead-end sign-in wall).
-    const isPublic = p === "/" || p === "/faq" || p.startsWith("/login") || p.startsWith("/setup") || p.startsWith("/share/");
+    const isPublic = p === "/" || p === "/faq" || p.startsWith("/login") || p.startsWith("/setup") || p.startsWith("/share/") || p.startsWith("/r/") || p.startsWith("/a/");
     if (!isPublic) window.location.href = "/login";
   }
   if (!res.ok) {
@@ -409,6 +409,38 @@ export async function getSharedArtifact(token: string): Promise<SharedArtifact> 
   return res.json() as Promise<SharedArtifact>;
 }
 
+// ── Run one-pager (plain-English, shareable) ────────────────────────────────────
+
+export interface SharedRun {
+  agentName: string;
+  agentSlug: string | null;
+  status: string;
+  explanation: string;
+  createdAt: number;
+  sharedAt: number;
+}
+
+/** Mint (or rotate) a "share this run" link. Generates the plain-English one-pager server-side
+ *  and returns the one-time token + its /r URL. */
+export async function shareRun(runId: string): Promise<{ token: string; url: string }> {
+  return apiFetch<{ token: string; url: string }>(`/api/runs/${encodeURIComponent(runId)}/share`, { method: "POST" });
+}
+
+/** Revoke a run's share link (and drop the cached one-pager). */
+export async function unshareRun(runId: string): Promise<{ revoked: boolean }> {
+  return apiFetch<{ revoked: boolean }>(`/api/runs/${encodeURIComponent(runId)}/share`, { method: "DELETE" });
+}
+
+/** Fetch a PUBLIC shared run one-pager. Used by the /r/[token] page — no session, no redirect. */
+export async function getSharedRun(token: string): Promise<SharedRun> {
+  const res = await fetch(`${API_BASE}/api/run-share/${encodeURIComponent(token)}`, { cache: "no-store" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
+    throw new Error(err.error ?? `not found`);
+  }
+  return res.json() as Promise<SharedRun>;
+}
+
 // ── Public agent front door (B3) — all go through the proxy but need NO session; a 404
 //    (agent private/disabled) is expected and must NOT redirect to login. ─────────────
 
@@ -533,6 +565,89 @@ export async function retryRunWithFix(runId: string, fixStrategy?: string): Prom
   return apiFetch<RetryResult>(`/api/runs/${encodeURIComponent(runId)}/retry`, {
     method: "POST",
     body: JSON.stringify(fixStrategy ? { fixStrategy } : {}),
+  });
+}
+
+// ── Rehearsal Room: run synthetic users against the real graph, faked world ──────
+
+export type RehearsalVerdict = "completed" | "parked" | "looped" | "failed";
+export type FindingLevel = "ok" | "warn" | "stop";
+export interface RehearsalFinding { level: FindingLevel; code: string; message: string; }
+export interface RehearsalPersona { name: string; description: string; seedMessage: string; }
+export interface RehearsalPersonaResult {
+  persona: RehearsalPersona;
+  runId: string;
+  judgement: { verdict: RehearsalVerdict; findings: RehearsalFinding[] };
+}
+export interface RehearsalReport {
+  rehearsalId: string;
+  agentId: string;
+  agentName: string;
+  createdAt: number;
+  personasGenerated: boolean;
+  results: RehearsalPersonaResult[];
+  rollup: {
+    total: number;
+    byVerdict: Record<RehearsalVerdict, number>;
+    findingCounts: Record<FindingLevel, number>;
+    headline: RehearsalFinding | null;
+    hasBlocker: boolean;
+  };
+}
+
+/** Rehearse an agent: cast synthetic users, run each on the real graph with a faked world, and
+ *  return a report. Nothing is delivered, charged, or written. May take a while (many runs). */
+export async function rehearseAgent(agentId: string, count?: number): Promise<RehearsalReport> {
+  const data = await apiFetch<{ report: RehearsalReport }>(`/api/agents/${encodeURIComponent(agentId)}/rehearse`, {
+    method: "POST",
+    body: JSON.stringify(count ? { count } : {}),
+  });
+  return data.report;
+}
+
+// ── Visible self-improvement: propose a fix, show the diff, then accept ──────────
+
+export interface ManifestDiff {
+  identical: boolean;
+  addedNodes: { id: string; role: string; capabilities: string[] }[];
+  removedNodes: { id: string; role: string }[];
+  changedNodes: { id: string; changes: string[] }[];
+  addedEdges: { from: string; to: string }[];
+  removedEdges: { from: string; to: string }[];
+  fieldChanges: { field: string; before: string; after: string }[];
+}
+
+export interface FixProposal {
+  proposedAgentId: string;
+  proposedAgentName: string;
+  fixStrategy: string;
+  failReason: string;
+  basedOnRun: string;
+  diff: ManifestDiff;
+}
+
+/** Propose a corrected agent for a failed run WITHOUT running it — returns the fix + a
+ *  before→after manifest diff for the owner to review. Accept via startRun(proposedAgentId). */
+export async function proposeFix(runId: string, fixStrategy?: string): Promise<FixProposal> {
+  return apiFetch<FixProposal>(`/api/runs/${encodeURIComponent(runId)}/propose-fix`, {
+    method: "POST",
+    body: JSON.stringify(fixStrategy ? { fixStrategy } : {}),
+  });
+}
+
+export interface ForkResult { run: RunRecord; forkedFrom: string; throughNodeId: string; edited: boolean; }
+/**
+ * Time-travel: fork a run at a chosen node and re-run forward from there. Optionally override one
+ * of that node's outputs (`edit`) to explore a what-if. Returns the new run to navigate to.
+ */
+export async function forkRun(
+  runId: string,
+  throughNodeId: string,
+  edit?: { key: string; value: string | number | boolean | null },
+): Promise<ForkResult> {
+  return apiFetch<ForkResult>(`/api/runs/${encodeURIComponent(runId)}/fork`, {
+    method: "POST",
+    body: JSON.stringify(edit ? { throughNodeId, edit } : { throughNodeId }),
   });
 }
 

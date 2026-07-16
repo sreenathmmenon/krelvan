@@ -3,7 +3,8 @@
 import { useState, useEffect, use, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getRun, getRunEvents, verifyRun, listApprovals, resolveApproval, explainRun, diagnoseRun, retryRunWithFix, startRun, listArtifacts, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type RunVerification, type PendingApproval, type RunExplanation, type RunDiagnosis, API_BASE } from "../../../lib/api";
+import { getRun, getRunEvents, verifyRun, listApprovals, resolveApproval, explainRun, diagnoseRun, retryRunWithFix, proposeFix, shareRun, startRun, listArtifacts, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type RunVerification, type PendingApproval, type RunExplanation, type RunDiagnosis, type FixProposal, API_BASE } from "../../../lib/api";
+import { renderMarkdown } from "../../../lib/markdown";
 import { layoutGraph, graphBounds, edgePath } from "../../../lib/layout";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -140,6 +141,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnoseError, setDiagnoseError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [proposing, setProposing] = useState(false);
+  const [proposal, setProposal] = useState<FixProposal | null>(null);
+  const [accepting, setAccepting] = useState(false);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [resolving, setResolving] = useState<string | null>(null);
@@ -324,6 +328,33 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     } catch (e) {
       setDiagnoseError((e as Error).message);
       setRetrying(false);
+    }
+  }
+
+  // Visible self-improvement: propose a corrected agent and SHOW the diff — do not run yet.
+  async function handleProposeFix() {
+    if (proposing) return;
+    setProposing(true); setDiagnoseError(null);
+    try {
+      const p = await proposeFix(id, diagnosis?.diagnosis.fixStrategy);
+      setProposal(p);
+    } catch (e) {
+      setDiagnoseError((e as Error).message);
+    } finally {
+      setProposing(false);
+    }
+  }
+
+  // Accept the proposal — this is the explicit consent step that actually runs the fixed agent.
+  async function handleAcceptProposal() {
+    if (!proposal || accepting) return;
+    setAccepting(true);
+    try {
+      const newRun = await startRun(proposal.proposedAgentId);
+      router.push(`/runs/${newRun.runId}`);
+    } catch (e) {
+      setDiagnoseError((e as Error).message);
+      setAccepting(false);
     }
   }
 
@@ -533,6 +564,13 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             {isTerminalStatus && (
               <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center" }}>
                 <Link href={`/canvas/${run.agentId}`} className="btn btn-secondary btn-sm">View agent →</Link>
+                <Link
+                  href={`/rehearse/${run.agentId}`}
+                  className="btn btn-secondary btn-sm"
+                  title="Rehearse this agent against synthetic users — real graph, faked world, nothing sent"
+                >
+                  Rehearse
+                </Link>
                 <button
                   className="btn btn-primary btn-sm"
                   disabled={startingRun}
@@ -604,12 +642,23 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                     {diagnosis.diagnosis.retryWorthwhile ? "Retry worthwhile" : "Retry unlikely to help"}
                   </span>
                   <span className="small muted" style={{ flex: 1, minWidth: "20ch" }}>{diagnosis.diagnosis.retryNote}</span>
-                  {diagnosis.diagnosis.retryWorthwhile && (
-                    <button className="btn btn-primary btn-sm" disabled={retrying} onClick={handleRetryWithFix}>
-                      {retrying ? "Rebuilding & running…" : "Retry with fix →"}
+                  {diagnosis.diagnosis.retryWorthwhile && !proposal && (
+                    <button className="btn btn-primary btn-sm" disabled={proposing} onClick={handleProposeFix}>
+                      {proposing ? "Building the fix…" : "Propose a fix →"}
                     </button>
                   )}
                 </div>
+
+                {/* The proposed fix — shown BEFORE anything runs. The owner sees exactly what
+                    changed and decides. Accepting is the explicit consent step. */}
+                {proposal && (
+                  <FixProposalCard
+                    proposal={proposal}
+                    accepting={accepting}
+                    onAccept={handleAcceptProposal}
+                    onDiscard={() => setProposal(null)}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -1186,6 +1235,7 @@ function ExplainPanel({ runId, status, explanation, loading, error, onGenerate }
               <span className="mono micro" style={{ color: "var(--ink-muted)" }}>
                 {timeAgo(explanation.generatedAt)}
               </span>
+              <ShareRunButton runId={runId} />
               <button
                 className="btn btn-secondary btn-sm"
                 disabled={loading}
@@ -1200,8 +1250,8 @@ function ExplainPanel({ runId, status, explanation, loading, error, onGenerate }
               Run is still {status} — regenerate once it finishes for a complete picture.
             </div>
           )}
-          <div style={{ fontSize: 14, lineHeight: 1.7, color: "var(--ink)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-            {cleanExplanation(explanation.explanation)}
+          <div className="md-body" style={{ fontSize: 14, lineHeight: 1.7, color: "var(--ink)", wordBreak: "break-word" }}>
+            {renderMarkdown(cleanExplanation(explanation.explanation))}
           </div>
         </div>
       ) : (
@@ -1239,6 +1289,126 @@ function ExplainPanel({ runId, status, explanation, loading, error, onGenerate }
           {error}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Share-this-run button ───────────────────────────────────────────────────────
+// Mints a public, logged-out one-pager link for this run and copies it. The server generates
+// the plain-English explanation fresh at mint time and caches it, so the /r/:token page loads
+// instantly with no LLM. Minting again rotates the link.
+
+function ShareRunButton({ runId }: { runId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [url, setUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function mint() {
+    setBusy(true); setErr(null);
+    try {
+      const res = await shareRun(runId);
+      const abs = typeof window !== "undefined" ? new URL(res.url, window.location.origin).toString() : res.url;
+      setUrl(abs);
+      try { await navigator.clipboard.writeText(abs); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* clipboard may be blocked; the link is still shown */ }
+    } catch (e) {
+      setErr((e as Error)?.message ?? "Could not create a share link.");
+    }
+    setBusy(false);
+  }
+
+  if (url) {
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)" }}>
+        <a href={url} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">Open one-pager</a>
+        <button className="btn btn-ghost btn-sm" onClick={() => void mint()} disabled={busy} title="Copy the link again (rotates it)">
+          {copied ? "Copied ✓" : "Copy link"}
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)" }}>
+      <button className="btn btn-secondary btn-sm" onClick={() => void mint()} disabled={busy}>
+        {busy ? "Creating…" : "Share this run"}
+      </button>
+      {err && <span className="micro" style={{ color: "var(--danger)", textTransform: "none", letterSpacing: 0 }}>{err}</span>}
+    </span>
+  );
+}
+
+// ── Proposed-fix card (visible self-improvement) ────────────────────────────────
+// Renders the fix explanation + a plain-English, before→after diff of the agent's design, then
+// asks for consent. Nothing runs until the owner clicks Accept. The diff is the "wow": you can
+// see the corrected step / added tool / new connection before you commit to it.
+
+function FixProposalCard({ proposal, accepting, onAccept, onDiscard }: {
+  proposal: FixProposal;
+  accepting: boolean;
+  onAccept: () => void;
+  onDiscard: () => void;
+}) {
+  const d = proposal.diff;
+  const nothingChanged = d.identical;
+
+  return (
+    <div style={{ marginTop: "var(--s2)", border: "1px solid var(--brand-ring, var(--line))", borderRadius: "var(--r-lg)", background: "var(--brand-tint)", overflow: "hidden" }}>
+      <div style={{ padding: "var(--s4) var(--s5)", borderBottom: "1px solid var(--line)" }}>
+        <div className="micro" style={{ color: "var(--brand)", marginBottom: "var(--s1)" }}>Proposed fix — review before running</div>
+        <p className="small" style={{ margin: 0, lineHeight: 1.6, color: "var(--ink)" }}>{proposal.fixStrategy}</p>
+      </div>
+
+      <div style={{ padding: "var(--s4) var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s3)" }}>
+        <div className="micro" style={{ color: "var(--ink-muted)" }}>What changed in the agent</div>
+
+        {nothingChanged ? (
+          <p className="small soft" style={{ margin: 0 }}>
+            The rebuilt agent came out structurally identical — the fix is in how each step is instructed, not in the shape of the workflow.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
+            {d.addedNodes.map(n => (
+              <DiffRow key={`an-${n.id}`} kind="add" text={`New step "${n.role}"${n.capabilities.length ? ` — tools: ${n.capabilities.join(", ")}` : ""}`} />
+            ))}
+            {d.removedNodes.map(n => (
+              <DiffRow key={`rn-${n.id}`} kind="remove" text={`Removed step "${n.role}"`} />
+            ))}
+            {d.changedNodes.map(n => n.changes.map((c, i) => (
+              <DiffRow key={`cn-${n.id}-${i}`} kind="change" text={`Step "${n.id}": ${c}`} />
+            )))}
+            {d.addedEdges.map((e, i) => (
+              <DiffRow key={`ae-${i}`} kind="add" text={`New connection: ${e.from} → ${e.to}`} />
+            ))}
+            {d.removedEdges.map((e, i) => (
+              <DiffRow key={`re-${i}`} kind="remove" text={`Removed connection: ${e.from} → ${e.to}`} />
+            ))}
+            {d.fieldChanges.map((f, i) => (
+              <DiffRow key={`fc-${i}`} kind="change" text={`${f.field}: ${f.before} → ${f.after}`} />
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: "var(--s2)", alignItems: "center", paddingTop: "var(--s2)", borderTop: "1px solid var(--line)" }}>
+          <button className="btn btn-primary btn-sm" disabled={accepting} onClick={onAccept}>
+            {accepting ? "Starting…" : "Accept & run →"}
+          </button>
+          <button className="btn btn-ghost btn-sm" disabled={accepting} onClick={onDiscard}>
+            Discard
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DiffRow({ kind, text }: { kind: "add" | "remove" | "change"; text: string }) {
+  const color = kind === "add" ? "var(--ok)" : kind === "remove" ? "var(--danger)" : "var(--brand)";
+  const sign = kind === "add" ? "+" : kind === "remove" ? "−" : "~";
+  return (
+    <div className="small" style={{ display: "flex", gap: "var(--s2)", alignItems: "flex-start", lineHeight: 1.55, color: "var(--ink)" }}>
+      <span className="mono" aria-hidden="true" style={{ color, fontWeight: 700, flexShrink: 0, width: "1ch" }}>{sign}</span>
+      <span>{text}</span>
     </div>
   );
 }

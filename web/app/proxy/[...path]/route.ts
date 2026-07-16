@@ -43,13 +43,18 @@ async function forward(req: NextRequest, path: string[]): Promise<Response> {
   // a shared output. It exposes only the rendered output (never a runId/internal id).
   const isShare = apiPath.startsWith("api/share/");
 
+  // A public RUN-SHARE link (api/run-share/:token) is read-only and token-authenticated in the API.
+  // A logged-out visitor can open a run's plain-English one-pager; it exposes only the agent name,
+  // status, and explanation — never a runId/internal id.
+  const isRunShare = apiPath.startsWith("api/run-share/");
+
   // The public Agent Front Door (api/public/*) — profile/feed reads gated by the agent's own
   // public flags, and /ask authenticated by a per-agent site key. No admin session; the /a/:slug
   // page and the widget reach it without cookies. (The API deny-by-defaults a disabled agent.)
   const isPublicAgent = apiPath.startsWith("api/public/");
 
   // GATE: non-public API calls require a valid session cookie.
-  if (!PUBLIC_API.has(apiPath) && !isTrigger && !isShare && !isPublicAgent && !session) {
+  if (!PUBLIC_API.has(apiPath) && !isTrigger && !isShare && !isRunShare && !isPublicAgent && !session) {
     return json(401, { error: "not authenticated" });
   }
 
