@@ -163,6 +163,28 @@ function isInstruction(s: string): boolean {
     || /\boutput object keys\b/i.test(s);
 }
 
+// Recover a search SUBJECT from an instruction the agent's role carries, e.g.
+//   "Research the current state of electric vehicle battery technology, and write a brief"
+//     -> "current state of electric vehicle battery technology"
+// This is the last-resort query source: better to search the real topic buried in the instruction
+// than to run the search with an empty query (which returns nothing and silently fails the run).
+// Returns "" when nothing subject-like can be recovered.
+export function subjectFromInstruction(s: string): string {
+  let t = (s ?? "").trim();
+  if (!t) return "";
+  // Drop everything from the first command conjunction onward ("… and write a brief", "then …").
+  t = t.split(/\b(?:,?\s*(?:and|then)\s+(?:write|summari[sz]e|analyze|draft|produce|output|create|make|give|return|compose|send|post|list|identify|assess|recommend)\b)/i)[0] ?? t;
+  // Strip a leading directive verb + filler articles so the topic remains.
+  t = t
+    .replace(/^\s*(?:please\s+)?(?:research|search(?:\s+the\s+web)?(?:\s+for)?|look\s+up|find|retrieve|fetch|gather|investigate|explore|study|analyze|assess|review|summari[sz]e|write\s+about|tell\s+me\s+about|report\s+on)\b/i, "")
+    .replace(/^\s*(?:the\s+|about\s+|on\s+|for\s+|into\s+)+/i, "")
+    .replace(/[.:;]+\s*$/, "")
+    .trim();
+  // If what's left is empty, too long to be a subject, or still reads like a directive, give up.
+  if (!t || t.length > 140) return "";
+  return t;
+}
+
 // Trim a snippet to a single, clean line for the human-facing summary — strip any markdown the
 // source embedded (headings, inline links, emphasis, code), collapse whitespace, drop to the first
 // sentence-ish, and cap the length so each result stays scannable.
@@ -302,6 +324,18 @@ export const webSearchCapability: CapabilityPlugin = {
     if (!query) {
       query = String(input["intent"] ?? "").slice(0, 160).trim();
       if (isInstruction(query)) query = "";
+    }
+    if (!query) {
+      // Last resort: the node's role/goal/intent is usually an instruction ("Research X, then
+      // write a brief"). Rather than search nothing, recover the SUBJECT buried in it. This is
+      // what lets a multi-step research agent ("Research electric vehicle battery technology…")
+      // actually search for its topic instead of returning 0 results.
+      const instr = String(input[`${call.nodeId}.role`] ?? input["role"] ?? input["goal"] ?? input["intent"] ?? "").trim();
+      const subject = subjectFromInstruction(instr);
+      if (subject) {
+        query = subject.slice(0, 160);
+        log.info({ nodeId: call.nodeId, query }, "web_search: recovered query subject from the node instruction");
+      }
     }
     if (!query) {
       log.warn({ nodeId: call.nodeId }, "web_search: no usable subject in state — set 'query' or 'topic' in the manifest seed");

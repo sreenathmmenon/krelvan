@@ -96,6 +96,27 @@ export class Compiler {
     const storedIntent = cleanIntent ?? intent;
     proposal.intent = storedIntent;
 
+    // Enforce a sensible RUN-BUDGET FLOOR. The model often anchors on the small example budget
+    // (~100¢) and under-budgets multi-node agents, so a real graph (e.g. fetch → think on a
+    // fetched page) gets "admission denied — run budget exceeded" on the first run. Bump the
+    // proposed budget up to the sum of each node's own budgetCents plus headroom, so the plan the
+    // model drew can actually execute. We only RAISE toward what the nodes need and never above the
+    // principal's ceiling (checkMonotonicity still rejects anything over principal.maxRunBudgetCents).
+    if (Array.isArray(proposal.nodes) && proposal.nodes.length > 0) {
+      let nodeSum = 0;
+      for (const node of proposal.nodes) {
+        for (const cap of node.capabilities ?? []) {
+          if (typeof cap?.budgetCents === "number") nodeSum += cap.budgetCents;
+        }
+      }
+      // headroom: nodes may be visited more than once (loops) and cost estimates vary — give ~1.5x
+      // the declared per-node sum, with a small absolute floor per node for tiny graphs.
+      const floor = Math.max(Math.ceil(nodeSum * 1.5), proposal.nodes.length * 200, 300);
+      if (typeof proposal.runBudgetCents !== "number" || proposal.runBudgetCents < floor) {
+        proposal.runBudgetCents = Math.min(floor, principal.maxRunBudgetCents);
+      }
+    }
+
     // 1. structural validation
     const vIssues = fatalIssues(validateManifest(proposal));
     if (vIssues.length) return { ok: false, stage: "validate", issues: vIssues };

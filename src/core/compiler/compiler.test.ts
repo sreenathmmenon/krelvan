@@ -72,6 +72,41 @@ test("compiler: valid manifest within owner authority compiles and signs", async
   assert.equal(res.signed.provenance.intent, "research X");
 });
 
+test("compiler: raises an under-budgeted plan up to a floor so it can actually run", async () => {
+  // The model proposed a 2-node graph but a tiny 100¢ run budget — enough to trip
+  // "admission denied — run budget exceeded" on the first run. The compiler bumps it to a floor.
+  const under = manifest({
+    runBudgetCents: 100,
+    nodes: [
+      { id: "a", role: "fetch", autonomy: "full", capabilities: [{ name: "web_search", sideEffect: "read", budgetCents: 100 }] },
+      { id: "b", role: "think", autonomy: "full", capabilities: [{ name: "web_search", sideEffect: "read", budgetCents: 100 }] },
+    ],
+    edges: [{ from: "a", to: "b" }],
+  });
+  const { s } = signer();
+  const res = await new Compiler(fakeModel(under), s).compile("fetch and think", ownerPrincipal, 100);
+  assert.ok(res.ok, !res.ok ? JSON.stringify(res.issues) : "");
+  // floor = max(ceil((100+100)*1.5)=300, 2*200=400, 300) = 400, capped at owner max 1000.
+  assert.equal(res.signed.manifest.runBudgetCents, 400);
+});
+
+test("compiler: never raises the budget above the principal ceiling", async () => {
+  // A big graph whose floor would exceed the owner's max is capped at the max, not beyond.
+  const big = manifest({
+    runBudgetCents: 100,
+    nodes: Array.from({ length: 6 }, (_, i) => ({
+      id: `n${i}`, role: "w", autonomy: "full" as const,
+      capabilities: [{ name: "web_search" as const, sideEffect: "read" as const, budgetCents: 100 }],
+    })),
+    entry: "n0",
+    edges: [],
+  });
+  const { s } = signer();
+  const res = await new Compiler(fakeModel(big), s).compile("big", ownerPrincipal, 100);
+  assert.ok(res.ok, !res.ok ? JSON.stringify(res.issues) : "");
+  assert.ok(res.signed.manifest.runBudgetCents <= ownerPrincipal.maxRunBudgetCents);
+});
+
 test("compiler: PROMPT-INJECTION — untrusted intent cannot add a capability it lacks", async () => {
   // The model (manipulated by an injected message) tries to grant telegram_send,
   // which the channel principal is NOT allowed to confer.

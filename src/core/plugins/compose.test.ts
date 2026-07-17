@@ -30,6 +30,14 @@ test("compose: strips other field labels (brief:/summary:/message:) at line star
   assert.equal(cleanComposedText("message: Please review this."), "Please review this.");
 });
 
+test("compose: strips labels using '=' as well as ':' (title=X / body=Y)", () => {
+  const raw = "body=Recent advancements in AI are transforming industries.\ntitle=AI Advancements";
+  const out = cleanComposedText(raw);
+  assert.ok(!/body=/i.test(out) && !/title=/i.test(out), "no = labels remain");
+  assert.ok(out.includes("Recent advancements in AI are transforming industries."));
+  assert.ok(out.includes("AI Advancements"));
+});
+
 test("compose: does NOT mangle a real sentence with a colon mid-line", () => {
   const raw = "The result was clear: the API must stay simple. Here is why: consistency wins.";
   assert.equal(cleanComposedText(raw), raw);

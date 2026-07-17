@@ -7,7 +7,21 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { webSearchCapability } from "./web-search.js";
+import { webSearchCapability, subjectFromInstruction } from "./web-search.js";
+
+test("subjectFromInstruction: recovers the topic from a research instruction", () => {
+  assert.equal(
+    subjectFromInstruction("Research the current state of electric vehicle battery technology, and write a brief"),
+    "current state of electric vehicle battery technology",
+  );
+  assert.equal(subjectFromInstruction("Search the web for the latest AI news"), "latest AI news");
+  assert.equal(subjectFromInstruction("Look up climate policy in the EU"), "climate policy in the EU");
+});
+
+test("subjectFromInstruction: returns empty when nothing subject-like remains", () => {
+  assert.equal(subjectFromInstruction(""), "");
+  assert.equal(subjectFromInstruction("Research"), "");
+});
 
 // Drive the capability with no search/LLM keys so it takes the keyless path deterministically
 // where possible; we assert on the QUERY it derives (logged via the returned output.query) and

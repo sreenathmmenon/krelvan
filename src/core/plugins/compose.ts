@@ -49,8 +49,9 @@ export function cleanComposedText(raw: string): string {
   // models echo as "label: value" — the reader should never see them. Only a bare known label at
   // line-start is stripped; a real sentence with a colon mid-line ("The result was clear: …") is
   // untouched because it doesn't start with one of these exact words.
+  // Match a leading label followed by ":" OR "=" — models emit both ("title: X" and "title=X").
   const LABELS = ["title", "body", "brief", "summary", "message", "note", "subject", "headline", "content"];
-  const labelRe = new RegExp(`^[ \\t]*(?:${LABELS.join("|")}):[ \\t]*`, "gim");
+  const labelRe = new RegExp(`^[ \\t]*(?:${LABELS.join("|")})\\s*[:=][ \\t]*`, "gim");
   text = text
     .replace(labelRe, "")
     .replace(/\n{3,}/g, "\n\n")
