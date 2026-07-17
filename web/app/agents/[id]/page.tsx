@@ -741,6 +741,8 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [tab, setTab] = useState<"graph" | "chat" | "runs" | "schedules" | "trigger" | "delivery" | "public" | "memory">("graph");
   const [running, setRunning] = useState(false);
+  const [runInput, setRunInput] = useState("");
+  const [showInput, setShowInput] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -787,7 +789,9 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
     if (!agent || running) return;
     setRunning(true);
     try {
-      await startRun(agent.id);
+      await startRun(agent.id, runInput);
+      setRunInput("");
+      setShowInput(false);
       await load();
     } catch (e) {
       flashErr(`Couldn't start the run — ${(e as Error).message}`);
@@ -971,15 +975,35 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                   Review &amp; resume run →
                 </Link>
               ) : (
-                <button
-                  className="btn btn-primary"
-                  onClick={handleRunNow}
-                  disabled={running}
-                >
-                  {running ? "Starting…" : "Run now"}
-                </button>
+                <>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setShowInput(s => !s)}
+                    title="Give this agent some input for the run (text to process, a question, notes…)"
+                  >
+                    {showInput ? "Hide input" : "Add input"}
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleRunNow}
+                    disabled={running}
+                  >
+                    {running ? "Starting…" : runInput.trim() ? "Run with input" : "Run now"}
+                  </button>
+                </>
               )}
             </div>
+            {showInput && lastRun?.status !== "halted" && (
+              <div style={{ marginTop: "var(--s3)" }}>
+                <textarea
+                  value={runInput}
+                  onChange={e => setRunInput(e.target.value)}
+                  rows={4}
+                  placeholder="Optional input for this run — e.g. paste the notes to process, the question to answer, or the text to summarise. Leave blank to run without input."
+                  style={{ width: "100%", boxSizing: "border-box", padding: "var(--s3)", borderRadius: "var(--r)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 14, resize: "vertical", fontFamily: "inherit" }}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>

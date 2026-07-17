@@ -281,10 +281,12 @@ export async function listRuns(): Promise<RunRecord[]> {
   return data.runs;
 }
 
-export async function startRun(agentId: string): Promise<RunRecord> {
+/** Start a run. `input` is an optional free-text message the agent receives (the text to process,
+ *  the question to answer) — seeded so agents that need input actually get it. */
+export async function startRun(agentId: string, input?: string): Promise<RunRecord> {
   const data = await apiFetch<{ run: RunRecord }>("/api/runs", {
     method: "POST",
-    body: JSON.stringify({ agentId }),
+    body: JSON.stringify(input && input.trim() ? { agentId, message: input } : { agentId }),
   });
   return data.run;
 }

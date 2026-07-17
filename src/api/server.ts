@@ -717,18 +717,34 @@ async function handleClearRuns(req: IncomingMessage, res: ServerResponse, rt: Kr
 
 async function handleStartRun(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const raw = await readBody(req);
-  let body: { agentId?: string; initialState?: Record<string, string | number | boolean | null> };
+  let body: {
+    agentId?: string;
+    initialState?: Record<string, string | number | boolean | null>;
+    // A free-text input the customer provides for THIS run (the notes to process, the question to
+    // answer, the text to summarise). Seeded under the `message` key that the built-in plugins
+    // already read (same convention as the chat/trigger paths), so an agent that needs input
+    // actually receives it instead of reporting "no input was provided".
+    message?: unknown;
+    input?: unknown;
+  };
   try { body = JSON.parse(raw); } catch { jsonError(res, 400, "invalid JSON"); return; }
   if (!body.agentId) { jsonError(res, 400, "agentId is required"); return; }
 
   const agent = rt.agentRegistry.get(body.agentId);
   if (!agent) { jsonError(res, 404, "agent not found"); return; }
 
+  // Build the run's initial state: any explicit initialState, plus the user's message/input under
+  // the `message` key (accepting either field name). A blank message is simply omitted.
+  const initialState: Record<string, string | number | boolean | null> = { ...(body.initialState ?? {}) };
+  const userInput = typeof body.message === "string" ? body.message
+    : typeof body.input === "string" ? body.input : "";
+  if (userInput.trim() && initialState["message"] === undefined) initialState["message"] = userInput;
+
   const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const runRecord = rt.runRegistry.create({ agentId: body.agentId, runId, manifestName: agent.signed.manifest.name });
 
   // Run async — do NOT await; return the run record immediately so the UI can poll.
-  void rt.executeRun(runRecord.runId, agent.signed.manifest, body.initialState ?? {}, body.agentId);
+  void rt.executeRun(runRecord.runId, agent.signed.manifest, initialState, body.agentId);
 
   json(res, 201, { run: runRecord });
 }
