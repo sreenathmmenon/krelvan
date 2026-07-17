@@ -57,20 +57,29 @@ function isNonEmptyString(v: unknown): v is string {
  * best-guess prose (or a notable-values summary) as { title, body } in "text" format, or
  * null when the run produced nothing worth surfacing.
  */
-function extractHeuristic(state: Record<string, unknown>): { title: string; body: string } | null {
+function extractHeuristic(state: Record<string, unknown>): { title: string; body: string; format?: OutputFormat } | null {
   const entries = Object.entries(state);
   // Prefer, in order: a *.result, a composed *.body/*.reply/*.answer/*.summary, else nothing.
-  const pick = (suffixes: string[]): string | null => {
+  const pick = (suffixes: string[]): { key: string; value: string } | null => {
     for (const suf of suffixes) {
       const hit = entries.find(([k]) => k.endsWith(suf) && typeof state[k] === "string" && (state[k] as string).trim().length > 0);
-      if (hit) return String(hit[1]);
+      if (hit) return { key: hit[0], value: String(hit[1]) };
     }
     return null;
   };
-  const primary = pick([".result", ".briefing", ".body", ".reply", ".answer", ".digest", ".summary", ".message", ".note", ".text", ".output"]);
+  // `.summary` comes FIRST: capabilities that produce a human-facing answer without a compose
+  // node (e.g. web_search) emit a clean, titled markdown `.summary`. Preferring it means the
+  // customer sees a scannable answer with clickable links instead of a raw context dump. When the
+  // chosen value is a `.summary`, surface it as markdown so those links actually render.
+  const primary = pick([".summary", ".result", ".briefing", ".body", ".reply", ".answer", ".digest", ".message", ".note", ".text", ".output"]);
   if (primary) {
-    const full = primary.trim();
-    return { title: deriveTitle(full), body: full };
+    const full = primary.value.trim();
+    const format: OutputFormat | undefined = primary.key.endsWith(".summary") ? "markdown" : undefined;
+    // A markdown summary usually opens with a heading (## …) — use that as the title, not the
+    // first result line, so the artifact is titled "Top 5 results — <query>" not result #1.
+    const headingMatch = format === "markdown" ? full.match(/^#{1,6}\s+(.+)$/m) : null;
+    const title = headingMatch ? headingMatch[1]!.trim() : deriveTitle(full);
+    return { title, body: full, format };
   }
   // Still nothing under a known key — a non-standard agent may put its answer under an unusual
   // key. Fall back to the LONGEST substantial string value in the state (real prose output) so a
@@ -118,8 +127,8 @@ export function extractArtifact(
     // prose) — fall through to the heuristic rather than emitting an empty artifact.
   }
 
-  // 2. heuristic fallback — always "text".
+  // 2. heuristic fallback — "text", unless the chosen value is a human-facing markdown summary.
   const h = extractHeuristic(state);
   if (!h) return null;
-  return { title: h.title, body: h.body, format: "text" };
+  return { title: h.title, body: h.body, format: h.format ?? "text" };
 }

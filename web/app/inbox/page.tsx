@@ -7,6 +7,7 @@ import {
   listArtifacts, patchArtifact, listRuns, startRun, timeAgo, getCached,
   type ArtifactRecord, type RunRecord,
 } from "../../lib/api";
+import { previewText } from "../../lib/output-render";
 
 // ── The Agent Inbox ──────────────────────────────────────────────────────────
 // The pull home base: every agent's OUTPUT shows up here as a first-class Artifact,
@@ -19,19 +20,11 @@ import {
 const READ_KEY = "krelvan_inbox_read";
 const ARCHIVED_KEY = "krelvan_inbox_archived";
 
-// A clean one-line preview: take the first paragraph and strip the common inline markdown
-// markers so a card reads as prose ("BLUF: …") rather than showing raw syntax ("**BLUF:**").
+// A clean one-line preview — the shared renderer's previewText handles both link-lists
+// (shows "Title · Title · Title +N more") and prose (markdown fully stripped), so a card
+// never shows raw syntax or a dumped URL.
 function preview(body: string): string {
-  const firstPara = body.split("\n\n")[0]?.trim() || body.trim();
-  const plain = firstPara
-    .replace(/^#{1,6}\s+/gm, "")          // heading markers
-    .replace(/\*\*([^*]+)\*\*/g, "$1")    // bold
-    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "$1") // italic
-    .replace(/`([^`]+)`/g, "$1")          // inline code
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") // links → their text
-    .replace(/\s+/g, " ")
-    .trim();
-  return plain.length > 220 ? plain.slice(0, 218).trimEnd() + "…" : plain;
+  return previewText(body, 220);
 }
 
 export default function InboxPage() {

@@ -18,6 +18,18 @@ test("extractor: output_map wins — uses declared title/body/format", () => {
   assert.deepEqual(a, { title: "The Headline", body: "The full brief.", format: "markdown" });
 });
 
+test("extractor heuristic: a .summary wins, renders as markdown, and titles from its heading", () => {
+  // web_search (no compose node) emits a clean human-facing `.summary` markdown block. The
+  // customer must see THAT — titled from its `## heading`, format markdown so links are clickable —
+  // not the raw `.findings` context dump.
+  const summary = "## Top 2 results — anthropic claude\n\n1. [Claude news](https://a.example)\n   A short snippet.\n2. [Claude 3.7](https://b.example)";
+  const findings = "[1] Claude news\nhttps://a.example\nA short snippet.\n\n[2] Claude 3.7\nhttps://b.example\n(a much longer raw context dump ".repeat(1) + ")";
+  const a = extractArtifact(seed(), { "search_web.summary": summary, "search_web.findings": findings });
+  assert.equal(a?.format, "markdown", "summary is surfaced as markdown so links render");
+  assert.equal(a?.title, "Top 2 results — anthropic claude", "title comes from the summary heading");
+  assert.equal(a?.body, summary, "body is the clean summary, not the raw findings blob");
+});
+
 test("extractor: output_map with no titleKey derives a title from the body", () => {
   const a = extractArtifact(seed("body=write.body"), { "write.body": "First line here\nsecond line" });
   assert.equal(a?.body, "First line here\nsecond line");

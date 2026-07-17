@@ -7,7 +7,7 @@ import {
   getArtifact, patchArtifact, shareArtifact, unshareArtifact, getAgentPublic,
   timeAgo, type ArtifactRecord,
 } from "../../../lib/api";
-import { renderMarkdown } from "../../../lib/markdown";
+import { OutputBody } from "../../../lib/output-render";
 
 // ── The rendered artifact page ─────────────────────────────────────────────────
 // The product's face: an agent's finished output as a clean, readable object. Copy it,
@@ -149,11 +149,9 @@ export default function ArtifactPage() {
         </p>
       )}
 
-      {/* The output body */}
+      {/* The output body — smart, designed rendering (result cards / clean prose), never raw markdown. */}
       <article className="card" style={{ padding: "var(--s6)" }}>
-        {artifact.format === "markdown"
-          ? renderMarkdown(artifact.body)
-          : <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.7, color: "var(--ink-soft)" }}>{artifact.body}</p>}
+        <OutputBody body={artifact.body} heading={artifact.title} />
       </article>
     </div>
   );

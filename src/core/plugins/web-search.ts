@@ -163,15 +163,55 @@ function isInstruction(s: string): boolean {
     || /\boutput object keys\b/i.test(s);
 }
 
-// Shape search hits into the output every downstream node can actually use: the raw
-// `results` array AND a readable `findings` text block (what LLM nodes read from context).
-// Agents reference either `results` (structured) or `findings` (prose) — both are populated.
+// Trim a snippet to a single, clean line for the human-facing summary — strip any markdown the
+// source embedded (headings, inline links, emphasis, code), collapse whitespace, drop to the first
+// sentence-ish, and cap the length so each result stays scannable.
+function oneLineSnippet(snippet: string): string {
+  const plain = (snippet ?? "")
+    .replace(/`+/g, "")                              // code ticks
+    .replace(/^#{1,6}\s+/gm, "")                     // heading markers
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")       // [text](url) / ![alt](url) -> text
+    .replace(/\*\*([^*]+)\*\*/g, "$1")               // bold
+    .replace(/(^|[^*])\*([^*]+)\*/g, "$1$2")         // italic
+    .replace(/_{1,2}([^_]+)_{1,2}/g, "$1")           // underscore emphasis
+    .replace(/^\s*[-*>]\s+/gm, "");                  // list/quote markers
+  const flat = plain.replace(/\s+/g, " ").trim();
+  if (!flat) return "";
+  // Keep two sentences (up to ~280 chars) so the customer gets a real feel for each result,
+  // not a one-line tease — but never a raw wall.
+  const twoSentences = flat.match(/^(.{40,}?[.!?]\s+.{20,}?[.!?])(\s|$)/);
+  const s = twoSentences?.[1] && twoSentences[1].length <= 300 ? twoSentences[1] : flat;
+  return s.length > 300 ? s.slice(0, 297).trimEnd() + "…" : s;
+}
+
+/** Bare hostname for a URL (for the "via <domain>" line on a result card). */
+function hostOf(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
+}
+
+// Shape search hits into the output every consumer can use, at the right level of polish for each:
+//   • results   — the structured array {title,url,snippet} (for downstream nodes / programmatic use)
+//   • findings  — LLM-context prose with the FULL snippets (what reason/compose nodes read)
+//   • summary   — the HUMAN-FACING answer: a titled, clickable markdown list with one-line snippets.
+//                 This is what a customer sees when the agent has no compose node — a clean "top N"
+//                 answer instead of a raw context dump. extractArtifact prefers this key.
 function shapeSearchOutput(results: SearchResult[], query: string, costCents: number) {
   const findings = results
     .map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`)
     .join("\n\n");
+  const heading = query ? `Top ${results.length} results — ${query}` : `Top ${results.length} results`;
+  const summary = [
+    `## ${heading}`,
+    "",
+    ...results.map((r, i) => {
+      const title = r.title?.trim() || r.url;
+      const line = `${i + 1}. [${title}](${r.url})`;
+      const snip = oneLineSnippet(r.snippet ?? "");
+      return snip ? `${line}\n   ${snip}` : line;
+    }),
+  ].join("\n");
   return {
-    output: { results, findings, query, count: results.length },
+    output: { results, findings, summary, query, count: results.length },
     claimedCostCents: costCents,
   };
 }

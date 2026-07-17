@@ -22,6 +22,39 @@ import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("compose");
 
+/**
+ * Turn a raw model response into clean, customer-facing prose. Models sometimes:
+ *   • wrap the whole answer in a JSON object ({ "text": "…" }),
+ *   • fence it in ``` … ```,
+ *   • echo the output_map field names as line labels ("title: …\nbody: …"), once at the top or
+ *     — in a multi-item digest — for EVERY item.
+ * A customer must see none of that. Exported so the exact behaviour is unit-tested.
+ */
+export function cleanComposedText(raw: string): string {
+  let text = (raw ?? "").trim();
+  // Unwrap a JSON-object answer → its text/result/output field (or first string value).
+  if (text.startsWith("{") && text.endsWith("}")) {
+    try {
+      const obj = JSON.parse(text) as Record<string, unknown>;
+      const pick = obj["text"] ?? obj["result"] ?? obj["output"] ?? obj["translation"] ??
+        Object.values(obj).find((v) => typeof v === "string");
+      if (typeof pick === "string" && pick.trim()) text = pick.trim();
+    } catch { /* not JSON after all — keep as-is */ }
+  }
+  // Unwrap a whole-answer ``` code fence.
+  const fenced = text.match(/^```[a-z]*\s*\n([\s\S]*?)\n?```$/i);
+  if (fenced) text = fenced[1]!.trim();
+  // Strip `title:` / `body:` labels wherever they open a line (every occurrence, not just the
+  // first), so a digest reads as prose. Only a bare label at line-start is stripped — a real
+  // sentence with a colon mid-line is untouched.
+  text = text
+    .replace(/^[ \t]*title:[ \t]*/gim, "")
+    .replace(/^[ \t]*body:[ \t]*/gim, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return text;
+}
+
 type CompositionStyle = "brief" | "detailed" | "bullet";
 
 function styleInstruction(style: CompositionStyle): string {
@@ -113,6 +146,7 @@ export const composeCapability: CapabilityPlugin = {
         // \"3 bullets\", \"one paragraph\"). Do NOT add a heading, a title label, or extra sections
         // the instruction didn't request.",
         "FOLLOW THE REQUESTED FORMAT EXACTLY. If the instruction specifies a length (e.g. \"2 sentences\", \"3 bullets\") or shape, match it precisely. Do not add a title, heading, or extra sections unless asked.",
+        "NEVER prefix lines with field labels like \"title:\" or \"body:\" — write the actual prose directly. Those are internal field names, not something the reader should ever see.",
         styleInstruction(style),
         "Output only the composed text — no preamble, no meta-commentary, no JSON wrapper.",
       ].join("\n"),
@@ -123,29 +157,7 @@ export const composeCapability: CapabilityPlugin = {
       plainText: true,
     });
 
-    // Some models still wrap prose in a JSON object despite the instruction; unwrap it so
-    // the user gets clean text. We extract a likely text field or the first string value.
-    let text = response.text.trim();
-    if (text.startsWith("{") && text.endsWith("}")) {
-      try {
-        const obj = JSON.parse(text) as Record<string, unknown>;
-        const pick = obj["text"] ?? obj["result"] ?? obj["output"] ?? obj["translation"] ??
-          Object.values(obj).find((v) => typeof v === "string");
-        if (typeof pick === "string" && pick.trim()) text = pick.trim();
-      } catch { /* not JSON after all — keep as-is */ }
-    }
-    // Strip a wrapping ``` code fence some models add around the whole answer — the customer
-    // wants the prose, not a code block.
-    const fenced = text.match(/^```[a-z]*\s*\n([\s\S]*?)\n?```$/i);
-    if (fenced) text = fenced[1]!.trim();
-    // Strip leading `title:` / `body:` scaffolding labels: when the manifest's output_map names
-    // title/body keys, some models echo those labels into the prose (e.g. "title:\nbody: …").
-    // Drop a leading `title:` line (only that one line) and unwrap a leading `body:` label so the
-    // user sees clean text — carefully, so real content on later lines is never consumed.
-    text = text
-      .replace(/^[ \t]*title:[^\n]*\r?\n/i, "")  // just the title: line
-      .replace(/^[ \t]*body:[ \t]*/i, "")        // just the body: label prefix
-      .trim();
+    const text = cleanComposedText(response.text);
 
     const words = text.split(/\s+/).filter(Boolean).length;
     const costCents = estimateCostCents(provider, model, response.inputTokens, response.outputTokens);
