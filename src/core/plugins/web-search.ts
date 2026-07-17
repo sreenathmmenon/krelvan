@@ -246,9 +246,15 @@ export const webSearchCapability: CapabilityPlugin = {
 
       log.info({ nodeId: call.nodeId, query }, "web_search: LLM synthesis complete");
 
+      // IMPORTANT: expose the answer as a FLAT string (`findings`), not only nested in
+      // results[].snippet. The engine's nodeOutputState drops arrays/objects from run state, so a
+      // downstream compose/think node would otherwise receive NO usable content (it only sees the
+      // scalar keys) and report "the search results haven't been provided". `findings` mirrors the
+      // real-results path (shapeSearchOutput) so downstream nodes always get readable text.
       return {
         output: {
           results: [{ title: "LLM synthesis", url: "", snippet: response.text }],
+          findings: response.text,
           query,
           count: 1,
           synthetic: true,
