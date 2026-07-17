@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "build": {
+    "env": {
+      "KRELVAN_API_ORIGIN": "https://api.krelvan.com"
+    }
+  },
+  "env": {
+    "KRELVAN_API_ORIGIN": "https://api.krelvan.com"
+  }
+}
