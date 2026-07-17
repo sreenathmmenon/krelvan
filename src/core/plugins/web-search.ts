@@ -66,6 +66,16 @@ const S = (v: unknown): string => (typeof v === "string" ? v : "");
 
 const SEARCH_PROVIDERS: SearchProvider[] = [
   {
+    id: "linkup",
+    keyNames: ["LINKUP_API_KEY", "linkup-api-key"],
+    run: (q, key) => jsonSearch(
+      "https://api.linkup.so/v1/search",
+      { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${key}` }, body: JSON.stringify({ q, depth: "standard", outputType: "searchResults" }) },
+      (j) => arr((j as { results?: unknown }).results).slice(0, 5)
+        .map((r) => ({ title: S(r["name"]), url: S(r["url"]), snippet: S(r["content"]) })),
+    ),
+  },
+  {
     id: "brave",
     keyNames: ["BRAVE_SEARCH_API_KEY", "brave-api-key", "BRAVE_API_KEY"],
     run: (q, key) => jsonSearch(
@@ -360,7 +370,7 @@ export const webSearchCapability: CapabilityPlugin = {
         results: [] as { title: string; url: string; snippet: string }[],
         query,
         count: 0,
-        error: "no search available — add a search provider key (Brave, Tavily, Serper, SerpApi, You.com, or Bing) in Secrets, or configure an LLM provider for a knowledge-based fallback",
+        error: "no search available — add a search provider key (Linkup, Brave, Tavily, Serper, SerpApi, You.com, or Bing) in Secrets, or configure an LLM provider for a knowledge-based fallback",
       },
       claimedCostCents: 0,
     };

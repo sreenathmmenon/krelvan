@@ -39,6 +39,10 @@ const SECRET_HELP: Record<string, { steps: string; href: string }> = {
   },
   // ── Web search providers — add ONE of these to give every agent real, live web search.
   // web_search uses whichever you configure; you're not locked to a single vendor.
+  "LINKUP_API_KEY": {
+    steps: "Linkup → create a free account → API keys → create a key → paste it here. Search built for AI agents (ranked results + sourced answers).",
+    href: "https://app.linkup.so/",
+  },
   "BRAVE_SEARCH_API_KEY": {
     steps: "Brave Search API → sign up (free tier) → API Keys → create a key → paste it here. This gives all your agents real web search.",
     href: "https://brave.com/search/api/",
