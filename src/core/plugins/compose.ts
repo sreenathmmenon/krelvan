@@ -44,12 +44,15 @@ export function cleanComposedText(raw: string): string {
   // Unwrap a whole-answer ``` code fence.
   const fenced = text.match(/^```[a-z]*\s*\n([\s\S]*?)\n?```$/i);
   if (fenced) text = fenced[1]!.trim();
-  // Strip `title:` / `body:` labels wherever they open a line (every occurrence, not just the
-  // first), so a digest reads as prose. Only a bare label at line-start is stripped — a real
-  // sentence with a colon mid-line is untouched.
+  // Strip field-name labels wherever they open a line (every occurrence, not just the first), so a
+  // digest / brief / message reads as prose. These are output_map / manifest field names that some
+  // models echo as "label: value" — the reader should never see them. Only a bare known label at
+  // line-start is stripped; a real sentence with a colon mid-line ("The result was clear: …") is
+  // untouched because it doesn't start with one of these exact words.
+  const LABELS = ["title", "body", "brief", "summary", "message", "note", "subject", "headline", "content"];
+  const labelRe = new RegExp(`^[ \\t]*(?:${LABELS.join("|")}):[ \\t]*`, "gim");
   text = text
-    .replace(/^[ \t]*title:[ \t]*/gim, "")
-    .replace(/^[ \t]*body:[ \t]*/gim, "")
+    .replace(labelRe, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return text;

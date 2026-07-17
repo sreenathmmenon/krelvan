@@ -24,6 +24,12 @@ test("compose: strips title:/body: labels for EVERY item in a digest", () => {
   assert.ok(out.includes("SpaceX proposed data centers in orbit."));
 });
 
+test("compose: strips other field labels (brief:/summary:/message:) at line start", () => {
+  assert.equal(cleanComposedText("brief: Customer needs help with an order."), "Customer needs help with an order.");
+  assert.equal(cleanComposedText("summary: Three things happened."), "Three things happened.");
+  assert.equal(cleanComposedText("message: Please review this."), "Please review this.");
+});
+
 test("compose: does NOT mangle a real sentence with a colon mid-line", () => {
   const raw = "The result was clear: the API must stay simple. Here is why: consistency wins.";
   assert.equal(cleanComposedText(raw), raw);
