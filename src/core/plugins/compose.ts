@@ -51,6 +51,11 @@ export const composeCapability: CapabilityPlugin = {
     const input = call.input as Record<string, unknown>;
     const topic = String(input["topic"] ?? "");
     const prompt = String(input["prompt"] ?? "");
+    // The node's own role IS the user's instruction for this step — it carries the format/length
+    // constraints the customer asked for ("write a short 2-sentence summary", "as a numbered
+    // list"). The engine injects it into state as `<nodeId>.role`/`role`. Use it as the task so
+    // compose actually respects "2 sentences" instead of writing a generic multi-paragraph block.
+    const role = String(input[`${call.nodeId}.role`] ?? input["role"] ?? "").trim();
 
     const rawStyle = String(input["style"] ?? "brief");
     const style: CompositionStyle =
@@ -91,6 +96,9 @@ export const composeCapability: CapabilityPlugin = {
       userParts.push(contextParts.slice(0, 8).join("\n\n"));
       userParts.push("=== YOUR TASK ===");
     }
+    // The step's instruction (its role) is the customer's actual ask, including any length/format
+    // constraint — put it first and label it clearly so the model treats it as the task to obey.
+    if (role) userParts.push(`Your instruction for this step: ${role}`);
     if (topic) userParts.push(`Topic: ${topic}`);
     if (prompt) userParts.push(`Additional instructions: ${prompt}`);
     if (userParts.length === 0) userParts.push("Write something helpful.");
@@ -101,6 +109,10 @@ export const composeCapability: CapabilityPlugin = {
         "You are a skilled writer. Compose text based on the provided context and topic.",
         "IMPORTANT: Base your writing on the CONTEXT provided above — do not invent facts.",
         "If context is available, summarise and synthesise it rather than writing from scratch.",
+        // Format fidelity: obey any length/shape the instruction asks for (e.g. \"2 sentences\",
+        // \"3 bullets\", \"one paragraph\"). Do NOT add a heading, a title label, or extra sections
+        // the instruction didn't request.",
+        "FOLLOW THE REQUESTED FORMAT EXACTLY. If the instruction specifies a length (e.g. \"2 sentences\", \"3 bullets\") or shape, match it precisely. Do not add a title, heading, or extra sections unless asked.",
         styleInstruction(style),
         "Output only the composed text — no preamble, no meta-commentary, no JSON wrapper.",
       ].join("\n"),
