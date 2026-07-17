@@ -37,6 +37,32 @@ const SECRET_HELP: Record<string, { steps: string; href: string }> = {
     steps: "Railway → Account Settings → Tokens → Create Token → copy it here (or use a project token).",
     href: "https://docs.railway.com/guides/public-api#authentication",
   },
+  // ── Web search providers — add ONE of these to give every agent real, live web search.
+  // web_search uses whichever you configure; you're not locked to a single vendor.
+  "BRAVE_SEARCH_API_KEY": {
+    steps: "Brave Search API → sign up (free tier) → API Keys → create a key → paste it here. This gives all your agents real web search.",
+    href: "https://brave.com/search/api/",
+  },
+  "TAVILY_API_KEY": {
+    steps: "Tavily → sign up (free tier, search built for AI) → copy your API key → paste it here.",
+    href: "https://tavily.com/",
+  },
+  "SERPER_API_KEY": {
+    steps: "Serper.dev → sign up (free credits, Google results) → API Key → copy it here.",
+    href: "https://serper.dev/",
+  },
+  "SERPAPI_API_KEY": {
+    steps: "SerpApi → sign up → Your Account → API Key → copy it here.",
+    href: "https://serpapi.com/",
+  },
+  "YOU_API_KEY": {
+    steps: "You.com API → request access → copy your API key → paste it here.",
+    href: "https://api.you.com/",
+  },
+  "BING_SEARCH_API_KEY": {
+    steps: "Azure Portal → create a 'Bing Search' resource → Keys and Endpoint → copy Key 1.",
+    href: "https://www.microsoft.com/en-us/bing/apis/bing-web-search-api",
+  },
 };
 
 /** A small "How to get this →" helper rendered under a required-secret card. */

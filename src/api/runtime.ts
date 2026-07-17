@@ -43,7 +43,7 @@ import { recallCapability, rememberCapability, identifyCapability, loadSoul, sav
 import { ragIngestCapability, ragSearchCapability } from "../core/plugins/rag-plugins.js";
 import { wikiIngestCapability, wikiQueryCapability } from "../core/plugins/wiki-plugins.js";
 import { llmRouteCapability } from "../core/plugins/llm-route.js";
-import { webSearchCapability } from "../core/plugins/web-search.js";
+import { webSearchCapability, setSearchSecretResolver } from "../core/plugins/web-search.js";
 import { composeCapability } from "../core/plugins/compose.js";
 import { emailSendCapability, setEmailSecretResolver } from "../core/plugins/email-send.js";
 import { telegramSendCapability, setTelegramSecretResolver } from "../core/plugins/telegram-send.js";
@@ -839,6 +839,10 @@ export class KrelvanRuntime {
     // the encrypted SecretStore so a UI-connected Telegram works with no env var / restart.
     setTelegramSecretResolver((name) => this.secretStore.resolve(name));
     setEmailSecretResolver((name) => this.secretStore.resolve(name));
+    // web_search resolves its search-provider key (Brave/Tavily/Serper/… — the customer's choice)
+    // through the same encrypted SecretStore, so a customer configures search in the UI with no
+    // env var or restart. Falls back to env for a platform default.
+    setSearchSecretResolver((name) => this.secretStore.resolve(name));
     this.scheduler = new Scheduler(
       this.scheduleRegistry,
       (agentId, scheduleId) => this.startScheduledRun(agentId, scheduleId),

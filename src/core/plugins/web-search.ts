@@ -1,17 +1,17 @@
 /**
- * "web_search" capability — real web search via Brave Search API with LLM fallback.
+ * "web_search" capability — real web search, provider-agnostic, with graceful fallback.
+ *
+ * The customer is NOT locked to one search vendor. Whichever provider they configure a key for
+ * (in the in-app Secrets UI or via env) is used: Brave, Tavily, Serper, SerpApi, You.com, Bing.
+ * Adding another provider is one entry in SEARCH_PROVIDERS — no other code changes.
  *
  * Priority order:
- *   1. BRAVE_SEARCH_API_KEY set → call Brave Search API (https://api.search.brave.com)
- *      Returns top 5 results as { title, url, snippet }.
- *   2. KRELVAN_ANTHROPIC_KEY set (no Brave key) → call Claude haiku to synthesize an
- *      answer from its training knowledge. Returns a single synthetic result.
- *   3. Neither key set → returns empty results with a clear error message. Never throws.
+ *   1. Configured provider (the customer's chosen search source) → real results.
+ *   2. Keyless web search (works with no key at all, best-effort).
+ *   3. LLM synthesis from training knowledge (clearly labelled as not-live) — last resort.
+ *   4. Nothing available → soft {ok:false} with a clear message. Never throws into the run.
  *
- * Output shape:
- *   { results: [{ title, url, snippet }], query, count, synthetic?, error? }
- *
- * Cost estimate: 8 cents per call.
+ * Output shape: { results: [{ title, url, snippet }], findings, query, count, synthetic?, error? }
  * Side effect: "read" — no external writes.
  */
 
@@ -22,19 +22,128 @@ import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("web-search");
 
-// ── Brave Search response shape ───────────────────────────────────────────────
-
-interface BraveResult {
-  title?: string;
-  url?: string;
-  description?: string;
+// ── secret resolver hook ────────────────────────────────────────────────────────
+// A customer configures their OWN search source in the in-app Secrets/Connections UI (no env
+// edits, no redeploy) — the same mechanism email/telegram use. The runtime overrides this at boot
+// (setSearchSecretResolver) to read the encrypted secret store; it still falls back to
+// process.env, so a platform owner can set a default for everyone. Precedence per lookup:
+// in-app secret → environment variable.
+let secretResolver: (name: string) => string | undefined = (n) => process.env[n];
+export function setSearchSecretResolver(fn: (name: string) => string | undefined): void {
+  secretResolver = fn;
+}
+function secret(...names: string[]): string | undefined {
+  for (const n of names) { const v = secretResolver(n); if (v && v.trim()) return v.trim(); }
+  return undefined;
 }
 
-interface BraveResponse {
-  web?: {
-    results?: BraveResult[];
-  };
+// ── Provider-AGNOSTIC search ───────────────────────────────────────────────────
+// Krelvan doesn't lock a customer to one search vendor. Any supported provider works: the
+// customer sets a key for whichever they have (Brave, Tavily, Serper, SerpApi, Bing, You.com…)
+// and web_search uses it. Adding a provider = one entry here; no other code changes.
+// Each provider: the key names it reads (in-app secret or env) + how to call it + how to shape
+// results into { title, url, snippet }. Ordered by preference; the first with a key wins.
+interface SearchProvider {
+  id: string;
+  keyNames: string[];  // secret/env names the customer might use for this provider's key
+  run(query: string, key: string): Promise<SearchResult[]>;
 }
+
+// Small helper: GET/POST JSON and map a results array through a shaper.
+async function jsonSearch(
+  url: string,
+  init: Parameters<typeof fetchWithRetry>[1],
+  pick: (json: unknown) => SearchResult[],
+): Promise<SearchResult[]> {
+  const outcome = await fetchWithRetry(url, init, { maxAttempts: 3, baseDelayMs: 500 });
+  if (!outcome.ok) throw new Error(`HTTP ${outcome.status}: ${String(outcome.rawBody).slice(0, 120)}`);
+  return pick(await outcome.resp.json());
+}
+function arr(v: unknown): Record<string, unknown>[] {
+  return Array.isArray(v) ? (v as Record<string, unknown>[]) : [];
+}
+const S = (v: unknown): string => (typeof v === "string" ? v : "");
+
+const SEARCH_PROVIDERS: SearchProvider[] = [
+  {
+    id: "brave",
+    keyNames: ["BRAVE_SEARCH_API_KEY", "brave-api-key", "BRAVE_API_KEY"],
+    run: (q, key) => jsonSearch(
+      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=5`,
+      { method: "GET", headers: { Accept: "application/json", "Accept-Encoding": "gzip", "X-Subscription-Token": key } },
+      (j) => arr((j as { web?: { results?: unknown } }).web?.results).slice(0, 5)
+        .map((r) => ({ title: S(r["title"]), url: S(r["url"]), snippet: S(r["description"]) })),
+    ),
+  },
+  {
+    id: "tavily",
+    keyNames: ["TAVILY_API_KEY", "tavily-api-key"],
+    run: (q, key) => jsonSearch(
+      "https://api.tavily.com/search",
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ api_key: key, query: q, max_results: 5 }) },
+      (j) => arr((j as { results?: unknown }).results).slice(0, 5)
+        .map((r) => ({ title: S(r["title"]), url: S(r["url"]), snippet: S(r["content"]) })),
+    ),
+  },
+  {
+    id: "serper",
+    keyNames: ["SERPER_API_KEY", "serper-api-key"],
+    run: (q, key) => jsonSearch(
+      "https://google.serper.dev/search",
+      { method: "POST", headers: { "content-type": "application/json", "X-API-KEY": key }, body: JSON.stringify({ q }) },
+      (j) => arr((j as { organic?: unknown }).organic).slice(0, 5)
+        .map((r) => ({ title: S(r["title"]), url: S(r["link"]), snippet: S(r["snippet"]) })),
+    ),
+  },
+  {
+    id: "serpapi",
+    keyNames: ["SERPAPI_API_KEY", "serpapi-key", "SERP_API_KEY"],
+    run: (q, key) => jsonSearch(
+      `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(q)}&api_key=${encodeURIComponent(key)}`,
+      { method: "GET", headers: { Accept: "application/json" } },
+      (j) => arr((j as { organic_results?: unknown }).organic_results).slice(0, 5)
+        .map((r) => ({ title: S(r["title"]), url: S(r["link"]), snippet: S(r["snippet"]) })),
+    ),
+  },
+  {
+    id: "you",
+    keyNames: ["YOU_API_KEY", "you-api-key", "YDC_API_KEY"],
+    run: (q, key) => jsonSearch(
+      `https://api.ydc-index.io/search?query=${encodeURIComponent(q)}`,
+      { method: "GET", headers: { "X-API-Key": key, Accept: "application/json" } },
+      (j) => arr((j as { hits?: unknown }).hits).slice(0, 5)
+        .map((r) => ({ title: S(r["title"]), url: S(r["url"]), snippet: Array.isArray(r["snippets"]) ? S((r["snippets"] as unknown[])[0]) : S(r["description"]) })),
+    ),
+  },
+  {
+    id: "bing",
+    keyNames: ["BING_SEARCH_API_KEY", "bing-api-key", "AZURE_BING_KEY"],
+    run: (q, key) => jsonSearch(
+      `https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(q)}&count=5`,
+      { method: "GET", headers: { "Ocp-Apim-Subscription-Key": key, Accept: "application/json" } },
+      (j) => arr((j as { webPages?: { value?: unknown } }).webPages?.value).slice(0, 5)
+        .map((r) => ({ title: S(r["name"]), url: S(r["url"]), snippet: S(r["snippet"]) })),
+    ),
+  },
+];
+
+/** The first configured provider (customer's chosen search source), or null for none. */
+function activeSearchProvider(): { provider: SearchProvider; key: string } | null {
+  // A customer can also pin a provider explicitly via SEARCH_PROVIDER=tavily; otherwise the first
+  // provider that has a key wins.
+  const pinned = secret("SEARCH_PROVIDER", "search-provider")?.toLowerCase();
+  const ordered = pinned
+    ? [...SEARCH_PROVIDERS].sort((a, b) => (a.id === pinned ? -1 : b.id === pinned ? 1 : 0))
+    : SEARCH_PROVIDERS;
+  for (const provider of ordered) {
+    const key = secret(...provider.keyNames)
+      // a generic name the customer can use with SEARCH_PROVIDER pinned
+      ?? (pinned === provider.id ? secret("SEARCH_API_KEY", "search-api-key") : undefined);
+    if (key) return { provider, key };
+  }
+  return null;
+}
+
 
 // A value is an "instruction" (a role/command prompt), not a search subject, if it reads
 // like a directive. Such text must never be used as a search query — it returns junk.
@@ -156,55 +265,30 @@ export const webSearchCapability: CapabilityPlugin = {
       };
     }
 
-    const braveKey = process.env["BRAVE_SEARCH_API_KEY"];
     const llmProvider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
     const hasLlm = llmProvider === "ollama"
       || !!(process.env["KRELVAN_LLM_API_KEY"] || process.env["KRELVAN_ANTHROPIC_KEY"]);
 
-    // ── Path 1: Brave Search API ───────────────────────────────────────────────
-    if (braveKey) {
-      log.info({ nodeId: call.nodeId, query }, "web_search: calling Brave Search API");
-
-      const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`;
-
-      const outcome = await fetchWithRetry(
-        url,
-        {
-          method: "GET",
-          headers: {
-            "Accept": "application/json",
-            "Accept-Encoding": "gzip",
-            "X-Subscription-Token": braveKey,
-          },
-        },
-        { maxAttempts: 3, baseDelayMs: 500 },
-      );
-
-      if (!outcome.ok) {
-        // A Brave error (401 revoked key, 429 rate-limit, 5xx) must NOT hard-fail the run.
-        // Every other outbound plugin returns a soft failure the graph can branch on; do the
-        // same — degrade to LLM synthesis if a provider is configured, else a soft {ok:false}.
-        const msg = outcome.status === 0
-          ? `network error: ${outcome.rawBody}`
-          : `Brave Search API ${outcome.status}: ${outcome.rawBody}`;
-        log.warn({ nodeId: call.nodeId, query, err: msg }, "web_search: Brave failed — degrading");
-        if (!hasLlm) {
-          return { output: { ok: false, error: `web_search: ${msg}`, results: [], query, count: 0 }, claimedCostCents: 0 };
+    // ── Path 1: the customer's configured search provider (ANY vendor) ─────────
+    // Whichever provider the customer set a key for (Brave/Tavily/Serper/SerpApi/You/Bing/…) is
+    // used. A provider error (bad key, rate-limit, 5xx) is soft: degrade to keyless → LLM rather
+    // than hard-failing the run.
+    const configured = activeSearchProvider();
+    if (configured) {
+      log.info({ nodeId: call.nodeId, query, provider: configured.provider.id }, "web_search: calling configured provider");
+      try {
+        const results = await configured.provider.run(query, configured.key);
+        if (results.length > 0) {
+          log.info({ nodeId: call.nodeId, provider: configured.provider.id, count: results.length, query }, "web_search: provider results received");
+          return shapeSearchOutput(results, query, 8);
         }
-        // fall through to Path 2 (LLM synthesis) below
-      } else {
-        const json = (await outcome.resp.json()) as BraveResponse;
-        const raw = json.web?.results ?? [];
-
-        const results = raw.slice(0, 5).map((r) => ({
-          title: r.title ?? "",
-          url: r.url ?? "",
-          snippet: r.description ?? "",
-        }));
-
-        log.info({ nodeId: call.nodeId, count: results.length, query }, "web_search: brave results received");
-
-        return shapeSearchOutput(results, query, 8);
+        log.warn({ nodeId: call.nodeId, provider: configured.provider.id, query }, "web_search: provider returned nothing — degrading");
+      } catch (err) {
+        log.warn({ nodeId: call.nodeId, provider: configured.provider.id, query, err: (err as Error)?.message }, "web_search: provider failed — degrading");
+        if (!hasLlm) {
+          return { output: { ok: false, error: `web_search (${configured.provider.id}): ${(err as Error)?.message}`, results: [], query, count: 0 }, claimedCostCents: 0 };
+        }
+        // fall through to keyless / LLM synthesis below
       }
     }
 
@@ -276,7 +360,7 @@ export const webSearchCapability: CapabilityPlugin = {
         results: [] as { title: string; url: string; snippet: string }[],
         query,
         count: 0,
-        error: "no search provider configured — set BRAVE_SEARCH_API_KEY, or configure KRELVAN_LLM_PROVIDER",
+        error: "no search available — add a search provider key (Brave, Tavily, Serper, SerpApi, You.com, or Bing) in Secrets, or configure an LLM provider for a knowledge-based fallback",
       },
       claimedCostCents: 0,
     };
