@@ -36,7 +36,13 @@ function json(status: number, body: unknown): Response {
 
 async function forward(req: NextRequest, path: string[]): Promise<Response> {
   const apiPath = path.join("/");
-  const session = readSessionCookie((n) => req.cookies.get(n)?.value);
+  // Read the session from the cookie (direct browser → proxy), OR from the X-Krelvan-Session
+  // header when this proxy sits BEHIND another proxy (e.g. a Vercel front door forwards to this
+  // backend and passes the session as a header, not a cookie). Without this, a two-hop deploy
+  // (Vercel → backend) loses the session and every authed call 401s after login.
+  const session = readSessionCookie((n) => req.cookies.get(n)?.value)
+    ?? req.headers.get("x-krelvan-session")
+    ?? undefined;
 
   // The inbound webhook trigger (api/triggers/:agentId) is a PUBLIC, token-authed endpoint meant
   // to be called by external systems. It carries its own Authorization: Bearer <trigger-token>
