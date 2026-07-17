@@ -233,12 +233,15 @@ export const webSearchCapability: CapabilityPlugin = {
       const client = getLLMClient();
       const response = await client.complete({
         system: [
-          "You are a knowledgeable assistant. The user is performing a web search.",
-          "Synthesize a clear, factual, concise answer to their query based on your training knowledge.",
-          "Focus on accuracy. Do not fabricate URLs or citations.",
+          "You are a knowledgeable assistant answering a query from your training knowledge",
+          "because live web search is unavailable (no search API key configured).",
+          "Synthesize a clear, factual, concise answer. Focus on accuracy — do NOT fabricate URLs,",
+          "citations, dates, or claim knowledge of events after your training cutoff.",
+          "If the query asks for the LATEST/current/today's information, be explicit that you are",
+          "describing general knowledge and cannot confirm the most recent developments.",
           "Respond with only the answer text — no preamble, no JSON wrapper.",
         ].join("\n"),
-        messages: [{ role: "user", content: `Search query: ${query}\n\nProvide a concise, accurate answer.` }],
+        messages: [{ role: "user", content: `Query: ${query}\n\nProvide a concise, accurate answer from your knowledge.` }],
         model,
         maxTokens: 1024,
         temperature: 0,
@@ -246,15 +249,17 @@ export const webSearchCapability: CapabilityPlugin = {
 
       log.info({ nodeId: call.nodeId, query }, "web_search: LLM synthesis complete");
 
+      // Prefix the findings with an honest note so a downstream summary doesn't present training
+      // knowledge as if it were fresh, live web results. (Set BRAVE_SEARCH_API_KEY for real search.)
+      const note = "[Note: no live web search available — the following is from general knowledge, not current sources.]";
+      const findings = `${note}\n\n${response.text}`;
       // IMPORTANT: expose the answer as a FLAT string (`findings`), not only nested in
       // results[].snippet. The engine's nodeOutputState drops arrays/objects from run state, so a
-      // downstream compose/think node would otherwise receive NO usable content (it only sees the
-      // scalar keys) and report "the search results haven't been provided". `findings` mirrors the
-      // real-results path (shapeSearchOutput) so downstream nodes always get readable text.
+      // downstream compose/think node would otherwise receive NO usable content.
       return {
         output: {
-          results: [{ title: "LLM synthesis", url: "", snippet: response.text }],
-          findings: response.text,
+          results: [{ title: "General knowledge (no live search)", url: "", snippet: response.text }],
+          findings,
           query,
           count: 1,
           synthetic: true,
