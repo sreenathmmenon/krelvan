@@ -14,7 +14,13 @@
 import { type NextRequest } from "next/server";
 import { SESSION_COOKIE, COOKIE_SECURE, readSessionCookie } from "../../../lib/cookie";
 
-const API_ORIGIN = process.env["KRELVAN_API_ORIGIN"] ?? "http://localhost:3201";
+// The backend origin the proxy forwards to. Prefer the explicit env var. When it's absent AND we
+// are running on Vercel (VERCEL=1), default to the production backend — the hosted frontend has no
+// local API to fall back to, and a bare localhost default would loop back into this same Next app
+// (→ a redirect to /login for every API call). Local/self-hosted still defaults to localhost.
+const API_ORIGIN =
+  process.env["KRELVAN_API_ORIGIN"] ??
+  (process.env["VERCEL"] ? "https://api.krelvan.com/proxy" : "http://localhost:3201");
 const AUTH_TOKEN = process.env["KRELVAN_AUTH_TOKEN"] ?? "";
 
 export const dynamic = "force-dynamic";

@@ -37,3 +37,5 @@ web/.env.*
 # Local rule-1 UI evidence (Playwright screenshots) — kept out of the repo; the curated
 # launch screenshots live in docs/screenshots/ instead.
 web/audit/
+.vercel
+.env*.local
