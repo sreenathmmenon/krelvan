@@ -14,13 +14,20 @@
 import { type NextRequest } from "next/server";
 import { SESSION_COOKIE, COOKIE_SECURE, readSessionCookie } from "../../../lib/cookie";
 
-// The backend origin the proxy forwards to. Prefer the explicit env var. When it's absent AND we
-// are running on Vercel (VERCEL=1), default to the production backend — the hosted frontend has no
-// local API to fall back to, and a bare localhost default would loop back into this same Next app
-// (→ a redirect to /login for every API call). Local/self-hosted still defaults to localhost.
+// The backend origin the proxy forwards to.
+//  1. KRELVAN_API_ORIGIN — explicit override (self-hosted / local dev set this).
+//  2. else, on a hosted deployment (VERCEL is set) → the production backend. A bare localhost
+//     default would loop back into this same Next app and redirect every API call to /login.
+//  3. else (plain local dev) → localhost.
+// The hosted case is decided by the presence of the KRELVAN_API_ORIGIN override OR the VERCEL flag;
+// to be robust to either being absent on a given deploy, we also treat "not localhost-dev" as
+// hosted. NODE_ENV=production without an explicit local flag means we forward to the real backend.
+const PROD_BACKEND = "https://api.krelvan.com/proxy";
+const IS_LOCAL_DEV = process.env["KRELVAN_LOCAL"] === "1"
+  || (process.env["NODE_ENV"] !== "production" && !process.env["VERCEL"]);
 const API_ORIGIN =
   process.env["KRELVAN_API_ORIGIN"] ??
-  (process.env["VERCEL"] ? "https://api.krelvan.com/proxy" : "http://localhost:3201");
+  (IS_LOCAL_DEV ? "http://localhost:3201" : PROD_BACKEND);
 const AUTH_TOKEN = process.env["KRELVAN_AUTH_TOKEN"] ?? "";
 
 export const dynamic = "force-dynamic";
