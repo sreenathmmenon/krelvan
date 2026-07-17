@@ -134,16 +134,34 @@ export const composeCapability: CapabilityPlugin = {
         if (typeof pick === "string" && pick.trim()) text = pick.trim();
       } catch { /* not JSON after all — keep as-is */ }
     }
+    // Strip a wrapping ``` code fence some models add around the whole answer — the customer
+    // wants the prose, not a code block.
+    const fenced = text.match(/^```[a-z]*\s*\n([\s\S]*?)\n?```$/i);
+    if (fenced) text = fenced[1]!.trim();
+    // Strip leading `title:` / `body:` scaffolding labels: when the manifest's output_map names
+    // title/body keys, some models echo those labels into the prose (e.g. "title:\nbody: …").
+    // Drop a leading `title:` line (only that one line) and unwrap a leading `body:` label so the
+    // user sees clean text — carefully, so real content on later lines is never consumed.
+    text = text
+      .replace(/^[ \t]*title:[^\n]*\r?\n/i, "")  // just the title: line
+      .replace(/^[ \t]*body:[ \t]*/i, "")        // just the body: label prefix
+      .trim();
 
     const words = text.split(/\s+/).filter(Boolean).length;
     const costCents = estimateCostCents(provider, model, response.inputTokens, response.outputTokens);
 
     log.info({ nodeId: call.nodeId, words, costCents }, "compose: done");
 
-    // Expose the composed text under BOTH `result` (the conventional final-output key the
-    // UI/users look for) and `text` (back-compat).
+    // Expose the composed text under the keys downstream/output_map look for: `result` and
+    // `text` (conventional/back-compat), and `body` — compilers frequently declare an output_map
+    // of `title=<node>.title,body=<node>.body`, so emitting `body` lets that resolve to clean
+    // prose instead of falling back to the raw blob. `title` is a short first-line derived from
+    // the text (never the whole body) so the artifact gets a real headline.
+    const firstLine = (text.split("\n").map(l => l.trim()).find(l => l.length > 0) ?? "")
+      .replace(/^#{1,6}\s+/, "").replace(/[*_`]/g, "").replace(/^[-*]\s+/, "").replace(/^\d+[.)]\s+/, "").trim();
+    const title = firstLine.length > 70 ? firstLine.slice(0, 68).trimEnd() + "…" : firstLine;
     return {
-      output: { result: text, text, words, model },
+      output: { result: text, text, body: text, title, words, model },
       claimedCostCents: Math.max(costCents, 1),
     };
   },
