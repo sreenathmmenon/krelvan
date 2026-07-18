@@ -260,11 +260,16 @@ async function up() {
     }
   }
   const apiOrigin = `http://localhost:${API_PORT}`;
+  // The web UI is the public face. The API prints the first-run setup link against KRELVAN_WEB_ORIGIN,
+  // so pass the ACTUAL web origin (the port we serve the UI on) — otherwise the API defaults to
+  // :3100 and the printed setup link 404s when the UI is on another port. Respect an explicit
+  // KRELVAN_WEB_ORIGIN (e.g. a real domain behind HTTPS) if the operator set one.
+  const webOrigin = process.env.KRELVAN_WEB_ORIGIN ?? `http://localhost:${WEB_PORT}`;
 
   log(`starting API on ${apiOrigin}  (data: ${DATA_DIR})`);
   startProcess("api", process.execPath, [join(ROOT, "dist", "api", "index.js")], {
     cwd: ROOT,
-    env: { ...process.env, PORT: API_PORT, KRELVAN_DATA_DIR: DATA_DIR, KRELVAN_AUTH_TOKEN: AUTH_TOKEN },
+    env: { ...process.env, PORT: API_PORT, KRELVAN_DATA_DIR: DATA_DIR, KRELVAN_AUTH_TOKEN: AUTH_TOKEN, KRELVAN_WEB_ORIGIN: webOrigin },
   });
 
   if (!apiOnly) {

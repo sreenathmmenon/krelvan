@@ -12,13 +12,17 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
-  // On load, check whether the install still needs first-run setup.
+  // On load, check whether the install still needs first-run setup — and if so, redirect there.
+  // We do NOT gate the FORM on this check: hiding the inputs until the async status returns wiped
+  // anything already typed (the form re-mounted with empty state when `ready` flipped). The form is
+  // always rendered; `ready` only decides whether to redirect a not-yet-set-up instance to /setup.
   useEffect(() => {
     fetch("/proxy/api/auth/status")
       .then((r) => r.json())
       .then((d) => { if (d.setupNeeded) router.replace("/setup"); else setReady(true); })
       .catch(() => setReady(true));
   }, [router]);
+  void ready; // retained for the setup-redirect decision above; no longer gates the form render
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -45,8 +49,6 @@ export default function LoginPage() {
       setBusy(false);
     }
   }
-
-  if (!ready) return null;
 
   return (
     <div className="auth-split">

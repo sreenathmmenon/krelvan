@@ -991,6 +991,27 @@ function OutputPanel({ projection, manifest, run }: {
   outputs.length = 0;
   outputs.push(...dedupedOutputs);
 
+  // THE DELIVERABLE FIRST. A run's customer-facing answer is the terminal node's output (what the
+  // Inbox artifact shows via output_map). Intermediate nodes (a cast list, an analysis step) are
+  // steps, not the answer — showing them as co-equal blocks ABOVE the deliverable is confusing.
+  // Reorder so the deliverable is the primary block, and mark the rest as intermediate steps.
+  // output_map (if the manifest carries it) names the deliverable node's body key, e.g.
+  // "body=report.body" → the `report` node is the deliverable. Read it defensively — the client
+  // manifest type may not declare `seed`, and the terminal-node fallback covers its absence.
+  const outMap = (manifest as { seed?: Record<string, unknown> }).seed?.["output_map"];
+  const bodyNodeId = typeof outMap === "string"
+    ? (outMap.match(/body=([A-Za-z0-9_]+)\./)?.[1] ?? null)
+    : null;
+  const terminalNodeId = nodeOrder[nodeOrder.length - 1] ?? null;
+  const deliverableIdx = outputs.findIndex(o => o.nodeId === bodyNodeId)
+    >= 0 ? outputs.findIndex(o => o.nodeId === bodyNodeId)
+    : outputs.findIndex(o => o.nodeId === terminalNodeId);
+  if (deliverableIdx > 0) {
+    const [deliverable] = outputs.splice(deliverableIdx, 1);
+    outputs.unshift(deliverable!);
+  }
+  const primaryCount = outputs.length > 0 ? 1 : 0;
+
   // Scalar summary: all non-internal non-long keys grouped by node
   const scalarsByNode: Record<string, { key: string; value: string }[]> = {};
   for (const [k, v] of Object.entries(state)) {
@@ -1094,7 +1115,9 @@ function OutputPanel({ projection, manifest, run }: {
         </div>
       )}
 
-      {outputs.map((o, idx) => (
+      {/* The deliverable (primary) is always shown. Intermediate step outputs are tucked behind a
+          toggle so the customer sees the ANSWER first, not the reasoning steps above it. */}
+      {outputs.slice(0, primaryCount).map((o, idx) => (
         <OutputBlockCard
           key={o.key}
           block={o}
@@ -1103,6 +1126,19 @@ function OutputPanel({ projection, manifest, run }: {
           onCopy={copyAll}
         />
       ))}
+
+      {outputs.length > primaryCount && (
+        <details style={{ border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "var(--s3) var(--s4)" }}>
+          <summary className="small" style={{ cursor: "pointer", color: "var(--ink-soft)", fontWeight: 500 }}>
+            Show {outputs.length - primaryCount} intermediate step {outputs.length - primaryCount === 1 ? "output" : "outputs"}
+          </summary>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--s4)", marginTop: "var(--s4)" }}>
+            {outputs.slice(primaryCount).map((o) => (
+              <OutputBlockCard key={o.key} block={o} showCopy={false} copied={copied} onCopy={copyAll} />
+            ))}
+          </div>
+        </details>
+      )}
 
       {/* Scalar decisions summary */}
       {Object.keys(scalarsByNode).length > 0 && (

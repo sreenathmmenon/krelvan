@@ -66,7 +66,7 @@ export function buildTesterManifest(target: TesterTarget, count = 5): Manifest {
       },
       {
         id: "report",
-        role: "Write a short, clear report: for each synthetic user, whether the agent passed or failed and why, then an overall verdict. Output object keys: body (the report), title (a headline like \"Test results — N passed, M failed\").",
+        role: "Write a short, clear report for the customer. For EACH synthetic user, state PASS or FAIL and one line why. Distinguish the outcomes precisely: a user that the agent handled and replied to sensibly = PASS; a user where the agent produced NO reply, HALTED for approval, or FAILED to run = FAIL, and say which (e.g. \"paused for approval — needs a human\" vs \"no useful reply\"). End with an overall verdict. Output object keys: body (the report), title (a headline like \"Test results — N passed, M failed\").",
         autonomy: "full",
         capabilities: [{ name: "compose", sideEffect: "read", budgetCents: 50 }],
       },

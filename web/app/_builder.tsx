@@ -817,10 +817,11 @@ export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
             </button>
             <button
               onClick={handleRunClick}
-              className="btn btn-sm btn-primary"
-              style={{ minWidth: 72 }}
+              className={`btn btn-sm ${confirmRun ? "btn-secondary" : "btn-primary"}`}
+              style={{ minWidth: 72, ...(confirmRun ? { borderColor: "var(--brand)", color: "var(--brand)", fontWeight: 600 } : {}) }}
+              title={confirmRun ? "Click again to confirm and start the run" : "Run this agent now"}
             >
-              {confirmRun ? "Confirm?" : "Run now"}
+              {confirmRun ? "Click to confirm →" : "Run now"}
             </button>
           </div>
         </div>

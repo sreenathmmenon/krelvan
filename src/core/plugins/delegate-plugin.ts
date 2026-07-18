@@ -196,13 +196,20 @@ export class DelegatePlugin implements CapabilityPlugin {
       }
       const totalCents = results.reduce((s, r) => s + r.spentCents, 0);
       // A compact per-user recap: name, the message they sent, the target's status, and its final
-      // reply/result if any. This is what the judge reads to decide pass/fail per user.
+      // reply/result if any. This is what the judge reads to decide pass/fail per user. We spell out
+      // what a status MEANS so the judge/report can be precise instead of lumping every non-success
+      // into a bare "fail" — a run that HALTED for human approval is a different outcome than one
+      // that produced a wrong answer, and the customer's report should say so.
       const recap = (r: DelegateOutput & { name?: string; message: string }, i: number): string => {
         const finalKeys = Object.entries(r.state)
           .filter(([k, v]) => (k.endsWith(".result") || k.endsWith(".reply") || k.endsWith(".answer") || k.endsWith(".body")) && typeof v === "string" && (v as string).trim())
           .map(([, v]) => String(v).trim());
-        const reply = finalKeys[finalKeys.length - 1] ?? "(the agent produced no reply)";
-        return `User ${i + 1} — ${r.name ?? "user"}\n  sent: ${r.message.slice(0, 200)}\n  agent status: ${r.status}\n  agent reply: ${reply.slice(0, 400)}`;
+        const reply = finalKeys[finalKeys.length - 1];
+        const outcome =
+          r.status === "completed" ? (reply ? `completed — replied: ${reply.slice(0, 400)}` : "completed but produced NO reply")
+          : r.status === "halted" ? `HALTED — paused for human approval or a blocked action before replying${reply ? ` (partial: ${reply.slice(0, 200)})` : ""}`
+          : `FAILED to run${reply ? ` (partial: ${reply.slice(0, 200)})` : ""}`;
+        return `User ${i + 1} — ${r.name ?? "user"} sent: "${r.message.slice(0, 160)}"\n  outcome: ${outcome}`;
       };
       const resultsSummary = results.map(recap).join("\n\n");
       return {

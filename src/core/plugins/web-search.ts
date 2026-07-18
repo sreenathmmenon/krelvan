@@ -217,7 +217,7 @@ function hostOf(url: string): string {
 //   • summary   — the HUMAN-FACING answer: a titled, clickable markdown list with one-line snippets.
 //                 This is what a customer sees when the agent has no compose node — a clean "top N"
 //                 answer instead of a raw context dump. extractArtifact prefers this key.
-function shapeSearchOutput(results: SearchResult[], query: string, costCents: number) {
+function shapeSearchOutput(results: SearchResult[], query: string, costCents: number, provider = "web") {
   const findings = results
     .map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`)
     .join("\n\n");
@@ -232,8 +232,10 @@ function shapeSearchOutput(results: SearchResult[], query: string, costCents: nu
       return snip ? `${line}\n   ${snip}` : line;
     }),
   ].join("\n");
+  // `provider` names WHO answered (e.g. "linkup", "duckduckgo", "llm-knowledge") so the UI/operator
+  // can show "via Linkup" and distinguish a live search from the knowledge-based fallback.
   return {
-    output: { results, findings, summary, query, count: results.length },
+    output: { results, findings, summary, query, count: results.length, provider },
     claimedCostCents: costCents,
   };
 }
@@ -364,7 +366,7 @@ export const webSearchCapability: CapabilityPlugin = {
         const results = await configured.provider.run(query, configured.key);
         if (results.length > 0) {
           log.info({ nodeId: call.nodeId, provider: configured.provider.id, count: results.length, query }, "web_search: provider results received");
-          return shapeSearchOutput(results, query, 8);
+          return shapeSearchOutput(results, query, 8, configured.provider.id);
         }
         log.warn({ nodeId: call.nodeId, provider: configured.provider.id, query }, "web_search: provider returned nothing — degrading");
       } catch (err) {
@@ -385,7 +387,7 @@ export const webSearchCapability: CapabilityPlugin = {
       const results = await keylessWebSearch(query);
       if (results.length > 0) {
         log.info({ nodeId: call.nodeId, count: results.length, query }, "web_search: keyless web results received");
-        return shapeSearchOutput(results, query, 2);
+        return shapeSearchOutput(results, query, 2, "duckduckgo");
       }
       log.warn({ nodeId: call.nodeId, query }, "web_search: keyless search returned nothing — degrading");
     } catch (err) {

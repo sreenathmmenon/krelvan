@@ -92,6 +92,10 @@ function SetupForm() {
               <label className="small" style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink-soft)", fontWeight: 500 }}>
                 Setup token <span style={{ color: "var(--ink-muted)", fontWeight: 400 }}>(printed on the server console)</span>
                 <input className="input input-mono" value={setupToken} onChange={(e) => setSetupToken(e.target.value)} required />
+                <span className="small" style={{ color: "var(--ink-muted)", fontWeight: 400, lineHeight: 1.5 }}>
+                  Copy it from your terminal where Krelvan is running — the line “Create your admin account”.
+                  This is not the <code>launcher.token</code> file in your data directory.
+                </span>
               </label>
             )}
             <label className="small" style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink-soft)", fontWeight: 500 }}>

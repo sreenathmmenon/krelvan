@@ -147,6 +147,15 @@ export default function Dashboard() {
     return () => clearInterval(t);
   }, [building]);
 
+  // Track how long the build has been running so we can reassure the user on a slow model — a
+  // build that sits at "Finalising…" for a minute reads as stuck otherwise.
+  const [buildSecs, setBuildSecs] = useState(0);
+  useEffect(() => {
+    if (!building) { setBuildSecs(0); return; }
+    const t = setInterval(() => setBuildSecs(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [building]);
+
   async function handleBuild(e: React.FormEvent) {
     e.preventDefault();
     if (!intent.trim() || building) return;
@@ -282,7 +291,10 @@ export default function Dashboard() {
       <div className="build-box__foot">
         <div className="small" style={{ color: "var(--ink-muted)", minHeight: 18, textAlign: "left" }}>
           {building
-            ? <span key={buildStage} style={{ animation: "fade-in 150ms ease forwards" }}>{BUILD_STAGES[buildStage]}</span>
+            ? <span key={buildStage} style={{ animation: "fade-in 150ms ease forwards" }}>
+                {BUILD_STAGES[buildStage]}
+                {buildSecs >= 15 && <span style={{ color: "var(--ink-muted)" }}> — still working ({buildSecs}s); a local model can take a minute</span>}
+              </span>
             : <span>You review the plan before anything runs.</span>}
         </div>
         <button

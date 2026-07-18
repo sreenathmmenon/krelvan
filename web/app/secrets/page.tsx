@@ -542,7 +542,7 @@ function SecretForm({ prefillName, lockName, onSave, onError, onClearPrefill }: 
           <span className="small muted">Sent once over your local connection, then encrypted. Never shown again.</span>
         </label>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--s3)", borderTop: "1px solid var(--line)", paddingTop: "var(--s5)" }}>
-          <button type="submit" className="btn btn-primary" disabled={saving}>
+          <button type="submit" className="btn btn-primary" disabled={saving || !name.trim() || !value.trim()}>
             {saving ? "Saving…" : "Save secret"}
           </button>
         </div>
