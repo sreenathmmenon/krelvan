@@ -7,7 +7,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { webSearchCapability, subjectFromInstruction } from "./web-search.js";
+import { webSearchCapability, subjectFromInstruction, shapeSearchOutput } from "./web-search.js";
 
 test("subjectFromInstruction: recovers the topic from a research instruction", () => {
   assert.equal(
@@ -70,6 +70,22 @@ test("web_search returns a soft error (never throws) when there is no query at a
   const out = res.output as { count?: number; error?: string };
   assert.equal(out.count, 0);
   assert.ok(out.error && out.error.length > 0, "must explain the missing query");
+});
+
+test("shapeSearchOutput: a title containing [ ] does not break the summary's markdown link", () => {
+  // A real search title like "The best new solar panel technology [Top 9 in 2026]" contains a ] that,
+  // left raw inside [title](url), breaks the link and shows literal markdown to the customer. The
+  // summary must neutralise the brackets so every result line is a well-formed link.
+  const { output } = shapeSearchOutput(
+    [{ title: "The best new solar panel technology [Top 9 in 2026]", url: "https://example.com/a", snippet: "one sentence here. two sentence here." }],
+    "solar panel technology 2026",
+    8,
+    "linkup",
+  );
+  const summary = output.summary;
+  // The link closes cleanly with the url, and no raw ] survives inside the label to break parsing.
+  assert.match(summary, /\]\(https:\/\/example\.com\/a\)/, "link closes cleanly with the url");
+  assert.doesNotMatch(summary, /\[[^\]\n]*\][^(]/, "no unmatched-then-unlinked bracket run in a line");
 });
 
 test("explicit query key wins over everything", async () => {

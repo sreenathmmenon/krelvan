@@ -17,6 +17,27 @@ function safeHref(url: string): string | null {
   return null;
 }
 
+// Decode the HTML entities that leak into agent output (a source page's &#x27; / &amp; / &nbsp;
+// survives into a snippet and would otherwise show literally to the customer). We render to React
+// nodes — never innerHTML — so this decode is display-only and introduces no injection surface.
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
+  hellip: "…", mdash: "—", ndash: "–", copy: "©", reg: "®", trade: "™",
+  ldquo: "“", rdquo: "”", lsquo: "‘", rsquo: "’",
+};
+function decodeEntities(text: string): string {
+  if (!text.includes("&")) return text;
+  return text.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (whole, body: string) => {
+    if (body[0] === "#") {
+      const cp = body[1] === "x" || body[1] === "X"
+        ? parseInt(body.slice(2), 16)
+        : parseInt(body.slice(1), 10);
+      return Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : whole;
+    }
+    return NAMED_ENTITIES[body] ?? whole;
+  });
+}
+
 /** Inline: **bold**, *italic* / _italic_, `code`, [text](url). Order matters (code first). */
 function renderInline(text: string, keyBase: string): ReactNode[] {
   const out: ReactNode[] = [];
@@ -25,7 +46,9 @@ function renderInline(text: string, keyBase: string): ReactNode[] {
     { re: /`([^`]+)`/, make: (m, k) => <code key={k} className="mono" style={{ background: "var(--surface-sunken)", padding: "0.1em 0.35em", borderRadius: 4, fontSize: "0.9em" }}>{m[1]}</code> },
     { re: /\*\*([^*]+)\*\*/, make: (m, k) => <strong key={k}>{renderInline(m[1] ?? "", k)}</strong> },
     { re: /(?:\*([^*\n]+)\*|_([^_\n]+)_)/, make: (m, k) => <em key={k}>{renderInline(m[1] ?? m[2] ?? "", k)}</em> },
-    { re: /\[([^\]]+)\]\(([^)\s]+)\)/, make: (m, k) => {
+    // Label may contain one level of balanced [ ] (e.g. a title like "Foo [Top 9 in 2026]"); the
+    // (?:[^\][]|\[[^\]]*\])+ subpattern allows those so the link still parses instead of showing raw.
+    { re: /\[((?:[^\][]|\[[^\]]*\])+)\]\(([^)\s]+)\)/, make: (m, k) => {
       const href = safeHref(m[2] ?? "");
       const label = renderInline(m[1] ?? "", k);
       return href
@@ -42,8 +65,8 @@ function renderInline(text: string, keyBase: string): ReactNode[] {
       earliest = { index: m.index, len: m[0].length, node: p.make(m, `${keyBase}-${i}`) };
     }
   }
-  if (!earliest) return [text];
-  if (earliest.index > 0) out.push(text.slice(0, earliest.index));
+  if (!earliest) return [decodeEntities(text)];
+  if (earliest.index > 0) out.push(decodeEntities(text.slice(0, earliest.index)));
   out.push(earliest.node);
   const rest = text.slice(earliest.index + earliest.len);
   if (rest) out.push(...renderInline(rest, `${keyBase}x`));

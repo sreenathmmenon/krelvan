@@ -208,6 +208,18 @@ function oneLineSnippet(snippet: string): string {
   return s.length > 300 ? s.slice(0, 297).trimEnd() + "…" : s;
 }
 
+// A markdown link label may not contain the characters that delimit link syntax, or the link
+// fails to parse and shows raw to the customer. Replace [ ] with unicode look-alikes and collapse
+// any embedded parens so `[label](url)` is always well-formed. Also strip newlines/backticks.
+function linkSafeLabel(label: string): string {
+  return (label ?? "")
+    .replace(/[`\r\n]+/g, " ")
+    .replace(/\[/g, "⟦").replace(/\]/g, "⟧")
+    .replace(/\(/g, "（").replace(/\)/g, "）")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Bare hostname for a URL (for the "via <domain>" line on a result card). */
 function hostOf(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
@@ -219,7 +231,7 @@ function hostOf(url: string): string {
 //   • summary   — the HUMAN-FACING answer: a titled, clickable markdown list with one-line snippets.
 //                 This is what a customer sees when the agent has no compose node — a clean "top N"
 //                 answer instead of a raw context dump. extractArtifact prefers this key.
-function shapeSearchOutput(results: SearchResult[], query: string, costCents: number, provider = "web") {
+export function shapeSearchOutput(results: SearchResult[], query: string, costCents: number, provider = "web") {
   const findings = results
     .map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`)
     .join("\n\n");
@@ -228,7 +240,10 @@ function shapeSearchOutput(results: SearchResult[], query: string, costCents: nu
     `## ${heading}`,
     "",
     ...results.map((r, i) => {
-      const title = r.title?.trim() || r.url;
+      // A title may itself contain [ ] () — e.g. "The best new solar panel technology [Top 9 in
+      // 2026]". Left raw inside `[title](url)` those brackets break the link syntax and the whole
+      // line renders as literal markdown to the customer. Neutralise them so the link always parses.
+      const title = linkSafeLabel(r.title?.trim() || r.url);
       const line = `${i + 1}. [${title}](${r.url})`;
       const snip = oneLineSnippet(r.snippet ?? "");
       return snip ? `${line}\n   ${snip}` : line;
