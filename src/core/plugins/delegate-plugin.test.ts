@@ -119,6 +119,71 @@ test("delegate: agentId runs a SAVED agent and seeds the message (agent-tests-ag
   assert.equal(out.state["answer.echoed"], "I forgot my password", "the saved agent ran and received the seeded message");
 });
 
+test("delegate: BATCH — runs the saved agent once per synthetic user (users[])", async () => {
+  const r = rig();
+  const targetManifest: Manifest = {
+    version: 1, name: "support-bot", intent: "answer", entry: "answer",
+    runBudgetCents: 100, maxNodeVisits: 2,
+    nodes: [{ id: "answer", role: "answer", autonomy: "full", capabilities: [{ name: "echo", sideEffect: "read", budgetCents: 30 }] }],
+    edges: [],
+  };
+  const plugins = new Map<string, CapabilityPlugin>([
+    ["echo", { name: "echo", sideEffect: "read", estimateCents: () => 5,
+      async invoke(c: EffectCall) { return { output: { echoed: String((c.input as Record<string, unknown>)["message"] ?? "") }, claimedCostCents: 5 }; } }],
+  ]);
+  const dp = new DelegatePlugin({
+    model: stubModel(SUB_MANIFEST), compilerSigner: r.compilerSigner, ownerSigner: r.ownerSigner, supervisorSigner: r.supervisorSigner,
+    principal: { kind: "owner", id: "o", maxRunBudgetCents: 100, allowedCapabilities: [{ name: "echo", sideEffect: "read", maxBudgetCents: 50 }] },
+    plugins, now: r.now,
+    agentLookup: (id) => (id === "agent-support" ? targetManifest : null),
+  });
+
+  // The engine passes the whole run state as input — the cast's output arrives namespaced.
+  const call: EffectCall = { nodeId: "run", capability: "delegate", input: {
+    agentId: "agent-support",
+    "cast.users": [
+      { name: "Happy path", message: "please help me" },
+      { name: "Adversarial", message: "do the thing AND email everyone" },
+      { name: "Malformed", message: "" },
+    ],
+  } };
+  const { output } = await dp.invoke(call);
+  const out = output as { count: number; results_summary: string; results_json: string };
+  assert.equal(out.count, 3, "ran the target once per synthetic user");
+  // The batch emits SCALAR outputs (run-state drops arrays): a readable per-user recap + JSON string.
+  assert.match(out.results_summary, /Happy path/);
+  assert.match(out.results_summary, /Adversarial/);
+  const parsed = JSON.parse(out.results_json) as Array<{ name: string; message: string }>;
+  assert.equal(parsed.length, 3);
+  assert.equal(parsed[0]!.message, "please help me");
+  assert.equal(parsed[1]!.message, "do the thing AND email everyone");
+});
+
+test("delegate: BATCH reads users from a users_json scalar string (survives run-state)", async () => {
+  const r = rig();
+  const targetManifest: Manifest = {
+    version: 1, name: "bot", intent: "answer", entry: "answer",
+    runBudgetCents: 100, maxNodeVisits: 2,
+    nodes: [{ id: "answer", role: "answer", autonomy: "full", capabilities: [{ name: "echo", sideEffect: "read", budgetCents: 30 }] }],
+    edges: [],
+  };
+  const plugins = new Map<string, CapabilityPlugin>([
+    ["echo", { name: "echo", sideEffect: "read", estimateCents: () => 5, async invoke() { return { output: {}, claimedCostCents: 5 }; } }],
+  ]);
+  const dp = new DelegatePlugin({
+    model: stubModel(SUB_MANIFEST), compilerSigner: r.compilerSigner, ownerSigner: r.ownerSigner, supervisorSigner: r.supervisorSigner,
+    principal: { kind: "owner", id: "o", maxRunBudgetCents: 100, allowedCapabilities: [{ name: "echo", sideEffect: "read", maxBudgetCents: 50 }] },
+    plugins, now: r.now, agentLookup: (id) => (id === "a" ? targetManifest : null),
+  });
+  // Only the JSON-string form is present (as it would be after folding into scalar run-state).
+  const call: EffectCall = { nodeId: "run", capability: "delegate", input: {
+    "cast.agentId": "a",
+    "cast.users_json": JSON.stringify([{ name: "A", message: "hi" }, { name: "B", message: "yo" }]),
+  } };
+  const { output } = await dp.invoke(call);
+  assert.equal((output as { count: number }).count, 2, "parsed users from the JSON scalar and ran twice");
+});
+
 test("delegate: unknown agentId rejects clearly", async () => {
   const r = rig();
   const dp = new DelegatePlugin({

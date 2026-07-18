@@ -268,6 +268,7 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
     { method: "PUT",    pattern: ["api", "agents", ":id", "public"],  handler: (q, r, p) => handleSetPublic(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "agents", ":id", "public", "rotate-key"], handler: (q, r, p) => handleRotateSiteKey(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "agents", ":id", "rehearse"], handler: (q, r, p) => handleRehearseAgent(q, r, p, runtime) },
+    { method: "POST",   pattern: ["api", "agents", ":id", "test"],     handler: (q, r, p) => handleTestAgent(q, r, p, runtime) },
     { method: "GET",    pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleGetTrigger(q, r, p, runtime) },
     { method: "POST",   pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleMintTrigger(q, r, p, runtime) },
     { method: "DELETE", pattern: ["api", "agents", ":id", "trigger"], handler: (q, r, p) => handleRevokeTrigger(q, r, p, runtime) },
@@ -1707,6 +1708,24 @@ async function handleRehearseAgent(req: IncomingMessage, res: ServerResponse, pa
   const result = await rt.rehearseAgent(id, count);
   if (!result.ok) { jsonError(res, 422, result.error); return; }
   json(res, 200, { report: result.report });
+}
+
+/**
+ * POST /api/agents/:id/test — deterministically build a TESTER agent for this agent (agent-tests-
+ * agent): casts synthetic users, runs each through THIS agent, judges, and reports. No LLM assembly
+ * — the graph is fixed, so it's reliable on any model. Body (optional): { count }. Returns the new
+ * tester agent so the UI can navigate to run it.
+ */
+async function handleTestAgent(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const id = params["id"] ?? "";
+  if (!rt.agentRegistry.get(id)) { jsonError(res, 404, "agent not found"); return; }
+  let body: { count?: unknown } = {};
+  try { const raw = await readBody(req); if (raw) body = JSON.parse(raw); } catch { /* optional body */ }
+  const count = typeof body.count === "number" && Number.isFinite(body.count) ? Math.round(body.count) : undefined;
+
+  const result = rt.buildTesterAgent(id, count);
+  if (!result.ok) { jsonError(res, 422, result.error); return; }
+  json(res, 200, { agentId: result.agent.id, name: result.agent.signed.manifest.name });
 }
 
 /**

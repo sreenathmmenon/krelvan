@@ -120,10 +120,16 @@ export const syntheticUsersCapability: CapabilityPlugin = {
     // (so a cast-only run still produces a readable Inbox artifact). `result`/`text` mirror the
     // summary for output-map/back-compat, like other read capabilities.
     const summary = summariseCast(users, scenario);
+    const usersOut = users.map((u) => ({ name: u.name, description: u.description, message: u.seedMessage }));
     return {
       output: {
-        users: users.map((u) => ({ name: u.name, description: u.description, message: u.seedMessage })),
+        users: usersOut,
         messages: users.map((u) => u.seedMessage),
+        // Run-state only preserves SCALAR outputs (arrays are dropped when folded into state — see
+        // engine.nodeOutputState). So we ALSO emit the cast as a JSON string, which survives as a
+        // scalar and lets a downstream delegate node run the target once per user. This is the
+        // bridge that makes agent-tests-agent actually fan out.
+        users_json: JSON.stringify(usersOut),
         count: users.length,
         summary,
         result: summary,

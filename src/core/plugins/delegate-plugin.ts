@@ -82,12 +82,49 @@ export class DelegatePlugin implements CapabilityPlugin {
   }
 
   async invoke(call: EffectCall): Promise<{ output: unknown; claimedCostCents: number }> {
-    const input = call.input as { agentId?: unknown; intent?: unknown; message?: unknown; runBudgetCents?: unknown };
+    const input = call.input as Record<string, unknown>;
 
-    const agentId = typeof input.agentId === "string" ? input.agentId.trim() : "";
-    const intent = typeof input.intent === "string" ? input.intent.trim() : "";
-    const message = typeof input.message === "string" ? input.message : undefined;
-    const budgetOverride = typeof input.runBudgetCents === "number" ? input.runBudgetCents : undefined;
+    // Find a value in the input by an exact key OR any namespaced "<node>.<key>" (the engine passes
+    // the WHOLE run state as input, so a prior node's `users` output arrives as e.g. "cast.users").
+    const pick = (key: string): unknown => {
+      if (input[key] !== undefined) return input[key];
+      const hit = Object.entries(input).find(([k, v]) => (k === key || k.endsWith(`.${key}`)) && v !== undefined && v !== "");
+      return hit?.[1];
+    };
+
+    const agentIdVal = pick("agentId");
+    const agentId = typeof agentIdVal === "string" ? agentIdVal.trim() : "";
+    const intent = typeof input["intent"] === "string" ? (input["intent"] as string).trim() : "";
+    const budgetOverride = typeof input["runBudgetCents"] === "number" ? input["runBudgetCents"] as number : undefined;
+
+    // Collect the message(s) to run through the target. A TESTER agent casts a `users` array (each
+    // with a message) — delegate must run the target ONCE PER USER (run-state can't fan out, so the
+    // loop lives here). Run-state only keeps SCALARS, so the array arrives as a JSON STRING under
+    // `users_json` (the synthetic_users capability emits it precisely so this survives). We also
+    // accept a live `users`/`messages` array (same-node / test paths), then a single `message`.
+    let usersArr: unknown = pick("users");
+    if (!Array.isArray(usersArr)) {
+      const uj = pick("users_json");
+      if (typeof uj === "string" && uj.trim().startsWith("[")) {
+        try { usersArr = JSON.parse(uj); } catch { /* leave as-is */ }
+      }
+    }
+    const messagesVal = pick("messages");
+    const messageVal = pick("message");
+    const batch: { message: string; name?: string }[] = [];
+    if (Array.isArray(usersArr)) {
+      for (const u of usersArr) {
+        if (u && typeof u === "object") {
+          const m = (u as Record<string, unknown>)["message"];
+          if (typeof m === "string") batch.push({ message: m, name: typeof (u as Record<string, unknown>)["name"] === "string" ? (u as Record<string, unknown>)["name"] as string : undefined });
+        }
+      }
+    } else if (Array.isArray(messagesVal)) {
+      for (const m of messagesVal) if (typeof m === "string") batch.push({ message: m });
+    } else if (typeof messageVal === "string") {
+      batch.push({ message: messageVal });
+    }
+    const isBatch = Array.isArray(usersArr) || Array.isArray(messagesVal);
 
     if (!agentId && !intent) {
       throw new Error("delegate: provide either input.agentId (run a saved agent) or input.intent (compile a fresh sub-agent)");
@@ -120,16 +157,6 @@ export class DelegatePlugin implements CapabilityPlugin {
       label = `sub:${intent.slice(0, 32)}`;
     }
 
-    const store = new InMemoryLedgerStore();
-    const supervisor = new Supervisor(this.deps.plugins);
-    const engine = new Engine(subManifest, `delegate:${call.nodeId}`, label, {
-      store,
-      owner: this.deps.ownerSigner,
-      supervisor,
-      supervisorSigner: this.deps.supervisorSigner,
-      now: this.deps.now,
-    });
-
     // A delegated sub-run must NOT silently auto-approve consequential actions. Delegation is for
     // bounded research/drafting; approve only non-consequential effects (read / reversible writes)
     // and DENY anything irreversible, outbound-to-a-human, spend, or identity-mutating — the sub-run
@@ -140,20 +167,58 @@ export class DelegatePlugin implements CapabilityPlugin {
       const effect = plugin?.sideEffect;
       return !effect || !CONSEQUENTIAL.has(effect);
     };
+
+    // Run the target ONCE with a given opening message. Fresh isolated ledger per sub-run.
     // gateAllConsequential forces the approval gate for every consequential effect even on
     // autonomy:"full" sub-nodes; combined with the class-aware `approve` denier, a delegated
     // sub-agent can never take an unsupervised irreversible/outbound/spend action.
-    // Seed the synthetic user's opening message into the sub-run under `message` (the key the
-    // public-ask / trigger paths already use) so a delegated agent-under-test receives real input.
-    const initialState: RunState | undefined = message !== undefined ? { message } : undefined;
-    const result = await engine.run({ approve, gateAllConsequential: true, ...(initialState ? { initialState } : {}) });
-
-    const out: DelegateOutput = {
-      status: result.status,
-      state: result.projection.state,
-      spentCents: result.projection.budget.runSpentCents,
+    const runOnce = async (msg: string | undefined): Promise<DelegateOutput> => {
+      const store = new InMemoryLedgerStore();
+      const supervisor = new Supervisor(this.deps.plugins);
+      const engine = new Engine(subManifest, `delegate:${call.nodeId}`, label, {
+        store, owner: this.deps.ownerSigner, supervisor,
+        supervisorSigner: this.deps.supervisorSigner, now: this.deps.now,
+      });
+      const initialState: RunState | undefined = msg !== undefined ? { message: msg } : undefined;
+      const result = await engine.run({ approve, gateAllConsequential: true, ...(initialState ? { initialState } : {}) });
+      return { status: result.status, state: result.projection.state, spentCents: result.projection.budget.runSpentCents };
     };
 
+    // BATCH (tester): run the target once per synthetic user. The downstream judge/report need to
+    // see every case, but run-state keeps only SCALARS — so alongside the (dropped) `results` array
+    // we emit a scalar `results_summary` (a readable per-user recap the judge/report can reason over)
+    // and `results_json` (the full data as a string). SINGLE: back-compat, return one DelegateOutput.
+    if (isBatch) {
+      const results: Array<DelegateOutput & { name?: string; message: string }> = [];
+      for (const item of batch) {
+        const r = await runOnce(item.message);
+        results.push({ ...r, name: item.name, message: item.message });
+      }
+      const totalCents = results.reduce((s, r) => s + r.spentCents, 0);
+      // A compact per-user recap: name, the message they sent, the target's status, and its final
+      // reply/result if any. This is what the judge reads to decide pass/fail per user.
+      const recap = (r: DelegateOutput & { name?: string; message: string }, i: number): string => {
+        const finalKeys = Object.entries(r.state)
+          .filter(([k, v]) => (k.endsWith(".result") || k.endsWith(".reply") || k.endsWith(".answer") || k.endsWith(".body")) && typeof v === "string" && (v as string).trim())
+          .map(([, v]) => String(v).trim());
+        const reply = finalKeys[finalKeys.length - 1] ?? "(the agent produced no reply)";
+        return `User ${i + 1} — ${r.name ?? "user"}\n  sent: ${r.message.slice(0, 200)}\n  agent status: ${r.status}\n  agent reply: ${reply.slice(0, 400)}`;
+      };
+      const resultsSummary = results.map(recap).join("\n\n");
+      return {
+        output: {
+          count: results.length,
+          totalCents,
+          results_summary: resultsSummary,
+          results_json: JSON.stringify(results.map((r) => ({ name: r.name, message: r.message, status: r.status }))),
+          result: resultsSummary,
+          text: resultsSummary,
+        },
+        claimedCostCents: totalCents,
+      };
+    }
+
+    const out = await runOnce(batch[0]?.message);
     return { output: out, claimedCostCents: out.spentCents };
   }
 }

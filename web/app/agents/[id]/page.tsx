@@ -4,6 +4,7 @@ import { useState, useEffect, use, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   getAgent, getAgentRuns, startRun, deleteAgent, listSchedules, createSchedule, toggleSchedule, deleteSchedule,
+  testAgent,
   getTrigger, mintTrigger, revokeTrigger, listApprovals,
   getDelivery, setDelivery, chatWithAgent,
   getAgentPublic, setAgentPublic, rotateSiteKey,
@@ -745,8 +746,23 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
   const [showInput, setShowInput] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [testing, setTesting] = useState(false);
 
   function flashErr(msg: string) { setActionErr(msg); setTimeout(() => setActionErr(null), 4000); }
+
+  // Deterministically build a tester agent for THIS agent (casts synthetic users → runs each
+  // through this agent → judges → reports), then jump to it so the customer can run it in one go.
+  async function handleTest() {
+    if (testing) return;
+    setTesting(true);
+    try {
+      const { agentId } = await testAgent(id);
+      window.location.href = `/agents/${agentId}`;
+    } catch (e) {
+      flashErr((e as Error).message || "Could not build a tester for this agent.");
+      setTesting(false);
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -957,6 +973,14 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               >
                 Rehearse
               </Link>
+              <button
+                className="btn btn-secondary"
+                onClick={() => void handleTest()}
+                disabled={testing}
+                title="Build a tester agent that casts synthetic users, runs each through this agent, and reports which cases passed or failed"
+              >
+                {testing ? "Building tester…" : "Test this agent"}
+              </button>
               <button
                 className={confirmDelete ? "btn btn-danger" : "btn btn-secondary"}
                 onClick={() => void handleDelete()}

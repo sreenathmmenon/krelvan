@@ -607,6 +607,18 @@ export async function rehearseAgent(agentId: string, count?: number): Promise<Re
   return data.report;
 }
 
+/**
+ * Deterministically build a TESTER agent for this agent (agent-tests-agent): it casts synthetic
+ * users, runs each through THIS agent, judges, and reports. Returns the new tester agent's id so
+ * the caller can navigate to run it. No LLM assembly — reliable on any model.
+ */
+export async function testAgent(agentId: string, count?: number): Promise<{ agentId: string; name: string }> {
+  return apiFetch<{ agentId: string; name: string }>(`/api/agents/${encodeURIComponent(agentId)}/test`, {
+    method: "POST",
+    body: JSON.stringify(count ? { count } : {}),
+  });
+}
+
 // ── Visible self-improvement: propose a fix, show the diff, then accept ──────────
 
 export interface ManifestDiff {

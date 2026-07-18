@@ -47,6 +47,7 @@ import { webSearchCapability, setSearchSecretResolver } from "../core/plugins/we
 import { composeCapability } from "../core/plugins/compose.js";
 import { syntheticUsersCapability } from "../core/plugins/synthetic-users.js";
 import { DelegatePlugin } from "../core/plugins/delegate-plugin.js";
+import { buildTesterManifest } from "./tester-agent.js";
 import { emailSendCapability, setEmailSecretResolver } from "../core/plugins/email-send.js";
 import { telegramSendCapability, setTelegramSecretResolver } from "../core/plugins/telegram-send.js";
 import { slackSendCapability } from "../core/plugins/slack-send.js";
@@ -1371,6 +1372,23 @@ export class KrelvanRuntime {
     const signed = { manifest, id, provenance, sig };
     const agent = this.agentRegistry.save(signed);
     return { ok: true, agent };
+  }
+
+  /**
+   * Build a deterministic TESTER agent for a target agent (agent-tests-agent), one-click and with
+   * no LLM assembly. Emits the fixed cast → delegate → judge → report graph pinned to the target's
+   * id, then imports it. This is the reliable path — the LLM builder can drop nodes on weak models.
+   */
+  buildTesterAgent(targetId: string, count = 5): { ok: true; agent: AgentRecord } | { ok: false; error: string } {
+    const target = this.agentRegistry.get(targetId);
+    if (!target) return { ok: false, error: `agent ${targetId} not found` };
+    const manifest = buildTesterManifest(
+      { id: target.signed.id, name: target.signed.manifest.name, intent: target.signed.manifest.intent },
+      count,
+    );
+    const res = this.importManifest(manifest);
+    if (!res.ok) return { ok: false, error: res.issues.join("; ") };
+    return { ok: true, agent: res.agent };
   }
 
   // ── Public surface (B1) ────────────────────────────────────────────────────────
