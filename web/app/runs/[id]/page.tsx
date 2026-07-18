@@ -1248,15 +1248,23 @@ function OutputBlockCard({ block, showCopy, copied, onCopy }: {
         )}
       </div>
       {open && (
-        <div style={{
-          padding: "var(--s5)",
-          fontSize: isData ? 12 : 14,
-          fontFamily: isData ? "var(--font-mono, monospace)" : undefined,
-          color: "var(--ink)", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word",
-          maxHeight: isData ? 360 : undefined, overflow: isData ? "auto" : undefined,
-        }}>
-          {display}
-        </div>
+        isData ? (
+          // Raw fetched data / JSON: keep it monospace and literal.
+          <div style={{
+            padding: "var(--s5)", fontSize: 12, fontFamily: "var(--font-mono, monospace)",
+            color: "var(--ink)", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word",
+            maxHeight: 360, overflow: "auto",
+          }}>
+            {display}
+          </div>
+        ) : (
+          // A text answer (summary/result/composed prose): render markdown RICHLY so the customer
+          // sees headings/bold/clickable links — never literal "##"/"**"/"[](url)". Same renderer
+          // the Inbox/output-detail pages use, so every surface agrees.
+          <div className="md-body" style={{ padding: "var(--s5)", color: "var(--ink)", lineHeight: 1.7 }}>
+            {renderMarkdown(display)}
+          </div>
+        )
       )}
     </div>
   );
