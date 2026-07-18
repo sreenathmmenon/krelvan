@@ -31,6 +31,10 @@ const API_ORIGIN =
 const AUTH_TOKEN = process.env["KRELVAN_AUTH_TOKEN"] ?? "";
 
 export const dynamic = "force-dynamic";
+// Agent BUILDS compile via an LLM and can take a while — especially a multi-node agent on a slow
+// local model. Give the serverless function room so a build doesn't return "Failed to fetch" while
+// the backend is still compiling. (Vercel caps this per plan; the value is a ceiling, not a wait.)
+export const maxDuration = 300;
 
 // API paths the browser may reach WITHOUT a session (you can't log in if login needs login).
 const PUBLIC_API = new Set([

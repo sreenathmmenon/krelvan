@@ -83,6 +83,54 @@ test("delegate: sub-run completes and output state is returned", async () => {
   assert.equal(out.state["lookup.top_result"], "genesis");
 });
 
+test("delegate: agentId runs a SAVED agent and seeds the message (agent-tests-agent)", async () => {
+  const r = rig();
+  // A target agent whose single node echoes back state — proves we ran the SAVED manifest and that
+  // the synthetic user's `message` was seeded into the sub-run.
+  const targetManifest: Manifest = {
+    version: 1, name: "support-bot", intent: "answer the user", entry: "answer",
+    runBudgetCents: 100, maxNodeVisits: 2,
+    nodes: [{ id: "answer", role: "answer", autonomy: "full", capabilities: [{ name: "echo", sideEffect: "read", budgetCents: 30 }] }],
+    edges: [],
+  };
+  const plugins = new Map<string, CapabilityPlugin>([
+    // echo reflects the seeded `message` into its output so we can assert it arrived.
+    ["echo", {
+      name: "echo", sideEffect: "read", estimateCents: () => 5,
+      async invoke(c: EffectCall) {
+        const msg = String((c.input as Record<string, unknown>)["message"] ?? "");
+        return { output: { echoed: msg }, claimedCostCents: 5 };
+      },
+    }],
+  ]);
+
+  const dp = new DelegatePlugin({
+    model: stubModel(SUB_MANIFEST), // not used on the agentId path
+    compilerSigner: r.compilerSigner, ownerSigner: r.ownerSigner, supervisorSigner: r.supervisorSigner,
+    principal: { kind: "owner", id: "o", maxRunBudgetCents: 100, allowedCapabilities: [{ name: "echo", sideEffect: "read", maxBudgetCents: 50 }] },
+    plugins, now: r.now,
+    agentLookup: (id) => (id === "agent-support" ? targetManifest : null),
+  });
+
+  const call: EffectCall = { nodeId: "n", capability: "delegate", input: { agentId: "agent-support", message: "I forgot my password" } };
+  const { output } = await dp.invoke(call);
+  const out = output as { status: string; state: Record<string, unknown> };
+  assert.equal(out.status, "completed");
+  assert.equal(out.state["answer.echoed"], "I forgot my password", "the saved agent ran and received the seeded message");
+});
+
+test("delegate: unknown agentId rejects clearly", async () => {
+  const r = rig();
+  const dp = new DelegatePlugin({
+    model: stubModel(SUB_MANIFEST), compilerSigner: r.compilerSigner, ownerSigner: r.ownerSigner, supervisorSigner: r.supervisorSigner,
+    principal: { kind: "owner", id: "o", maxRunBudgetCents: 100, allowedCapabilities: [] },
+    plugins: new Map(), now: r.now,
+    agentLookup: () => null,
+  });
+  const call: EffectCall = { nodeId: "n", capability: "delegate", input: { agentId: "nope" } };
+  await assert.rejects(() => dp.invoke(call), /no saved agent found for agentId/);
+});
+
 test("delegate: budget override narrows sub-run budget", async () => {
   const r = rig();
   // Sub-manifest proposes 10¢ budget; plugin costs 40¢ → estimate exceeds run cap → admission denied → run fails.
@@ -137,7 +185,7 @@ test("delegate: missing intent throws immediately", async () => {
   });
 
   const call: EffectCall = { nodeId: "n", capability: "delegate", input: {} };
-  await assert.rejects(() => dp.invoke(call), /intent must be a non-empty string/);
+  await assert.rejects(() => dp.invoke(call), /provide either input.agentId .* or input.intent/);
 });
 
 test("delegate: compile failure (capability not in principal) rejects", async () => {

@@ -17,11 +17,18 @@
  *     sub-run's total spend. The plugin enforces this via runBudgetCents on the
  *     sub-manifest.
  *
- * Input shape (EffectCall.input):
+ * Input shape (EffectCall.input) — provide EITHER agentId OR intent:
  *   {
- *     intent: string;           // the sub-agent's goal
+ *     agentId?: string;         // run an EXISTING saved agent by id (agent-tests-agent)
+ *     intent?: string;          // OR compile a fresh sub-agent from this goal
+ *     message?: string;         // opening input seeded into the sub-run (the synthetic user's msg)
  *     runBudgetCents?: number;  // overrides the sub-manifest's budget cap
  *   }
+ *
+ * When `agentId` is given, delegate loads that agent's SIGNED manifest and runs it directly — this
+ * is what powers a TESTER agent: cast synthetic users, then delegate(agentId=<target>) each one
+ * through the real agent under test. When only `intent` is given, delegate compiles a fresh
+ * sub-agent (the original behaviour).
  *
  * Output shape:
  *   {
@@ -38,6 +45,7 @@ import { InMemoryLedgerStore } from "../ledger/store.js";
 import { Compiler, type ModelPort, type Principal } from "../compiler/compiler.js";
 import type { Signer } from "../ledger/crypto.js";
 import type { RunState } from "../manifest/expr.js";
+import type { Manifest } from "../manifest/manifest.js";
 
 export interface DelegatePluginDeps {
   model: ModelPort;
@@ -50,6 +58,11 @@ export interface DelegatePluginDeps {
   plugins: ReadonlyMap<string, CapabilityPlugin>;
   /** Logical clock shared with the parent run for consistent ordering. */
   now: () => number;
+  /**
+   * Resolve a saved agent id to its signed manifest, for delegate-by-agentId (agent-tests-agent).
+   * Optional: when absent, only intent-based delegation works. Returns null for an unknown id.
+   */
+  agentLookup?: (agentId: string) => Manifest | null;
 }
 
 export interface DelegateOutput {
@@ -69,14 +82,16 @@ export class DelegatePlugin implements CapabilityPlugin {
   }
 
   async invoke(call: EffectCall): Promise<{ output: unknown; claimedCostCents: number }> {
-    const input = call.input as { intent?: unknown; runBudgetCents?: unknown };
+    const input = call.input as { agentId?: unknown; intent?: unknown; message?: unknown; runBudgetCents?: unknown };
 
-    if (typeof input.intent !== "string" || input.intent.trim().length === 0) {
-      throw new Error("delegate: input.intent must be a non-empty string");
-    }
-
-    const intent = input.intent.trim();
+    const agentId = typeof input.agentId === "string" ? input.agentId.trim() : "";
+    const intent = typeof input.intent === "string" ? input.intent.trim() : "";
+    const message = typeof input.message === "string" ? input.message : undefined;
     const budgetOverride = typeof input.runBudgetCents === "number" ? input.runBudgetCents : undefined;
+
+    if (!agentId && !intent) {
+      throw new Error("delegate: provide either input.agentId (run a saved agent) or input.intent (compile a fresh sub-agent)");
+    }
 
     // Apply budget override BEFORE compile so the principal ceiling narrows the
     // model's budget proposal — never mutate the signed manifest after signing.
@@ -85,19 +100,29 @@ export class DelegatePlugin implements CapabilityPlugin {
         ? { ...this.deps.principal, maxRunBudgetCents: Math.min(this.deps.principal.maxRunBudgetCents, budgetOverride) }
         : this.deps.principal;
 
-    const compiler = new Compiler(this.deps.model, this.deps.compilerSigner);
-    const compiled = await compiler.compile(intent, principal, this.deps.now());
-
-    if (!compiled.ok) {
-      const issues = compiled.issues.map((i) => `${i.code}: ${i.message}`).join("; ");
-      throw new Error(`delegate: sub-manifest compile failed at stage '${compiled.stage}': ${issues}`);
+    let subManifest: Manifest;
+    let label: string;
+    if (agentId) {
+      // Run an EXISTING saved agent by id (agent-tests-agent). The manifest is already signed and
+      // compiled under the owner's authority; we run it as-is under the same principal ceiling.
+      const found = this.deps.agentLookup?.(agentId) ?? null;
+      if (!found) throw new Error(`delegate: no saved agent found for agentId "${agentId}"`);
+      subManifest = found;
+      label = `agent:${agentId.slice(0, 16)}`;
+    } else {
+      const compiler = new Compiler(this.deps.model, this.deps.compilerSigner);
+      const compiled = await compiler.compile(intent, principal, this.deps.now());
+      if (!compiled.ok) {
+        const issues = compiled.issues.map((i) => `${i.code}: ${i.message}`).join("; ");
+        throw new Error(`delegate: sub-manifest compile failed at stage '${compiled.stage}': ${issues}`);
+      }
+      subManifest = compiled.signed.manifest;
+      label = `sub:${intent.slice(0, 32)}`;
     }
-
-    const subManifest = compiled.signed.manifest;
 
     const store = new InMemoryLedgerStore();
     const supervisor = new Supervisor(this.deps.plugins);
-    const engine = new Engine(subManifest, `delegate:${call.nodeId}`, `sub:${intent.slice(0, 32)}`, {
+    const engine = new Engine(subManifest, `delegate:${call.nodeId}`, label, {
       store,
       owner: this.deps.ownerSigner,
       supervisor,
@@ -118,7 +143,10 @@ export class DelegatePlugin implements CapabilityPlugin {
     // gateAllConsequential forces the approval gate for every consequential effect even on
     // autonomy:"full" sub-nodes; combined with the class-aware `approve` denier, a delegated
     // sub-agent can never take an unsupervised irreversible/outbound/spend action.
-    const result = await engine.run({ approve, gateAllConsequential: true });
+    // Seed the synthetic user's opening message into the sub-run under `message` (the key the
+    // public-ask / trigger paths already use) so a delegated agent-under-test receives real input.
+    const initialState: RunState | undefined = message !== undefined ? { message } : undefined;
+    const result = await engine.run({ approve, gateAllConsequential: true, ...(initialState ? { initialState } : {}) });
 
     const out: DelegateOutput = {
       status: result.status,

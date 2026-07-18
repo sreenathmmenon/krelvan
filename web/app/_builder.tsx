@@ -737,21 +737,11 @@ export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
       className="card card-hover"
       style={{ position: "relative", padding: "var(--s5)", minHeight: 200, display: "flex", flexDirection: "column", gap: "var(--s4)" }}
     >
-      {/* header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--s3)" }}>
-        <Link
-          href={`/agents/${agent.id}`}
-          className="h3 stretched-link"
-          title={agent.signed.manifest.name}
-          style={{
-            color: "var(--ink)", flex: 1, minWidth: 0, textDecoration: "none",
-            display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
-            overflow: "hidden", lineHeight: 1.25, wordBreak: "break-word",
-          }}
-        >
-          {agent.signed.manifest.name}
-        </Link>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexShrink: 0, position: "relative", zIndex: 1 }}>
+      {/* header — the Canvas link + status badge sit on their own row so the agent NAME below
+          gets the FULL card width. (Previously the name shared a flex row with those badges and
+          was squeezed to a sliver, clamping "Electric…" to "Elec tri…" — unreadable.) */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "var(--s2)", position: "relative", zIndex: 1 }}>
           <Link
             href={`/canvas/${agent.id}`}
             title="Open canvas"
@@ -763,6 +753,18 @@ export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
             {status === "running" && <span className="dot" />}{status}
           </span>
         </div>
+        <Link
+          href={`/agents/${agent.id}`}
+          className="h3 stretched-link"
+          title={agent.signed.manifest.name}
+          style={{
+            color: "var(--ink)", minWidth: 0, textDecoration: "none",
+            display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+            overflow: "hidden", lineHeight: 1.25, wordBreak: "normal", overflowWrap: "anywhere",
+          }}
+        >
+          {agent.signed.manifest.name}
+        </Link>
       </div>
 
         {/* flow strip — a clean, readable capability sequence (a dense 12-node graph

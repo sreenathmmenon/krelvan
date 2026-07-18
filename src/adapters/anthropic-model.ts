@@ -140,8 +140,8 @@ export class AnthropicModel implements ModelPort {
     }).join("\n");
 
     const agentLines = this.cfg.knownAgents?.length
-      ? ["", "Sub-agents you may delegate to (use exact id in subAgent.manifestId):",
-          ...this.cfg.knownAgents.map(a => `- ${a.id}: ${a.intent.slice(0, 100)}`)]
+      ? ["", "EXISTING AGENTS you can run/test (match the user's reference by NAME, then use its exact id in seed.agentId + a delegate node):",
+          ...this.cfg.knownAgents.map(a => `- ${a.id}  (${a.name}): ${a.intent.slice(0, 90)}`)]
       : [];
 
     const system = [
@@ -167,6 +167,21 @@ export class AnthropicModel implements ModelPort {
       "    { \"id\": \"summarize\", \"role\": \"Summarize the fetched page into a short brief. Output object keys: body (the brief), title (a short headline).\", \"autonomy\": \"full\", \"capabilities\": [ { \"name\": \"think\", \"sideEffect\": \"read\", \"budgetCents\": 50 } ] }",
       "  ],",
       "  \"edges\": [ { \"from\": \"fetch\", \"to\": \"summarize\" } ]",
+      "}",
+      "",
+      "EXAMPLE — a TESTER agent, intent: \"cast synthetic users to test my Support Bot (id sha256:abc…), run each through it, judge, and report\":",
+      "When the intent is to TEST/rehearse/stress-test ANOTHER agent with synthetic/fake users, build EXACTLY this 4-node chain: cast (synthetic_users) → run (delegate, with agentId of the agent under test) → judge (think) → report (compose). Put the target agent's id in seed.agentId and pass it into the delegate node. Do NOT collapse this to fewer nodes — the cast and the delegate run are both required.",
+      "{",
+      "  \"version\": 1, \"name\": \"Support Bot Tester\", \"intent\": \"...\", \"entry\": \"cast\",",
+      "  \"runBudgetCents\": 800, \"maxNodeVisits\": 8,",
+      "  \"seed\": { \"agentId\": \"sha256:abc…\", \"output_map\": \"title=report.title,body=report.body,format=markdown\" },",
+      "  \"nodes\": [",
+      "    { \"id\": \"cast\", \"role\": \"Cast synthetic users to test the support bot. Set scenario to what is being tested.\", \"autonomy\": \"full\", \"capabilities\": [ { \"name\": \"synthetic_users\", \"sideEffect\": \"read\", \"budgetCents\": 10 } ] },",
+      "    { \"id\": \"run\", \"role\": \"Run each synthetic user's message through the agent under test.\", \"autonomy\": \"full\", \"capabilities\": [ { \"name\": \"delegate\", \"sideEffect\": \"read\", \"budgetCents\": 300 } ] },",
+      "    { \"id\": \"judge\", \"role\": \"Judge how well the agent handled each user — pass or fail with a reason.\", \"autonomy\": \"full\", \"capabilities\": [ { \"name\": \"think\", \"sideEffect\": \"read\", \"budgetCents\": 50 } ] },",
+      "    { \"id\": \"report\", \"role\": \"Write a short report of which cases passed or failed. Output object keys: body (the report), title (a headline).\", \"autonomy\": \"full\", \"capabilities\": [ { \"name\": \"compose\", \"sideEffect\": \"read\", \"budgetCents\": 50 } ] }",
+      "  ],",
+      "  \"edges\": [ { \"from\": \"cast\", \"to\": \"run\" }, { \"from\": \"run\", \"to\": \"judge\" }, { \"from\": \"judge\", \"to\": \"report\" } ]",
       "}",
       "",
       "CAPABILITIES (use only these names):",

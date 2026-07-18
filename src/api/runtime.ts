@@ -45,6 +45,8 @@ import { wikiIngestCapability, wikiQueryCapability } from "../core/plugins/wiki-
 import { llmRouteCapability } from "../core/plugins/llm-route.js";
 import { webSearchCapability, setSearchSecretResolver } from "../core/plugins/web-search.js";
 import { composeCapability } from "../core/plugins/compose.js";
+import { syntheticUsersCapability } from "../core/plugins/synthetic-users.js";
+import { DelegatePlugin } from "../core/plugins/delegate-plugin.js";
 import { emailSendCapability, setEmailSecretResolver } from "../core/plugins/email-send.js";
 import { telegramSendCapability, setTelegramSecretResolver } from "../core/plugins/telegram-send.js";
 import { slackSendCapability } from "../core/plugins/slack-send.js";
@@ -733,6 +735,11 @@ export class CapabilityRegistry {
 
   buildSupervisor(): Supervisor {
     return new Supervisor(new Map(this.plugins));
+  }
+
+  /** A fresh copy of the current plugin map — for sub-runs (delegate) that need the live set. */
+  snapshot(): Map<string, CapabilityPlugin> {
+    return new Map(this.plugins);
   }
 }
 
@@ -1913,7 +1920,8 @@ export class KrelvanRuntime {
   private modelStatusGetter() { return this.modelStatus; }
 
   /** Build a fresh Compiler with current agent registry injected into the model prompt. */
-  private buildCompiler(): Compiler {
+  /** The model port used to compile manifests — shared by buildCompiler and the delegate plugin. */
+  private buildModelPort(): import("../core/compiler/compiler.js").ModelPort {
     const modelPort = this.hasLlm
       ? new AnthropicModel({
           apiKey: this.llmApiKey ?? "",
@@ -1932,7 +1940,11 @@ export class KrelvanRuntime {
           },
         })
       : new StubModelPort();
-    return new Compiler(modelPort as import("../core/compiler/compiler.js").ModelPort, this.ownerSigner);
+    return modelPort as import("../core/compiler/compiler.js").ModelPort;
+  }
+
+  private buildCompiler(): Compiler {
+    return new Compiler(this.buildModelPort(), this.ownerSigner);
   }
 
   private registerBuiltinCapabilities(): void {
@@ -1964,6 +1976,11 @@ export class KrelvanRuntime {
     this.capabilityRegistry.registerBuiltin(composeCapability, {
       description: "Writes text via LLM given a topic and prior context — outputs polished prose or bullets.",
       useWhen: "drafting messages, summaries, reports, briefings, or any human-readable text output",
+    });
+    this.capabilityRegistry.registerBuiltin(syntheticUsersCapability, {
+      description: "Casts a spread of SYNTHETIC USERS (happy-path, confused, adversarial, out-of-scope, malformed) for testing an agent — outputs users[] each with a name, description, and opening message.",
+      useWhen: "the FIRST node of a TESTER agent (an agent that tests another agent). Follow it with a delegate node (agentId of the target) run over each user, then a think node to grade, then compose to report. Set \"scenario\" in the seed to what you're testing.",
+      notes: "read-only; generates test data only, sends/charges nothing. Pair with delegate(agentId=<target agent>) to run each synthetic user through the agent under test.",
     });
     this.capabilityRegistry.registerBuiltin(ragIngestCapability, {
       description: "Chunks + embeds text into this agent's vector knowledge base for later retrieval.",
@@ -2029,6 +2046,34 @@ export class KrelvanRuntime {
       description: "POSTs a JSON event payload to a webhook URL.",
       useWhen: "notifying external systems (GitHub, Jira, PagerDuty, custom webhooks)",
     });
+
+    // delegate — run a sub-agent. Two modes: agentId (run an EXISTING saved agent, for
+    // agent-tests-agent) or intent (compile a fresh sub-agent). This is what pairs with
+    // synthetic_users to build tester agents. Constructed with the runtime's authority; the
+    // plugin snapshot is read live per invoke so it always sees the current capability set.
+    const rt = this;
+    this.capabilityRegistry.registerBuiltin(
+      new DelegatePlugin({
+        model: this.buildModelPort(),
+        compilerSigner: this.ownerSigner,
+        ownerSigner: this.ownerSigner,
+        supervisorSigner: this.supervisorSigner,
+        principal: {
+          kind: "owner",
+          id: "owner-delegate",
+          allowedCapabilities: this.allowedCapabilities(),
+          maxRunBudgetCents: 10_000,
+        },
+        get plugins() { return rt.capabilityRegistry.snapshot(); },
+        now: () => rt.now(),
+        agentLookup: (agentId: string) => rt.agentRegistry.get(agentId)?.signed.manifest ?? null,
+      }),
+      {
+        description: "Runs another agent as a sub-step and returns its result. Give agentId to run an EXISTING saved agent (agent-tests-agent), or intent to compile a fresh sub-agent. Seed the run with a `message`.",
+        useWhen: "a TESTER agent: after synthetic_users casts users, delegate(agentId=<target agent>) runs each user's message through the agent under test. Also for agents that call other agents.",
+        notes: "delegated sub-runs never take unsupervised irreversible/outbound/spend actions — those gate for approval. Set agentId to the id of the agent you want to test.",
+      },
+    );
   }
 
   /** Called by the scheduler when a schedule fires. Returns the new runId. */
