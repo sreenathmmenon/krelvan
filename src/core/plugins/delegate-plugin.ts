@@ -77,8 +77,17 @@ export class DelegatePlugin implements CapabilityPlugin {
 
   constructor(private readonly deps: DelegatePluginDeps) {}
 
-  estimateCents(_call: EffectCall): number {
-    return 0; // cost is settled by the sub-run's effects; declared budgetCents is the ceiling
+  estimateCents(call: EffectCall): number {
+    // A non-zero pre-flight estimate so admission can RESERVE against the node/run ceiling before a
+    // batch runs — estimate 0 disabled gating entirely, letting N heavy sub-runs settle far past the
+    // node cap. Estimate ~a modest per-user cost times the number of synthetic users in the batch.
+    const input = (call.input ?? {}) as Record<string, unknown>;
+    let n = 1;
+    const uj = input["users_json"] ?? Object.entries(input).find(([k]) => k.endsWith(".users_json"))?.[1];
+    if (typeof uj === "string" && uj.trim().startsWith("[")) {
+      try { const arr = JSON.parse(uj); if (Array.isArray(arr)) n = Math.max(1, arr.length); } catch { /* keep 1 */ }
+    }
+    return 50 * n;
   }
 
   async invoke(call: EffectCall): Promise<{ output: unknown; claimedCostCents: number }> {
@@ -172,16 +181,35 @@ export class DelegatePlugin implements CapabilityPlugin {
     // gateAllConsequential forces the approval gate for every consequential effect even on
     // autonomy:"full" sub-nodes; combined with the class-aware `approve` denier, a delegated
     // sub-agent can never take an unsupervised irreversible/outbound/spend action.
+    // Per-sub-run budget cap: split the delegate node's budget across the batch so N sub-runs can't
+    // blow past the node ceiling (each sub-run gets at most its share). Never below a small floor.
+    const perSubBudget = isBatch && batch.length > 0
+      ? Math.max(200, Math.floor((budgetOverride ?? this.deps.principal.maxRunBudgetCents) / batch.length))
+      : (budgetOverride ?? undefined);
+
     const runOnce = async (msg: string | undefined): Promise<DelegateOutput> => {
       const store = new InMemoryLedgerStore();
       const supervisor = new Supervisor(this.deps.plugins);
-      const engine = new Engine(subManifest, `delegate:${call.nodeId}`, label, {
+      // Cap each sub-run's budget and give it a wall-clock deadline so one slow/stuck target
+      // capability can't stall the whole batch past the run's advertised deadline.
+      const subM = perSubBudget !== undefined
+        ? { ...subManifest, runBudgetCents: Math.min(subManifest.runBudgetCents, perSubBudget) }
+        : subManifest;
+      const engine = new Engine(subM, `delegate:${call.nodeId}`, label, {
         store, owner: this.deps.ownerSigner, supervisor,
         supervisorSigner: this.deps.supervisorSigner, now: this.deps.now,
       });
       const initialState: RunState | undefined = msg !== undefined ? { message: msg } : undefined;
-      const result = await engine.run({ approve, gateAllConsequential: true, ...(initialState ? { initialState } : {}) });
-      return { status: result.status, state: result.projection.state, spentCents: result.projection.budget.runSpentCents };
+      const deadlineMs = this.deps.now() + 120_000; // 2 min per sub-run — a stuck target can't hang the batch
+      try {
+        const result = await engine.run({ approve, gateAllConsequential: true, deadlineMs, ...(initialState ? { initialState } : {}) });
+        return { status: result.status, state: result.projection.state, spentCents: result.projection.budget.runSpentCents };
+      } catch (err) {
+        // A sub-run that THROWS (LLM rate-limit/timeout/5xx) must NOT abort the batch or make the
+        // parent retry the whole delegate node. Convert it into a failed result the judge/report
+        // can surface — the crashing user is reported as a FAIL and the run reaches judge/report.
+        return { status: "failed", state: { "delegate.error": (err as Error)?.message ?? "sub-run failed" }, spentCents: 0 };
+      }
     };
 
     // BATCH (tester): run the target once per synthetic user. The downstream judge/report need to

@@ -151,7 +151,16 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   // Attach the CSRF token (issued at login, kept in sessionStorage) on state-changing calls.
   const method = (init?.method ?? "GET").toUpperCase();
   if (method !== "GET" && method !== "HEAD" && typeof window !== "undefined") {
-    const csrf = sessionStorage.getItem("krelvan_csrf");
+    let csrf = sessionStorage.getItem("krelvan_csrf");
+    // Rehydrate: a new tab / reopened tab of a still-valid session has empty sessionStorage, so a
+    // write would 403. Fetch /auth/status once — it re-issues a CSRF token for a valid session —
+    // and cache it, so the customer's Save works instead of returning a raw 403.
+    if (!csrf) {
+      try {
+        const s = await fetch(`${API_BASE}/api/auth/status`, { cache: "no-store" }).then((r) => r.json()).catch(() => null) as { csrf?: string } | null;
+        if (s && typeof s.csrf === "string") { csrf = s.csrf; sessionStorage.setItem("krelvan_csrf", csrf); }
+      } catch { /* best-effort; server still enforces */ }
+    }
     if (csrf) headers["X-CSRF-Token"] = csrf;
   }
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
@@ -165,7 +174,13 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     // logged-out visitor's FAQ API calls may 401 and must degrade gracefully, NOT bounce the
     // whole window to /login (that made clicking "FAQ" from the nav a dead-end sign-in wall).
     const isPublic = p === "/" || p === "/faq" || p.startsWith("/login") || p.startsWith("/setup") || p.startsWith("/share/") || p.startsWith("/r/") || p.startsWith("/a/");
-    if (!isPublic) window.location.href = "/login";
+    if (!isPublic) {
+      // If a session cookie is present but the server says 401, the session likely ended (e.g. the
+      // server restarted — sessions are in-memory). Tell the customer why instead of a bare login.
+      const hadSession = document.cookie.includes("krelvan_sid=");
+      sessionStorage.removeItem("krelvan_csrf");
+      window.location.href = hadSession ? "/login?reason=session-ended" : "/login";
+    }
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };

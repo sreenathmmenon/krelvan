@@ -7,7 +7,7 @@ import {
   getArtifact, patchArtifact, shareArtifact, unshareArtifact, getAgentPublic,
   timeAgo, type ArtifactRecord,
 } from "../../../lib/api";
-import { OutputBody } from "../../../lib/output-render";
+import { OutputBody, toPlainText } from "../../../lib/output-render";
 
 // ── The rendered artifact page ─────────────────────────────────────────────────
 // The product's face: an agent's finished output as a clean, readable object. Copy it,
@@ -48,7 +48,10 @@ export default function ArtifactPage() {
 
   function copy() {
     if (!artifact) return;
-    void navigator.clipboard?.writeText(artifact.body)
+    // Copy clean, paste-ready text — not the raw markdown source. The page renders the body
+    // richly (or as plain prose); pasting literal "##"/"**"/"[](url)" the customer never saw into
+    // Gmail/Slack is a fidelity mismatch. toPlainText yields the readable form.
+    void navigator.clipboard?.writeText(toPlainText(artifact.body))
       .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); })
       .catch(() => {});
   }

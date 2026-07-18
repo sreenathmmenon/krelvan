@@ -11,6 +11,14 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  // A friendly reason banner: session ended (server restart) or account just created via setup.
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("reason") === "session-ended") setNotice("Your session ended (the server may have restarted). Please sign in again.");
+    else if (q.get("created") === "1") setNotice("Account created — please sign in.");
+  }, []);
 
   // On load, check whether the install still needs first-run setup — and if so, redirect there.
   // We do NOT gate the FORM on this check: hiding the inputs until the async status returns wiped
@@ -81,6 +89,11 @@ export default function LoginPage() {
         <div className="auth-split__card">
           <div className="micro" style={{ marginBottom: "var(--s2)" }}>Welcome back</div>
           <div className="h2" style={{ color: "var(--ink)", marginBottom: "var(--s5)" }}>Sign in to your workspace</div>
+          {notice && (
+            <div className="small" role="status" style={{ margin: "0 0 var(--s4)", padding: "var(--s2) var(--s3)", borderRadius: "var(--r)", background: "var(--brand-tint)", border: "1px solid var(--line)", color: "var(--ink-soft)", lineHeight: 1.5 }}>
+              {notice}
+            </div>
+          )}
           <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
             <label className="small" style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink-soft)", fontWeight: 500 }}>
               Username

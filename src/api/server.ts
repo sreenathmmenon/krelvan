@@ -401,12 +401,17 @@ function isSameOriginWrite(req: IncomingMessage): boolean {
   try { return new URL(origin).origin === new URL(allowed).origin; } catch { return false; }
 }
 
-/** GET /api/auth/status — is setup needed? is this caller logged in? (public, read-only) */
+/** GET /api/auth/status — is setup needed? is this caller logged in? (public, read-only)
+ * Also RE-ISSUES a CSRF token for an already-valid session. The client keeps CSRF in per-tab
+ * sessionStorage, so a new tab / reopened tab of a still-valid session had no CSRF and every write
+ * 403'd. Returning a fresh token here lets the page rehydrate it on load. */
 async function handleAuthStatus(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const sess = req.headers["x-krelvan-session"];
+  const authenticated = typeof sess === "string" && rt.adminAuth.validateSession(sess);
   json(res, 200, {
     setupNeeded: !rt.adminAuth.isSetup(),
-    authenticated: typeof sess === "string" && rt.adminAuth.validateSession(sess),
+    authenticated,
+    ...(authenticated ? { csrf: rt.adminAuth.issueCsrfToken(sess as string) } : {}),
   });
 }
 
@@ -420,9 +425,11 @@ async function handleAuthSetup(req: IncomingMessage, res: ServerResponse, rt: Kr
     username: body.username ?? "", password: body.password ?? "", setupToken: body.setupToken,
   });
   if (!result.ok) { jsonError(res, 400, result.error); return; }
-  // Immediately log the new admin in.
+  // Immediately log the new admin in. If auto-login can't succeed right now (e.g. a pre-setup IP
+  // lockout from earlier failed attempts on a shared NAT), tell the client so it routes to /login
+  // with a "created" notice instead of bouncing to a bare sign-in from /dashboard.
   const login = await rt.adminAuth.login(body.username ?? "", body.password ?? "", clientIp(req));
-  if (!login.ok) { json(res, 201, { ok: true }); return; }
+  if (!login.ok) { json(res, 201, { ok: true, autoLogin: false }); return; }
   json(res, 201, { ok: true, session: login.token, csrf: rt.adminAuth.issueCsrfToken(login.token) });
 }
 

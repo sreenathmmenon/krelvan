@@ -44,6 +44,9 @@ function SetupForm() {
       }
       const d = await res.json();
       if (d.csrf) sessionStorage.setItem("krelvan_csrf", d.csrf);
+      // If auto-login didn't happen (no session returned), send them to sign in with a clear notice
+      // instead of /dashboard, which would bounce to a bare /login.
+      if (d.autoLogin === false || !d.csrf) { router.replace("/login?created=1"); return; }
       // Straight into the workspace after first-run setup, not the marketing homepage.
       router.replace("/dashboard");
     } catch {
@@ -88,16 +91,18 @@ function SetupForm() {
             This is a one-time step — it sets up the owner account for this Krelvan instance.
           </p>
           <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
-            {!tokenFromUrl && (
-              <label className="small" style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink-soft)", fontWeight: 500 }}>
-                Setup token <span style={{ color: "var(--ink-muted)", fontWeight: 400 }}>(printed on the server console)</span>
-                <input className="input input-mono" value={setupToken} onChange={(e) => setSetupToken(e.target.value)} required />
-                <span className="small" style={{ color: "var(--ink-muted)", fontWeight: 400, lineHeight: 1.5 }}>
-                  Copy it from your terminal where Krelvan is running — the line “Create your admin account”.
-                  This is not the <code>launcher.token</code> file in your data directory.
-                </span>
-              </label>
-            )}
+            {/* ALWAYS render the token field (prefilled from the URL). Hiding it when ?token= was
+                present dead-ended a stale/expired link — the user couldn't paste the fresh token
+                printed on the console. Prefilled + editable means a rejected token is recoverable. */}
+            <label className="small" style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink-soft)", fontWeight: 500 }}>
+              Setup token <span style={{ color: "var(--ink-muted)", fontWeight: 400 }}>(printed on the server console)</span>
+              <input className="input input-mono" value={setupToken} onChange={(e) => setSetupToken(e.target.value)} required />
+              <span className="small" style={{ color: "var(--ink-muted)", fontWeight: 400, lineHeight: 1.5 }}>
+                Copy it from your terminal where Krelvan is running — the line “Create your admin account”.
+                This is not the <code>launcher.token</code> file in your data directory. If it says
+                “invalid or expired”, restart the server and paste the fresh token it prints.
+              </span>
+            </label>
             <label className="small" style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--ink-soft)", fontWeight: 500 }}>
               Username
               <input className="input" value={username} onChange={(e) => setUsername(e.target.value)}

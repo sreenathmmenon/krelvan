@@ -288,9 +288,13 @@ export function normalizeThinkOutputs(
       out[k] = v;
     } else if (typeof v === "string") {
       const t = v.trim().toLowerCase();
+      const raw = v.trim();
       if (t === "true") out[k] = true;
       else if (t === "false") out[k] = false;
-      else if (/^-?\d+$/.test(v.trim())) out[k] = Number(v.trim());
+      // Coerce integer-looking strings to numbers — BUT keep a leading-zero string as-is (zip
+      // "02134", code "007", order id): those are identifiers, and Number() would strip the zeros
+      // and flip the type, corrupting the value downstream (state/ledger/output-map/delivery).
+      else if (/^-?\d+$/.test(raw) && !/^-?0\d/.test(raw)) out[k] = Number(raw);
       else out[k] = v;
     }
   };

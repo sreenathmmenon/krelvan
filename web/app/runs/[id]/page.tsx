@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getRun, getRunEvents, verifyRun, listApprovals, resolveApproval, explainRun, diagnoseRun, retryRunWithFix, proposeFix, shareRun, startRun, listArtifacts, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type RunVerification, type PendingApproval, type RunExplanation, type RunDiagnosis, type FixProposal, API_BASE } from "../../../lib/api";
 import { renderMarkdown } from "../../../lib/markdown";
+import { toPlainText } from "../../../lib/output-render";
 import { layoutGraph, graphBounds, edgePath } from "../../../lib/layout";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -944,15 +945,25 @@ function OutputPanel({ projection, manifest, run }: {
   // Collect all node results in node order
   const nodeOrder = manifest.nodes.map(n => n.id);
 
-  // Pass 1: compose.text and think results (ordered by node)
+  // Pass 1: the human-facing answer keys, in node order. Includes `.summary`/`.findings` (what a
+  // terminal web_search emits — without these the tab wrongly showed "No text output produced" for a
+  // run whose Inbox artifact had the full answer) alongside `.text`/`.result`. Same precedence family
+  // as the artifact extractor, so the Output tab agrees with the Inbox.
+  const ANSWER_SUFFIXES: { suffix: string; label: string }[] = [
+    { suffix: ".summary", label: "Summary" },
+    { suffix: ".text", label: "Composed text" },
+    { suffix: ".result", label: "Result" },
+    { suffix: ".findings", label: "Findings" },
+    { suffix: ".digest", label: "Digest" },
+    { suffix: ".answer", label: "Answer" },
+    { suffix: ".reply", label: "Reply" },
+  ];
   for (const nodeId of nodeOrder) {
-    const textKey = `${nodeId}.text`;
-    const resultKey = `${nodeId}.result`;
-    if (typeof state[textKey] === "string" && String(state[textKey]).length > 20) {
-      outputs.push({ label: "Composed text", nodeId, key: textKey, value: String(state[textKey]), kind: "text" });
-    }
-    if (typeof state[resultKey] === "string" && String(state[resultKey]).length > 20) {
-      outputs.push({ label: "Result", nodeId, key: resultKey, value: String(state[resultKey]), kind: "text" });
+    for (const { suffix, label } of ANSWER_SUFFIXES) {
+      const key = `${nodeId}${suffix}`;
+      if (typeof state[key] === "string" && String(state[key]).length > 20) {
+        outputs.push({ label, nodeId, key, value: String(state[key]), kind: "text" });
+      }
     }
   }
 
@@ -1052,7 +1063,10 @@ function OutputPanel({ projection, manifest, run }: {
   const isFailed = run.status === "failed";
 
   function copyAll() {
-    const text = outputs.map(o => `## ${o.label} (${o.nodeId})\n\n${o.value}`).join("\n\n---\n\n");
+    // Copy the DELIVERABLE as clean, paste-ready text — not "## Result (nodeId)" scaffolding, and
+    // not the collapsed intermediate step blocks. Internal node ids must never land in a customer's
+    // clipboard/email. `outputs[0]` is the deliverable (reordered above); toPlainText makes it paste-clean.
+    const text = outputs.length ? toPlainText(outputs[0].value) : "";
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);

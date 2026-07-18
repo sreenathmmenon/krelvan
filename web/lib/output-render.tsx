@@ -13,6 +13,7 @@
  * the output page, and a shared public link.
  */
 import { Fragment, type ReactNode } from "react";
+import { renderMarkdown } from "./markdown";
 
 // ── Plain-text sanitiser: strip every markdown marker so nothing developer-y ever shows ──────
 export function toPlainText(md: string): string {
@@ -120,16 +121,13 @@ function LinkListView({ items }: { items: LinkItem[] }): ReactNode {
   );
 }
 
-// ── Prose (non-list) fallback: clean paragraphs, markdown STRIPPED to plain text ─────────────
+// ── Prose (non-list): render markdown RICHLY (headings, bold, clickable links). renderMarkdown is
+// a safe renderer that turns "##"→heading, "**"→bold, "[t](url)"→link — it NEVER shows raw syntax,
+// so a real report keeps its structure while the customer still never sees "##"/"**". (This matches
+// the public share/feed pages, which use renderMarkdown too — the owner no longer sees a flattened
+// version of their own output.)
 function ProseView({ body }: { body: string }): ReactNode {
-  const paras = toPlainText(body).split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s3)" }}>
-      {paras.map((p, i) => (
-        <p key={i} style={{ margin: 0, lineHeight: 1.75, color: "var(--ink-soft)", whiteSpace: "pre-wrap" }}>{p}</p>
-      ))}
-    </div>
-  );
+  return <div className="md-body">{renderMarkdown(body)}</div>;
 }
 
 /**

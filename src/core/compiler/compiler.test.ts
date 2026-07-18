@@ -90,6 +90,25 @@ test("compiler: raises an under-budgeted plan up to a floor so it can actually r
   assert.equal(res.signed.manifest.runBudgetCents, 400);
 });
 
+test("compiler: budget floor accounts for loop revisits (loop cap × maxNodeVisits)", async () => {
+  // A generator+evaluator loop: two loop-flagged caps at 50¢, maxNodeVisits=5. Worst-case spend is
+  // 50*5*2 = 500¢, so the floor must be >= that (else the loop hits RUN_BUDGET_EXCEEDED mid-run).
+  const loopAgent = manifest({
+    runBudgetCents: 100, maxNodeVisits: 5,
+    nodes: [
+      { id: "gen",  role: "generate", autonomy: "full", capabilities: [{ name: "web_search", sideEffect: "read", budgetCents: 50, loop: true } as unknown as { name: "web_search"; sideEffect: "read"; budgetCents: number }] },
+      { id: "eval", role: "evaluate", autonomy: "full", capabilities: [{ name: "web_search", sideEffect: "read", budgetCents: 50, loop: true } as unknown as { name: "web_search"; sideEffect: "read"; budgetCents: number }] },
+    ],
+    entry: "gen",
+    edges: [{ from: "gen", to: "eval" }, { from: "eval", to: "gen" }],
+  });
+  const { s } = signer();
+  const res = await new Compiler(fakeModel(loopAgent), s).compile("loop", ownerPrincipal, 100);
+  assert.ok(res.ok, !res.ok ? JSON.stringify(res.issues) : "");
+  // floor = ceil((50*5 + 50*5) * 1.5) = 750, capped at owner max 1000. Must be >= worst-case 500.
+  assert.ok(res.signed.manifest.runBudgetCents >= 500, `budget ${res.signed.manifest.runBudgetCents} covers the loop worst case`);
+});
+
 test("compiler: never raises the budget above the principal ceiling", async () => {
   // A big graph whose floor would exceed the owner's max is capped at the max, not beyond.
   const big = manifest({

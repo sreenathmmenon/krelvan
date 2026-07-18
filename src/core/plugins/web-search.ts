@@ -55,7 +55,9 @@ async function jsonSearch(
   init: Parameters<typeof fetchWithRetry>[1],
   pick: (json: unknown) => SearchResult[],
 ): Promise<SearchResult[]> {
-  const outcome = await fetchWithRetry(url, init, { maxAttempts: 3, baseDelayMs: 500 });
+  // A hard per-attempt timeout so a trickling/stuck search endpoint can't hang the node (and, in a
+  // tester batch, stall the whole run past its deadline). Other network plugins do the same.
+  const outcome = await fetchWithRetry(url, init, { maxAttempts: 3, baseDelayMs: 500, timeoutMs: 15_000 });
   if (!outcome.ok) throw new Error(`HTTP ${outcome.status}: ${String(outcome.rawBody).slice(0, 120)}`);
   return pick(await outcome.resp.json());
 }
@@ -251,7 +253,7 @@ async function keylessWebSearch(query: string): Promise<SearchResult[]> {
   const outcome = await fetchWithRetry(
     `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
     { method: "GET", headers: { "User-Agent": "Mozilla/5.0 (compatible; Krelvan-agent/1.0)", "Accept": "text/html" } },
-    { maxAttempts: 2, baseDelayMs: 400 },
+    { maxAttempts: 2, baseDelayMs: 400, timeoutMs: 15_000 },
   );
   if (!outcome.ok) throw new Error(`keyless search HTTP ${outcome.status}`);
   const html = await outcome.resp.text();
@@ -305,9 +307,18 @@ export const webSearchCapability: CapabilityPlugin = {
     //   2. a query composed from the concrete subject values in state (product, company,
     //      topic, audience) — this is what makes any research node search for the right thing
     //   3. the agent intent
-    const explicitKeys = ["query", "topic", "subject", "search_query", "q"];
+    // `query`/`search_query`/`q` are LITERAL queries the agent set on purpose — trust them verbatim.
+    // Running isInstruction() on these wrongly discarded valid queries that start with a verb
+    // ("Find My Friends privacy", "Using AI in healthcare", "Identify theft protection"). Only the
+    // ambiguous `topic`/`subject` fields still get the instruction filter.
+    const literalKeys = ["query", "search_query", "q"];
+    const ambiguousKeys = ["topic", "subject"];
     let query = "";
-    for (const k of explicitKeys) {
+    for (const k of literalKeys) {
+      const v = String(input[k] ?? "").trim();
+      if (v) { query = v; break; }
+    }
+    for (const k of query ? [] : ambiguousKeys) {
       const v = String(input[k] ?? "").trim();
       if (v && !isInstruction(v)) { query = v; break; }
     }
@@ -419,19 +430,25 @@ export const webSearchCapability: CapabilityPlugin = {
 
       log.info({ nodeId: call.nodeId, query }, "web_search: LLM synthesis complete");
 
-      // Prefix the findings with an honest note so a downstream summary doesn't present training
-      // knowledge as if it were fresh, live web results. (Set BRAVE_SEARCH_API_KEY for real search.)
+      // The honest note goes in `findings` (LLM context) so a downstream compose doesn't present
+      // training knowledge as fresh web results. But the CUSTOMER-facing `summary` must be a clean
+      // titled answer — not a raw findings dump with the disclaimer line as its title. So `summary`
+      // is a proper markdown block (title = the query, a one-line note, then the answer), and the
+      // extractor prefers it. (Set a search provider key for real live search.)
       const note = "[Note: no live web search available — the following is from general knowledge, not current sources.]";
       const findings = `${note}\n\n${response.text}`;
-      // IMPORTANT: expose the answer as a FLAT string (`findings`), not only nested in
+      const summary = `## ${query}\n\n_From general knowledge (no live web search configured)._\n\n${response.text}`;
+      // IMPORTANT: expose the answer as FLAT strings (`summary`/`findings`), not only nested in
       // results[].snippet. The engine's nodeOutputState drops arrays/objects from run state, so a
       // downstream compose/think node would otherwise receive NO usable content.
       return {
         output: {
           results: [{ title: "General knowledge (no live search)", url: "", snippet: response.text }],
           findings,
+          summary,
           query,
           count: 1,
+          provider: "llm-knowledge",
           synthetic: true,
         },
         claimedCostCents: 8,

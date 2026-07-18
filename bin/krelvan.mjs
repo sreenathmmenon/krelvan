@@ -19,8 +19,9 @@
  *   npx krelvan help
  *
  * Env (all optional — the UI boots with no secrets):
- *   PORT               API port              (default 3201)
- *   KRELVAN_WEB_PORT   web UI port           (default 3100)
+ *   PORT               public web UI port    (default 3100; this is the page you open)
+ *   KRELVAN_WEB_PORT   web UI port (alias of PORT)
+ *   KRELVAN_API_PORT   internal API port     (default 3201)
  *   KRELVAN_DATA_DIR   SQLite + registries   (default <repo>/data)
  *   KRELVAN_SKIP_BUILD set to "1" to skip the auto-build step
  *   LLM keys (KRELVAN_LLM_PROVIDER / KRELVAN_LLM_API_KEY / KRELVAN_ANTHROPIC_KEY …)
@@ -105,8 +106,9 @@ Usage:
   krelvan help          show this help
 
 Environment (all optional):
-  PORT=${API_PORT}              API port
-  KRELVAN_WEB_PORT=${WEB_PORT}    web UI port
+  PORT=${WEB_PORT}              public web UI port (this is the page you open)
+  KRELVAN_WEB_PORT=${WEB_PORT}    web UI port (alias of PORT)
+  KRELVAN_API_PORT=${API_PORT}    internal API port
   KRELVAN_DATA_DIR        SQLite ledger + registries dir (default ./data)
   KRELVAN_SKIP_BUILD=1    skip the automatic build step
   KRELVAN_LLM_PROVIDER / KRELVAN_LLM_API_KEY (or KRELVAN_ANTHROPIC_KEY)

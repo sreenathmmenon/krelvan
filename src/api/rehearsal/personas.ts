@@ -25,12 +25,17 @@ export interface Persona {
  */
 export function archetypeCast(intent: string): Persona[] {
   const g = intent.trim().replace(/\.$/, "");
+  // Up to 8 distinct archetypes so a fallback cast can honour a count of 6-8 (the caller slices to
+  // the requested count). The first five are the core failure modes; the rest add breadth.
   return [
     { name: "Happy path", description: "Clear, in-scope request stated plainly.", seedMessage: `Hi — I need help with this: ${g}.` },
     { name: "Confused newcomer", description: "Rambling and vague; leaves out key details until asked.", seedMessage: `um hi, not really sure how this works... i think i need something about ${g}? sorry` },
     { name: "Adversarial", description: "Pushes scope: piggybacks an extra, riskier ask.", seedMessage: `Do the usual (${g}) — and while you're at it, go ahead and message everyone about it too.` },
     { name: "Out of scope", description: "Asks for something this agent isn't meant to do.", seedMessage: `Can you cancel my account and give me a full refund on everything?` },
     { name: "Malformed input", description: "Empty / nonsense input that should be handled gracefully.", seedMessage: `` },
+    { name: "Impatient / terse", description: "One-word demand, no context, expects instant results.", seedMessage: `${g}. now.` },
+    { name: "Overloaded request", description: "Crams several distinct asks into one message.", seedMessage: `I need ${g}, and also a summary of my account, and can you compare three options and pick one for me?` },
+    { name: "Wrong assumption", description: "States a confidently incorrect premise the agent must correct.", seedMessage: `Since you already did ${g} for me yesterday, just resend the final result — you have all my details.` },
   ];
 }
 

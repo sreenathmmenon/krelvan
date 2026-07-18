@@ -23,6 +23,17 @@ test("subjectFromInstruction: returns empty when nothing subject-like remains", 
   assert.equal(subjectFromInstruction("Research"), "");
 });
 
+test("web_search: an explicit `query` starting with a verb is used verbatim, not discarded", async () => {
+  // "Find My Friends app privacy" begins with "Find" — isInstruction() used to reject it, leaving an
+  // empty query. An explicit query key must be trusted literally.
+  const res = await webSearchCapability.invoke({
+    nodeId: "search", capability: "web_search",
+    input: { query: "Find My Friends app privacy" } as Record<string, unknown>,
+  } as unknown as Parameters<typeof webSearchCapability.invoke>[0]);
+  const out = (res as { output: { query: string } }).output;
+  assert.equal(out.query, "Find My Friends app privacy", "literal explicit query is honored, not blanked");
+});
+
 // Drive the capability with no search/LLM keys so it takes the keyless path deterministically
 // where possible; we assert on the QUERY it derives (logged via the returned output.query) and
 // on the OUTPUT SHAPE. Network is best-effort; we only assert shape + query derivation here.

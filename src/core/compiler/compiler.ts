@@ -103,14 +103,20 @@ export class Compiler {
     // model drew can actually execute. We only RAISE toward what the nodes need and never above the
     // principal's ceiling (checkMonotonicity still rejects anything over principal.maxRunBudgetCents).
     if (Array.isArray(proposal.nodes) && proposal.nodes.length > 0) {
+      const visits = typeof proposal.maxNodeVisits === "number" && proposal.maxNodeVisits > 0 ? proposal.maxNodeVisits : 1;
       let nodeSum = 0;
       for (const node of proposal.nodes) {
         for (const cap of node.capabilities ?? []) {
-          if (typeof cap?.budgetCents === "number") nodeSum += cap.budgetCents;
+          if (typeof cap?.budgetCents !== "number") continue;
+          // A loop-flagged cap can be re-entered up to maxNodeVisits times, so its worst-case spend
+          // is budgetCents * visits — count that in the floor, else an evaluator→generator loop hits
+          // RUN_BUDGET_EXCEEDED partway through a legitimate loop.
+          const loop = (cap as { loop?: boolean }).loop === true;
+          nodeSum += loop ? cap.budgetCents * visits : cap.budgetCents;
         }
       }
-      // headroom: nodes may be visited more than once (loops) and cost estimates vary — give ~1.5x
-      // the declared per-node sum, with a small absolute floor per node for tiny graphs.
+      // headroom: cost estimates vary — give ~1.5x the (loop-aware) per-node sum, with a small
+      // absolute floor per node for tiny graphs.
       const floor = Math.max(Math.ceil(nodeSum * 1.5), proposal.nodes.length * 200, 300);
       if (typeof proposal.runBudgetCents !== "number" || proposal.runBudgetCents < floor) {
         proposal.runBudgetCents = Math.min(floor, principal.maxRunBudgetCents);

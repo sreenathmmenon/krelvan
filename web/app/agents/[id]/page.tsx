@@ -989,35 +989,35 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               >
                 {deleting ? "Deleting…" : confirmDelete ? "Sure? Click again" : "Delete agent"}
               </button>
-              {lastRun?.status === "halted" ? (
+              {/* If the last run halted, offer "Review & resume" ALONGSIDE the run composer — never
+                  INSTEAD of it. Replacing them unmounted the Add-input textarea mid-keystroke and
+                  stranded the typed input with no way to submit a NEW run. */}
+              {lastRun?.status === "halted" && (
                 <Link
                   href={`/runs/${lastRun.runId}`}
-                  className="btn btn-primary"
+                  className="btn btn-secondary"
                   style={{ textDecoration: "none" }}
                   title={haltedApproval?.nodeId ? `This run is awaiting approval at ${haltedApproval.nodeId}` : "This run is awaiting your approval"}
                 >
                   Review &amp; resume run →
                 </Link>
-              ) : (
-                <>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => setShowInput(s => !s)}
-                    title="Give this agent some input for the run (text to process, a question, notes…)"
-                  >
-                    {showInput ? "Hide input" : "Add input"}
-                  </button>
-                  <button
-                    className="btn btn-primary"
-                    onClick={handleRunNow}
-                    disabled={running}
-                  >
-                    {running ? "Starting…" : runInput.trim() ? "Run with input" : "Run now"}
-                  </button>
-                </>
               )}
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowInput(s => !s)}
+                title="Give this agent some input for the run (text to process, a question, notes…)"
+              >
+                {showInput ? "Hide input" : "Add input"}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleRunNow}
+                disabled={running}
+              >
+                {running ? "Starting…" : runInput.trim() ? "Run with input" : "Run now"}
+              </button>
             </div>
-            {showInput && lastRun?.status !== "halted" && (
+            {showInput && (
               <div style={{ marginTop: "var(--s3)" }}>
                 <textarea
                   value={runInput}
@@ -1418,9 +1418,14 @@ function TriggerPanel({ agentId }: { agentId: string }) {
   const [token, setToken] = useState<string | null>(null); // shown once after mint
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState(false);   // couldn't LOAD status — distinct from "disabled"
+  const [actionErr, setActionErr] = useState<string | null>(null); // mint/revoke failure
 
   const refresh = useCallback(() => {
-    void getTrigger(agentId).then(s => { setEnabled(s.enabled); setUrl(s.url); }).catch(() => setEnabled(false));
+    // A transient load failure must NOT masquerade as "no webhook configured" — re-enabling from
+    // that false state would silently rotate a live token. Set a distinct load-error state instead.
+    setLoadErr(false);
+    void getTrigger(agentId).then(s => { setEnabled(s.enabled); setUrl(s.url); }).catch(() => setLoadErr(true));
   }, [agentId]);
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -1434,13 +1439,15 @@ function TriggerPanel({ agentId }: { agentId: string }) {
   };
 
   async function mint() {
-    setBusy(true);
+    setBusy(true); setActionErr(null);
     try { const r = await mintTrigger(agentId); setToken(r.token); setEnabled(true); setUrl(r.url); }
+    catch (e) { setActionErr((e as Error).message || "Could not create the webhook. Try again."); }
     finally { setBusy(false); }
   }
   async function revoke() {
-    setBusy(true);
+    setBusy(true); setActionErr(null);
     try { await revokeTrigger(agentId); setToken(null); setEnabled(false); }
+    catch (e) { setActionErr((e as Error).message || "Could not revoke the webhook. Try again."); }
     finally { setBusy(false); }
   }
 
@@ -1457,7 +1464,18 @@ function TriggerPanel({ agentId }: { agentId: string }) {
         input. Authenticated by a per-agent token, scoped to this one agent.
       </p>
 
-      {enabled === null ? (
+      {actionErr && <div className="state-error" role="alert" style={{ margin: "0 0 var(--s4)" }}>{actionErr}</div>}
+      {loadErr ? (
+        // Couldn't load status. Do NOT show the "Enable" form — a webhook may already exist and
+        // enabling would rotate its token. Offer a Retry instead.
+        <div className="card" style={{ padding: "var(--s6)", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--s3)" }}>
+          <p className="small soft" style={{ maxWidth: "48ch", lineHeight: 1.6 }}>
+            Couldn&apos;t load the webhook status. A webhook may already be configured — retry rather than
+            re-enabling, which would rotate an existing token.
+          </p>
+          <button className="btn btn-secondary" disabled={busy} onClick={() => refresh()}>Retry</button>
+        </div>
+      ) : enabled === null ? (
         <div className="skeleton skeleton-line" style={{ height: 40, width: 280 }} />
       ) : !enabled ? (
         <div className="card" style={{ padding: "var(--s6)", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--s3)" }}>
@@ -1792,7 +1810,10 @@ function DeliveryPanel({ agentId }: { agentId: string }) {
           {saveErr && <div className="state-error" role="alert" style={{ marginTop: "var(--s1)" }}>{saveErr}</div>}
 
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", marginTop: "var(--s2)" }}>
-            <button className="btn btn-primary" onClick={() => void handleSave()} disabled={saving || incomplete.length > 0}>
+            {/* Do NOT disable on `incomplete` — that made the helpful "Add <field> for <channel>"
+                message in handleSave unreachable (the click could never fire). Let the click through
+                so an incomplete config produces a clear, actionable error. */}
+            <button className="btn btn-primary" onClick={() => void handleSave()} disabled={saving}>
               {saving ? "Saving…" : "Save destinations"}
             </button>
             {saved && (

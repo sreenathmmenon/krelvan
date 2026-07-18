@@ -52,3 +52,12 @@ test("think: 'false'/'true' strings coerce; arbitrary prose stays a string", () 
   assert.equal(out["grounded"], true);
   assert.equal(out["note"], "true story", "non-exact match stays a string");
 });
+
+test("think: leading-zero identifiers are NOT coerced to numbers (zip/code/order id)", () => {
+  const parsed = { outputs: { zip: "02134", code: "007", order_id: "0042", qty: "42" } };
+  const out = normalizeThinkOutputs(parsed, []);
+  assert.equal(out["zip"], "02134", "zip keeps leading zero + string type");
+  assert.equal(out["code"], "007", "code keeps leading zeros");
+  assert.equal(out["order_id"], "0042");
+  assert.equal(out["qty"], 42, "a genuine quantity still coerces to a number");
+});
