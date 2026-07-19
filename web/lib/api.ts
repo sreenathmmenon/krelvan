@@ -164,19 +164,25 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     if (csrf) headers["X-CSRF-Token"] = csrf;
   }
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
-  // A 401 inside the authenticated app means the session expired → bounce to login. But the
-  // PUBLIC pages (marketing homepage, login, setup) intentionally make API calls that may 401
-  // for a logged-out visitor and degrade gracefully — never redirect THOSE to login, or a
-  // visitor can never see the homepage.
-  if (res.status === 401 && typeof window !== "undefined") {
+  // A 401 (session expired) OR a 429 (per-IP auth lockout) inside the authenticated app both mean
+  // the same thing to the customer: their credentials are no longer being accepted and the only
+  // recovery is to sign in again. We treat them identically so a polling page (the dashboard
+  // reloads every 3s) STOPS hammering a guarded endpoint and bounces to login instead of looping
+  // on a dead-end "too many failed attempts" banner with no way out. The 429 here can only come
+  // from the auth brute-force lockout — a valid session takes the clear-fails fast-path and is
+  // never counted — so redirecting is safe. PUBLIC pages (marketing homepage, login, setup, share)
+  // intentionally make API calls that may 401 for a logged-out visitor and must degrade gracefully,
+  // never redirect THOSE to login, or a visitor can never see the homepage.
+  if ((res.status === 401 || res.status === 429) && typeof window !== "undefined") {
     const p = window.location.pathname;
     // Keep this in sync with middleware PUBLIC_PATHS. /faq is a public marketing page — a
     // logged-out visitor's FAQ API calls may 401 and must degrade gracefully, NOT bounce the
     // whole window to /login (that made clicking "FAQ" from the nav a dead-end sign-in wall).
     const isPublic = p === "/" || p === "/faq" || p.startsWith("/login") || p.startsWith("/setup") || p.startsWith("/share/") || p.startsWith("/r/") || p.startsWith("/a/");
     if (!isPublic) {
-      // If a session cookie is present but the server says 401, the session likely ended (e.g. the
-      // server restarted — sessions are in-memory). Tell the customer why instead of a bare login.
+      // If a session cookie is present but the server rejects us, the session likely ended (e.g. the
+      // server restarted — sessions are in-memory) or the IP tripped the lockout after it ended.
+      // Tell the customer why instead of a bare login.
       const hadSession = document.cookie.includes("krelvan_sid=");
       sessionStorage.removeItem("krelvan_csrf");
       window.location.href = hadSession ? "/login?reason=session-ended" : "/login";
