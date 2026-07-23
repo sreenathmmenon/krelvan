@@ -3,7 +3,7 @@
 import { useState, useEffect, use, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getRun, getRunEvents, verifyRun, listApprovals, resolveApproval, explainRun, diagnoseRun, retryRunWithFix, proposeFix, shareRun, startRun, listArtifacts, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type RunVerification, type PendingApproval, type RunExplanation, type RunDiagnosis, type FixProposal, API_BASE } from "../../../lib/api";
+import { getRun, getRunEvents, verifyRun, listApprovals, resolveApproval, explainRun, diagnoseRun, retryRunWithFix, proposeFix, shareRun, startRun, listArtifacts, getStatus, timeAgo, type RunDetail, type RunManifest, type LedgerEvent, type RunVerification, type PendingApproval, type RunExplanation, type RunDiagnosis, type FixProposal, API_BASE } from "../../../lib/api";
 import { renderMarkdown } from "../../../lib/markdown";
 import { toPlainText } from "../../../lib/output-render";
 import { layoutGraph, graphBounds, edgePath } from "../../../lib/layout";
@@ -29,6 +29,7 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   done:      "badge-done",
   idle:      "badge-neutral",
 };
+const NO_MODEL_MESSAGE = "No model is connected. Connect a model to generate this analysis.";
 
 
 // The model sometimes returns its explanation wrapped in JSON (e.g.
@@ -141,6 +142,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   const [diagnosis, setDiagnosis] = useState<RunDiagnosis | null>(null);
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnoseError, setDiagnoseError] = useState<string | null>(null);
+  const [modelReady, setModelReady] = useState<boolean | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [proposing, setProposing] = useState(false);
   const [proposal, setProposal] = useState<FixProposal | null>(null);
@@ -234,6 +236,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   useEffect(() => {
     void load().finally(() => setLoading(false));
     void loadApprovals();
+    void getStatus().then(status => setModelReady(status.hasLlm)).catch(() => setModelReady(null));
   }, [id, load, loadApprovals]);
 
   // Auto-check the run record once it has finished — the completeness badge is the #1
@@ -294,14 +297,19 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     if (!detail) return;
     if (detail.run.status !== "completed" && detail.run.status !== "failed") return;
     if (explanation) return;
+    if (modelReady === null) return;
     autoExplainedRef.current = true;
+    if (!modelReady) {
+      setExplainError(NO_MODEL_MESSAGE);
+      return;
+    }
     setExplaining(true);
     setExplainError(null);
     void explainRun(id)
       .then(res => setExplanation(res))
       .catch(err => setExplainError((err as Error).message))
       .finally(() => setExplaining(false));
-  }, [detail?.run.status, explanation, id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail?.run.status, explanation, id, modelReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-diagnose ONLY genuinely FAILED runs. A halted run is NOT a failure — it is paused
   // waiting for human approval (working as designed), and must show the approval UI, never a
@@ -318,18 +326,27 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   useEffect(() => {
     if (!detail) return;
     if (detail.run.status !== "failed") return;
+    if (modelReady === null) return;
     if (diagnoseAttemptedFor.current === id) return;
     diagnoseAttemptedFor.current = id;
+    if (!modelReady) {
+      setDiagnoseError(NO_MODEL_MESSAGE);
+      return;
+    }
     setDiagnosing(true);
     setDiagnoseError(null);
     void diagnoseRun(id)
       .then(res => setDiagnosis(res))
       .catch(err => setDiagnoseError((err as Error).message))
       .finally(() => setDiagnosing(false));
-  }, [detail?.run.status, id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail?.run.status, id, modelReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRetryWithFix() {
     if (retrying) return;
+    if (!modelReady) {
+      setDiagnoseError(NO_MODEL_MESSAGE);
+      return;
+    }
     setRetrying(true);
     try {
       const res = await retryRunWithFix(id, diagnosis?.diagnosis.fixStrategy);
@@ -343,6 +360,10 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   // Visible self-improvement: propose a corrected agent and SHOW the diff — do not run yet.
   async function handleProposeFix() {
     if (proposing) return;
+    if (!modelReady) {
+      setDiagnoseError(NO_MODEL_MESSAGE);
+      return;
+    }
     setProposing(true); setDiagnoseError(null);
     try {
       const p = await proposeFix(id, diagnosis?.diagnosis.fixStrategy);
@@ -608,7 +629,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               <svg viewBox="0 0 16 16" width="16" height="16" fill="none"><path d="M8 1.5l6.5 11.5H1.5L8 1.5z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><path d="M8 6.2v3.1M8 11.3h.01" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
             </span>
             <span className="micro" style={{ color: "var(--danger)", letterSpacing: ".06em" }}>Diagnosis</span>
-            <span className="small muted">reasoned from the full run record</span>
+            <span className="small muted">
+              {diagnosis ? "reasoned from the full run record" : diagnosing ? "checking the run record" : "unavailable"}
+            </span>
           </div>
           <div style={{ padding: "var(--s5)" }}>
             {diagnosing && !diagnosis && (
@@ -913,6 +936,10 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           loading={explaining}
           error={explainError}
           onGenerate={async () => {
+            if (!modelReady) {
+              setExplainError(NO_MODEL_MESSAGE);
+              return;
+            }
             setExplaining(true);
             setExplainError(null);
             try {
@@ -1726,7 +1753,7 @@ function GraphNodeSvg({ node, pos, status, visits, isSelected, projection, onCli
         {node.role.length > 22 ? node.role.slice(0, 20) + "…" : node.role}
       </text>
 
-      {/* status + cost row */}
+      {/* status row */}
       <g>
         {status === "running" && (
           <>

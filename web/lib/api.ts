@@ -146,6 +146,17 @@ export interface RunDetail {
   eventCount: number;
 }
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json", ...(init?.headers as Record<string, string> | undefined) };
   // Attach the CSRF token (issued at login, kept in sessionStorage) on state-changing calls.
@@ -189,10 +200,25 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     }
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
-    throw new Error(err.error ?? `API error ${res.status}`);
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string; code?: string };
+    throw new ApiError(err.error ?? `API error ${res.status}`, res.status, err.code);
   }
   return res.json() as Promise<T>;
+}
+
+export interface AuthStatus {
+  setupNeeded: boolean;
+  authenticated: boolean;
+  csrf?: string;
+}
+
+/** Public, read-only session check. This must run before a public page calls protected APIs. */
+export async function getAuthStatus(): Promise<AuthStatus> {
+  const status = await apiFetch<AuthStatus>("/api/auth/status");
+  if (typeof window !== "undefined" && status.csrf) {
+    sessionStorage.setItem("krelvan_csrf", status.csrf);
+  }
+  return status;
 }
 
 /** Log out: clears the session cookie (server-side) + local CSRF, then redirect to login. */
@@ -558,7 +584,20 @@ export function autoSummarizeRuns(
         .finally(() => { active--; if (!cancelled) pump(); });
     }
   }
-  pump();
+  // Explanations require a model. Check once up front so an instance without a
+  // configured provider does not create a burst of predictable 503 responses.
+  void getStatus()
+    .then(status => {
+      if (cancelled) return;
+      if (status.hasLlm) {
+        pump();
+        return;
+      }
+      queue.forEach(runId => onSummary(runId, ""));
+    })
+    .catch(() => {
+      if (!cancelled) queue.forEach(runId => onSummary(runId, ""));
+    });
   return () => { cancelled = true; };
 }
 

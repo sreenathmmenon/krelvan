@@ -33,9 +33,9 @@ const SECTIONS: Section[] = [
         ],
       },
       {
-        q: "Is it free? Is it really open-source?",
+        q: "Is it really open-source?",
         a: [
-          "Yes. Krelvan is Apache-2.0. You self-host it on your own machine, run it for yourself, your team, or your clients, extend it, and build free or paid solutions on top — you own what you build. There is no license fee and no metering; the only running cost is whatever you pay your model provider, and with a local model that can be nothing.",
+          "Yes. Krelvan is Apache-2.0. You self-host it on your own machine, run it for yourself, your team, or your clients, extend it, and own what you build.",
         ],
       },
       {
@@ -196,7 +196,7 @@ const SECTIONS: Section[] = [
         a: [
           "Single-tenant: an install is one workspace. There is no multi-tenant store yet (a PostgreSQL adapter is on the roadmap), so “one team, one box” is the deployment model today.",
           "Self-host only: there is no hosted edition. If you want Krelvan, you run it — which is the point, but it does mean you administer it.",
-          "Local models bypass budget accounting: cost estimates for Ollama and other local endpoints are 0, so budget ceilings don't meaningfully constrain fully-local runs.",
+          "Local model safety depends on the limits configured in your local model server; Krelvan cannot enforce a host-level memory ceiling on another process.",
           "Some edges are still growing: messaging channels are send-only today (an agent can message you; you can't reply to drive it), and the canvas shows and replays agent graphs but isn't a drag-to-edit editor yet.",
         ],
       },

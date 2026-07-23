@@ -3,11 +3,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  listAgents, listRuns, buildAgent, startRun, autoSummarizeRuns, timeAgo, getCached,
+  listAgents, listRuns, buildAgent, startRun, autoSummarizeRuns, getStatus, timeAgo, getCached,
   type AgentRecord, type RunRecord, type BuildResult,
 } from "../../lib/api";
 import {
-  AgentCard, BuildPreviewModal, MiniGraph, HeroArtifact, HeroAnimation, EXAMPLES, BUILD_STAGES,
+  AgentCard, BuildPreviewModal, MiniGraph, HeroArtifact, EXAMPLES, BUILD_STAGES,
 } from "../_builder";
 
 // ── Dashboard (the workspace) ───────────────────────────────────────────────────
@@ -105,6 +105,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(!cachedAgents);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [composeFocused, setComposeFocused] = useState(false);
+  const [modelReady, setModelReady] = useState<boolean | null>(null);
   // runId → summary text (null = generating, string = done, key absent = not started)
   const [summaries, setSummaries] = useState<Record<string, string | null>>({});
   const fetchingSummaries = useRef<Set<string>>(new Set());
@@ -136,9 +137,19 @@ export default function Dashboard() {
 
   useEffect(() => {
     void reload();
+    void getStatus().then(status => setModelReady(status.hasLlm)).catch(() => setModelReady(null));
     const t = setInterval(() => void reload(), 3000);
     return () => clearInterval(t);
   }, [reload]);
+
+  // A visitor can enter a goal on the public homepage before signing in. Restore
+  // that exact customer input here; it is an intent, never a generated result.
+  useEffect(() => {
+    const pending = sessionStorage.getItem("krelvan_pending_intent");
+    if (!pending) return;
+    setIntent(pending);
+    sessionStorage.removeItem("krelvan_pending_intent");
+  }, []);
 
   // Cycle build stage messages while building
   useEffect(() => {
@@ -159,6 +170,10 @@ export default function Dashboard() {
   async function handleBuild(e: React.FormEvent) {
     e.preventDefault();
     if (!intent.trim() || building) return;
+    if (modelReady === false) {
+      setBuildError("no model configured");
+      return;
+    }
     setBuilding(true);
     setBuildError(null);
     try {
@@ -264,7 +279,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {buildError && /no llm provider/i.test(buildError) ? (
+      {buildError && /no (llm|model)/i.test(buildError) ? (
         <div role="alert" className="build-needs-model" style={{ margin: "0 var(--s5) var(--s4)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", marginBottom: "var(--s2)" }}>
             <svg viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden="true"><path d="M8 1.6l1.7 4.7L14.4 8l-4.7 1.7L8 14.4l-1.7-4.7L1.6 8l4.7-1.7L8 1.6z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -399,9 +414,9 @@ export default function Dashboard() {
                   </p>
                 </div>
 
-                {/* right — a real run once one exists, else the animated demo (same as homepage) */}
+                {/* right — a real run once one exists, else an honest empty record state */}
                 <div style={{ animation: "fade-in 400ms var(--ease) forwards" }}>
-                  {latestCompleted ? <HeroArtifact run={latestCompleted} /> : <HeroAnimation />}
+                  <HeroArtifact run={latestCompleted} />
                 </div>
               </div>
             </div>

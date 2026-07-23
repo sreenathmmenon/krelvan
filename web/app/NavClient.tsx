@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { listRuns, logout } from "../lib/api";
+import { getAuthStatus, listRuns, logout } from "../lib/api";
 import CommandPalette from "./CommandPalette";
 import { KrelvanLogo } from "./KrelvanLogo";
 
@@ -85,10 +85,13 @@ export default function NavClient() {
   function openCommand() { window.dispatchEvent(new Event("krelvan:open-command")); }
 
   useEffect(() => {
-    if (pathname === "/login" || pathname === "/setup" || pathname?.startsWith("/share/") || pathname?.startsWith("/r/") || pathname?.startsWith("/a/")) return; // don't poll on auth/public pages
+    if (typeof window !== "undefined" && (window.location.pathname === "/" || window.location.pathname === "/faq")) return;
+    if (pathname === "/" || pathname === "/faq" || pathname === "/login" || pathname === "/setup" || pathname?.startsWith("/share/") || pathname?.startsWith("/r/") || pathname?.startsWith("/a/")) return; // don't poll on auth/public pages
     let alive = true;
     async function poll() {
       try {
+        const auth = await getAuthStatus();
+        if (!auth.authenticated) return;
         const runs = await listRuns();
         if (alive) setRunningCount(runs.filter(r => r.status === "running").length);
       } catch { /* API not reachable yet / not logged in */ }

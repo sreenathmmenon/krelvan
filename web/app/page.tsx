@@ -3,109 +3,71 @@ import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  listAgents, listRuns, buildAgent, startRun, autoSummarizeRuns, getStatus, timeAgo,
-  type AgentRecord, type RunRecord, type BuildResult, type ManifestNode, type ManifestEdge,
+  listAgents, listRuns, buildAgent, startRun, autoSummarizeRuns, getStatus, getAuthStatus, timeAgo,
+  type AgentRecord, type RunRecord, type BuildResult,
 } from "../lib/api";
 import {
-  BuildPreviewModal, MiniGraph, HeroAnimation, EXAMPLES, BUILD_STAGES,
+  BuildPreviewModal, MiniGraph, EXAMPLES, BUILD_STAGES,
 } from "./_builder";
 import { loadRegistry, type CatalogEntry } from "../lib/registry";
 import { glyphFor, UI } from "../lib/glyphs";
 
 // ── Krelvan landing — product-first debut ──────────────────────────────────────
 // The homepage IS the working product. On first paint a visitor lands on a dark
-// hero whose right side is a REAL run artifact (or a clearly-labelled live example
-// until a run exists), with a CTA that drops straight into the embedded builder one
+// hero whose right side is a real, inspectable registry manifest, with a CTA that
+// drops straight into the embedded builder one
 // screen below. Within seconds they can describe a goal, watch a real graph compile
 // in the BuildPreviewModal, run it, and open /runs/[id] to see the actual
 // replayable record. We demonstrate ownership by letting you DO and SEE
 // it — never by lecturing about internals. The builder data path is unchanged:
 // same buildAgent / startRun / explainRun as /dashboard; only the page IA + copy.
 
-// Pre-built example graph for the hero artifact when no real run exists yet.
-// Clearly labelled "live example" — never presented with fabricated fields.
-const EXAMPLE_NODES = [
-  { id: "entry", role: "intake", autonomy: "auto", capabilities: [{ name: "web_search", sideEffect: "read", budgetCents: 1 }] },
-  { id: "reason", role: "reason over findings", autonomy: "auto", capabilities: [{ name: "think", sideEffect: "none", budgetCents: 3 }] },
-  { id: "compose", role: "write the digest", autonomy: "auto", capabilities: [{ name: "compose", sideEffect: "none", budgetCents: 2 }] },
-];
-const EXAMPLE_EDGES = [
-  { from: "entry", to: "reason" },
-  { from: "reason", to: "compose" },
-];
-
-// The build-magic panels the hero rotates through — a plain-English sentence, then the
-// real agent SYSTEM it compiles into. This IS the headline made visible.
-const HERO_BUILDS: { prompt: string; nodes: ManifestNode[]; edges: ManifestEdge[] }[] = [
-  {
-    prompt: "Search the web for the latest AI news and summarise the top developments.",
-    nodes: [
-      { id: "search", role: "search the web", autonomy: "auto", capabilities: [{ name: "web_search", sideEffect: "read", budgetCents: 1 }] },
-      { id: "reason", role: "reason over findings", autonomy: "auto", capabilities: [{ name: "think", sideEffect: "none", budgetCents: 3 }] },
-      { id: "digest", role: "write the digest", autonomy: "auto", capabilities: [{ name: "compose", sideEffect: "none", budgetCents: 2 }] },
-    ] as ManifestNode[],
-    edges: [{ from: "search", to: "reason" }, { from: "reason", to: "digest" }] as ManifestEdge[],
-  },
-  {
-    prompt: "Answer customer questions from my docs, and escalate the hard ones to a human.",
-    nodes: [
-      { id: "retrieve", role: "retrieve from docs", autonomy: "auto", capabilities: [{ name: "rag.search", sideEffect: "read", budgetCents: 1 }] },
-      { id: "answer", role: "draft the answer", autonomy: "auto", capabilities: [{ name: "compose", sideEffect: "none", budgetCents: 2 }] },
-      { id: "escalate", role: "escalate to a human", autonomy: "suggest", capabilities: [{ name: "slack_send", sideEffect: "message-human", budgetCents: 1 }] },
-    ] as ManifestNode[],
-    edges: [{ from: "retrieve", to: "answer" }, { from: "answer", to: "escalate" }] as ManifestEdge[],
-  },
-  {
-    prompt: "Watch this page daily and alert me the moment the price changes.",
-    nodes: [
-      { id: "fetch", role: "fetch the page", autonomy: "auto", capabilities: [{ name: "http_get", sideEffect: "read", budgetCents: 1 }] },
-      { id: "detect", role: "detect a change", autonomy: "auto", capabilities: [{ name: "think", sideEffect: "none", budgetCents: 2 }] },
-      { id: "alert", role: "alert me", autonomy: "auto", capabilities: [{ name: "notify_webhook", sideEffect: "message-human", budgetCents: 1 }] },
-    ] as ManifestNode[],
-    edges: [{ from: "fetch", to: "detect" }, { from: "detect", to: "alert" }] as ManifestEdge[],
-  },
-];
-
 function HeroBuildPanel() {
-  const [scene, setScene] = useState(0);
-  const [typed, setTyped] = useState("");
-  const [compiled, setCompiled] = useState(false);
-  const build = HERO_BUILDS[scene]!;
+  const [entry, setEntry] = useState<CatalogEntry | null>(null);
 
   useEffect(() => {
-    // reduced-motion: show the finished state, no typing loop.
-    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      setTyped(build.prompt); setCompiled(true); return;
-    }
-    setTyped(""); setCompiled(false);
-    let i = 0; const full = build.prompt;
-    const typer = setInterval(() => {
-      i += 2; setTyped(full.slice(0, i));
-      if (i >= full.length) { clearInterval(typer); setTimeout(() => setCompiled(true), 450); }
-    }, 34);
-    const rotate = setTimeout(() => setScene(s => (s + 1) % HERO_BUILDS.length), 6800);
-    return () => { clearInterval(typer); clearTimeout(rotate); };
-  }, [scene, build.prompt]);
+    void loadRegistry()
+      .then(registry => {
+        const templates = registry.entries
+          .filter(item => item.kind === "template" && item.manifest)
+          .sort((a, b) => a.manifest!.nodes.length - b.manifest!.nodes.length);
+        setEntry(templates[0] ?? null);
+      })
+      .catch(() => setEntry(null));
+  }, []);
+
+  const manifest = entry?.manifest;
 
   return (
-    <div className="hero-build" aria-hidden="true">
+    <div className="hero-build" aria-label="Inspectable agent manifest from the Krelvan registry">
       <div className="hero-build__bar">
         <span className="hero-build__dots" aria-hidden="true"><i /><i /><i /></span>
-        <span className="hero-build__title mono">describe your agent</span>
+        <span className="hero-build__title mono">registry/index.json</span>
       </div>
       <div className="hero-build__body">
         <div className="hero-build__prompt">
-          <span className="hero-build__caret-line">{typed}<span className="hero-build__caret" /></span>
+          {manifest ? manifest.intent : "Loading an inspectable registry agent…"}
         </div>
-        <div className={`hero-build__result${compiled ? " is-in" : ""}`}>
+        {manifest && (
+        <div className="hero-build__result is-in">
           <div className="hero-build__resulthead mono">
             <span className="hero-build__ok" aria-hidden="true">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </span>
-            compiled · {build.nodes.length} nodes, {build.edges.length} edges
+            real registry manifest · {manifest.nodes.length} nodes
           </div>
-          <MiniGraph nodes={build.nodes} edges={build.edges} entry={build.nodes[0]!.id} variant="dark" maxHeight={150} />
+          <MiniGraph
+            nodes={manifest.nodes}
+            edges={manifest.edges.map(edge => ({ from: edge.from, to: edge.to }))}
+            entry={manifest.entry}
+            variant="dark"
+            maxHeight={150}
+          />
+          <Link href={`/capabilities?install=${encodeURIComponent(entry.name)}`} className="dark-teal mono" style={{ fontSize: 12 }}>
+            Inspect or install {entry.title} →
+          </Link>
         </div>
+        )}
       </div>
     </div>
   );
@@ -277,71 +239,6 @@ function InstallCommand() {
   );
 }
 
-// ── Hero artifact: a REAL run (N events · cost), or a labelled example ──
-// When a completed run exists we render its honest header and link to /runs/[id].
-// Until then we show the pre-built example graph self-running, clearly framed as a
-// "live example" — no invented field names, no fabricated proof.
-function HeroArtifact({ run }: { run: RunRecord | null }) {
-  if (run) {
-    return (
-      <Link
-        href={`/runs/${run.runId}`}
-        className="dark-device"
-        style={{ display: "block", padding: "var(--s5)", textDecoration: "none" }}
-        aria-label={`Open the run record for ${run.manifestName}`}
-      >
-        <div className="micro" style={{ marginBottom: "var(--s3)" }}>A real run · {timeAgo(run.createdAt)}</div>
-        <div
-          className="dark-surface-2"
-          style={{ borderRadius: "var(--r)", padding: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}
-        >
-          <div className="dark-ink" style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-0.01em" }}>
-            {run.manifestName}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap" }}>
-            <span className="dark-verify-seal__mark" aria-hidden="true">
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d={UI.check} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            </span>
-            <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>recorded</span>
-            <span className="dark-ink-muted" aria-hidden="true">·</span>
-            <span className="dark-ink-soft mono" style={{ fontSize: 13 }}>
-              {run.status === "completed" ? "finished" : run.status}
-            </span>
-          </div>
-          <div className="dark-ink-muted small" style={{ display: "flex", alignItems: "center", gap: "var(--s2)" }}>
-            <span>Every step is recorded and can be replayed.</span>
-          </div>
-        </div>
-        <div className="dark-teal mono" style={{ marginTop: "var(--s4)", fontSize: 12, fontWeight: 600 }}>
-          Open this record →
-        </div>
-      </Link>
-    );
-  }
-
-  // No real run yet → labelled live example (the pre-built research-digest graph).
-  return (
-    <div className="dark-device" style={{ padding: "var(--s5)" }}>
-      <div className="micro" style={{ marginBottom: "var(--s3)" }}>Example graph · not yet run</div>
-      <div
-        className="dark-surface-2"
-        style={{ borderRadius: "var(--r)", padding: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}
-      >
-        <div style={{ background: "var(--dark-node-fill)", borderRadius: "var(--r)", padding: "var(--s5)", border: "1px solid var(--dark-line)" }}>
-          <MiniGraph nodes={EXAMPLE_NODES} edges={EXAMPLE_EDGES} entry="entry" variant="dark" maxHeight={120} />
-        </div>
-        {/* Honest: NOTHING has run, so we never show the completed badge here — only on real runs. */}
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", flexWrap: "wrap" }}>
-          <span className="dark-ink-muted mono" style={{ fontSize: 13 }}>3 steps · runs and signs once you build it</span>
-        </div>
-        <div className="dark-ink-muted small">
-          Build your own below — your real runs show up here.
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function focusBuilder() {
   const section = document.getElementById("builder");
   section?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -365,19 +262,22 @@ export default function Landing() {
   const [composeFocused, setComposeFocused] = useState(false);
   const [summaries, setSummaries] = useState<Record<string, string | null>>({});
   const [modelReady, setModelReady] = useState<boolean | null>(null);
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const fetchingSummaries = useRef<Set<string>>(new Set());
 
-  // Track consecutive fetch failures so a logged-out visitor (every call 401s) doesn't
-  // poll a failing endpoint forever on the public landing page.
-  const pollFailures = useRef(0);
-
   const reload = useCallback(async () => {
+    // The homepage is public. Never read private agent/run data from it, even if
+    // an old session cookie happens to exist; private history belongs in the
+    // authenticated dashboard. Build/run actions below remain auth-gated.
+    if (typeof window !== "undefined" && window.location.pathname === "/") {
+      setLoading(false);
+      return;
+    }
     try {
       const [a, r] = await Promise.all([listAgents(), listRuns()]);
       setAgents(a);
       setRuns(r);
-      pollFailures.current = 0;
-    } catch { pollFailures.current += 1; }
+    } catch { /* a later authenticated poll can recover */ }
     finally { setLoading(false); }
   }, []);
 
@@ -396,15 +296,20 @@ export default function Landing() {
   }, [runs, summaries]);
 
   useEffect(() => {
+    void getAuthStatus()
+      .then(status => setAuthenticated(status.authenticated))
+      .catch(() => setAuthenticated(false));
+  }, []);
+
+  useEffect(() => {
+    if (authenticated !== true) {
+      if (authenticated === false) setLoading(false);
+      return;
+    }
     void reload();
-    // Poll for live agents/runs, but give up after 3 consecutive failures (a logged-out
-    // visitor on the marketing page) so we don't hammer a 401-ing endpoint forever.
-    const t = setInterval(() => {
-      if (pollFailures.current >= 3) { clearInterval(t); return; }
-      void reload();
-    }, 3000);
+    const t = setInterval(() => void reload(), 3000);
     return () => clearInterval(t);
-  }, [reload]);
+  }, [authenticated, reload]);
 
   // Model readiness — drives the build gate + the "Model connected" pill.
   useEffect(() => { void getStatus().then(s => setModelReady(s.hasLlm)).catch(() => setModelReady(null)); }, []);
@@ -422,6 +327,15 @@ export default function Landing() {
     // Empty goal: don't error — just guide the eye back to the textarea.
     if (!intent.trim()) {
       document.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+      return;
+    }
+    if (authenticated !== true) {
+      sessionStorage.setItem("krelvan_pending_intent", intent.trim());
+      setBuildError("SIGN_IN_REQUIRED");
+      return;
+    }
+    if (modelReady === false) {
+      setBuildError("no model configured");
       return;
     }
     setBuilding(true);
@@ -538,12 +452,17 @@ export default function Landing() {
                   </span>
                   <span className="micro" style={{ color: "var(--ink-soft)" }}>Describe your agent</span>
                 </span>
-                {modelReady === true && (
+                {authenticated === false && (
+                  <Link href="/login" className="model-pill model-pill--off" title="Sign in to build and run this goal">
+                    <span className="model-pill__dot" /> Sign in to build
+                  </Link>
+                )}
+                {authenticated === true && modelReady === true && (
                   <span className="model-pill model-pill--on" title="A model is connected — you can build agents">
                     <span className="model-pill__dot" /> Model connected
                   </span>
                 )}
-                {modelReady === false && (
+                {authenticated === true && modelReady === false && (
                   <Link href="/secrets#model" className="model-pill model-pill--off" title="No model configured — building is disabled">
                     <span className="model-pill__dot" /> Connect a model
                   </Link>
@@ -571,7 +490,15 @@ export default function Landing() {
                 ))}
               </div>
 
-              {buildError && /no llm provider/i.test(buildError) ? (
+              {buildError === "SIGN_IN_REQUIRED" ? (
+                <div role="alert" className="build-needs-model" style={{ margin: "var(--s4) 0 0", textAlign: "left" }}>
+                  <div style={{ fontWeight: 700, marginBottom: "var(--s2)" }}>Sign in to build this agent</div>
+                  <p className="small soft" style={{ margin: "0 0 var(--s3)", lineHeight: 1.55 }}>
+                    Your goal is saved in this browser tab. After you sign in, Krelvan will put it back in the workspace composer.
+                  </p>
+                  <Link href="/login" className="btn btn-primary btn-sm">Sign in and continue →</Link>
+                </div>
+              ) : buildError && /no (llm|model)/i.test(buildError) ? (
                 <div role="alert" className="build-needs-model" style={{ margin: "var(--s4) 0 0" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--s2)", marginBottom: "var(--s2)" }}>
                     <svg viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden="true"><path d="M8 1.6l1.7 4.7L14.4 8l-4.7 1.7L8 14.4l-1.7-4.7L1.6 8l4.7-1.7L8 1.6z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -749,7 +676,7 @@ export default function Landing() {
           </p>
           <div className="depth-grid">
             {[
-              { k: "The canvas IS the runtime", v: "Every step is a real recorded event. The canvas, run history and cost meter are all pure reads of it — so you can scrub back through any run, step by step, and what you see is exactly what executed.", href: "/runs", cta: "Replay a run", lead: true },
+              { k: "The canvas IS the runtime", v: "Every step is a real recorded event. The canvas, run history and status views are all pure reads of it — so you can scrub back through any run, step by step, and what you see is exactly what executed.", href: "/runs", cta: "Replay a run", lead: true },
               { k: "Failure diagnosis + retry", v: "When a run fails, Krelvan reads its full history to diagnose why, drafts a corrected agent, and re-runs it — and the repair attempt is recorded too, pass or fail.", href: "/runs", cta: "Explain a run", lead: true },
               { k: "Build from plain English", v: "Describe an outcome; get a validated, typed agent graph. The model is a compiler into a manifest the kernel runs — it never executes free-form code.", href: "/dashboard", cta: "Build an agent" },
               { k: "Human-in-the-loop gate", v: "Dial autonomy per step — suggest, act-with-veto, full. It pauses before the steps you gate and shows the exact action, not a summary.", href: "/approvals", cta: "Open approvals" },

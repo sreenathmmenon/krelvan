@@ -829,84 +829,6 @@ export function AgentCard({ agent, agentRuns, onRun, onDelete, summary }: {
   );
 }
 
-// ── Hero artifact: a REAL run (N events · cost), or a labelled live example ─────
-// Shared by the homepage hero and the dashboard hero so both render the SAME proof
-// anchor: "this is what you get after you describe a goal." A real completed run
-// links to its run record; until one exists we show the pre-built example graph,
-// clearly framed as a "live example" — never fabricated proof fields.
-const EXAMPLE_NODES: ManifestNode[] = [
-  { id: "entry", role: "intake", autonomy: "auto", capabilities: [{ name: "web_search", sideEffect: "read", budgetCents: 1 }] },
-  { id: "reason", role: "reason over findings", autonomy: "auto", capabilities: [{ name: "think", sideEffect: "none", budgetCents: 3 }] },
-  { id: "compose", role: "write the digest", autonomy: "auto", capabilities: [{ name: "compose", sideEffect: "none", budgetCents: 2 }] },
-];
-const EXAMPLE_EDGES: ManifestEdge[] = [
-  { from: "entry", to: "reason" },
-  { from: "reason", to: "compose" },
-];
-
-// ── Animated hero: a self-running "agent runs, each step recorded" loop ──────────
-// Pure SVG + CSS keyframes (defined in globals.css, .heroanim-*), no GIF/image, no
-// libs. Nodes light in sequence; as each executes, its ledger row writes in; a
-// "VERIFIED" seal lands; then we rotate to the NEXT agentic use case and replay.
-// Use cases are real agentic patterns (deep research, autonomous code review,
-// incident triage) — not pre-agentic trigger/connector automation.
-// Honoured by the global prefers-reduced-motion block (shows the final frame).
-interface HeroScene {
-  label: string;
-  nodes: [string, string, string];
-  /** index (0-2) of the node that pauses for human approval, if any. */
-  gateNode?: number;
-  rows: { hash: string; action: string; gate?: boolean }[];
-}
-const HERO_SCENES: HeroScene[] = [
-  {
-    label: "deep research",
-    nodes: ["search", "reason", "compose"],
-    rows: [
-      { hash: "e7a2c", action: "agent.build" },
-      { hash: "9f31d", action: "node.search" },
-      { hash: "4b08a", action: "node.reason" },
-      { hash: "c1e6f", action: "node.compose" },
-      { hash: "2da90", action: "event.record" },
-    ],
-  },
-  {
-    label: "PR review",
-    nodes: ["fetch", "analyze", "flag"],
-    rows: [
-      { hash: "a14d8", action: "agent.build" },
-      { hash: "6b2c0", action: "node.fetch_pr" },
-      { hash: "f90e3", action: "node.analyze" },
-      { hash: "3c7a1", action: "node.flag_risk" },
-      { hash: "88b4e", action: "event.record" },
-    ],
-  },
-  {
-    label: "incident triage",
-    nodes: ["alert", "correlate", "diagnose"],
-    rows: [
-      { hash: "d52f9", action: "agent.build" },
-      { hash: "11ace", action: "node.read_alert" },
-      { hash: "7e0b6", action: "node.correlate" },
-      { hash: "c44d2", action: "node.diagnose" },
-      { hash: "9a18f", action: "event.record" },
-    ],
-  },
-  {
-    // The human-approval wedge: a risky step PAUSES for you before it acts.
-    label: "outreach · pauses for you",
-    nodes: ["draft", "approve", "send"],
-    gateNode: 1,
-    rows: [
-      { hash: "5c1a7", action: "agent.build" },
-      { hash: "b803e", action: "node.draft" },
-      { hash: "f27d4", action: "await.approval", gate: true },
-      { hash: "a6e9b", action: "node.send" },
-      { hash: "30cf2", action: "event.record" },
-    ],
-  },
-];
-
 // Inline teal SVG glyphs for UI chrome — NO emoji / unicode symbols anywhere.
 // Both use currentColor so the surrounding CSS `color` (teal / amber gate) still drives them.
 function CheckMark({ size = 12 }: { size?: number }) {
@@ -922,77 +844,6 @@ function SparkMark({ size = 16 }: { size?: number }) {
       <path d="M8 2.5l1.4 4.1L13.5 8l-4.1 1.4L8 13.5l-1.4-4.1L2.5 8l4.1-1.4L8 2.5z"
         stroke="currentColor" strokeWidth={1.4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
-  );
-}
-
-export function HeroAnimation() {
-  const [scene, setScene] = useState(0);
-  useEffect(() => {
-    // each scene plays its full ~6s cycle, then we rotate.
-    const t = setInterval(() => setScene(s => (s + 1) % HERO_SCENES.length), 6000);
-    return () => clearInterval(t);
-  }, []);
-  const s = HERO_SCENES[scene]!;
-  return (
-    <div className="dark-device heroanim" aria-label="An agent running, each step recorded in order" role="img">
-      <div className="heroanim__eyebrow">
-        <span className="heroanim__live"><span className="heroanim__live-dot" />LIVE</span>
-        <span className="micro">{s.label}</span>
-      </div>
-
-      {/* graph: 3 nodes, edges flow, nodes light in sequence. key on scene to replay. */}
-      <div className="heroanim__graph" key={scene}>
-        <svg viewBox="0 0 320 72" width="100%" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-          <defs>
-            <marker id="ha-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L6,3 z" fill="var(--dark-line)" />
-            </marker>
-          </defs>
-          <path className="heroanim__edge heroanim__edge--1" d="M86 36 C112 36, 112 36, 132 36" fill="none" stroke="var(--dark-line)" strokeWidth="2" markerEnd="url(#ha-arrow)" />
-          <path className="heroanim__edge heroanim__edge--2" d="M226 36 C252 36, 252 36, 272 36" fill="none" stroke="var(--dark-line)" strokeWidth="2" markerEnd="url(#ha-arrow)" />
-          {[
-            { x: 16,  label: s.nodes[0], cls: "1", i: 0 },
-            { x: 132, label: s.nodes[1], cls: "2", i: 1 },
-            { x: 248, label: s.nodes[2], cls: "3", i: 2 },
-          ].map(n => {
-            const gated = s.gateNode === n.i;
-            const accent = gated ? "var(--live)" : "var(--dark-brand-bright)";
-            return (
-            <g key={n.cls} className={`heroanim__node heroanim__node--${n.cls}${gated ? " heroanim__node--gate" : ""}`} transform={`translate(${n.x},16)`}>
-              <rect width="72" height="40" rx="9" fill="var(--dark-node-fill)" stroke={gated ? accent : "var(--dark-line)"} strokeWidth="1.4" />
-              <rect className="heroanim__node-bar" width="72" height="3" rx="1.5" fill={accent} />
-              <circle className="heroanim__node-dot" cx="36" cy="18" r="4.5" fill={accent} />
-              <text x="36" y="32" textAnchor="middle" fontSize="8" fontFamily="var(--font-mono)" fill="var(--dark-ink-soft)">{n.label}</text>
-            </g>
-            );
-          })}
-        </svg>
-      </div>
-
-      {/* run record — rows write in as the graph executes */}
-      <div className="heroanim__ledger" key={`l${scene}`}>
-        {s.rows.map((r, i) => (
-          <div key={r.hash} className={`heroanim__row heroanim__row--${i}${r.gate ? " heroanim__row--gate" : ""}`}>
-            <span className="heroanim__check" aria-hidden="true">
-              {r.gate
-                ? <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><rect x="1" y="1" width="2.2" height="6" rx="0.6"/><rect x="4.8" y="1" width="2.2" height="6" rx="0.6"/></svg>
-                : <CheckMark size={10} />}
-            </span>
-            <span className="heroanim__hash">{r.hash}</span>
-            <span className="heroanim__sep">::</span>
-            <span className="heroanim__action">{r.action}</span>
-            <span className={r.gate ? "heroanim__gate-tag" : "heroanim__cost"}>{r.gate ? "waiting on you" : "recorded"}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* the payoff seal */}
-      <div className="heroanim__seal" key={`s${scene}`}>
-        <span className="heroanim__seal-mark" aria-hidden="true"><CheckMark size={11} /></span>
-        <span className="heroanim__seal-text">VERIFIED</span>
-        <span className="heroanim__seal-sub">run complete · replayable</span>
-      </div>
-    </div>
   );
 }
 
@@ -1022,18 +873,12 @@ export function HeroArtifact({ run }: { run: RunRecord | null }) {
   }
   return (
     <div className="dark-device" style={{ padding: "var(--s5)" }}>
-      <div className="micro" style={{ marginBottom: "var(--s3)" }}>Live example · research digest</div>
+      <div className="micro" style={{ marginBottom: "var(--s3)" }}>No run record yet</div>
       <div className="dark-surface-2" style={{ borderRadius: "var(--r)", padding: "var(--s5)", display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
-        <div style={{ background: "var(--dark-node-fill)", borderRadius: "var(--r)", padding: "var(--s5)", border: "1px solid var(--dark-line)" }}>
-          <MiniGraph nodes={EXAMPLE_NODES} edges={EXAMPLE_EDGES} entry="entry" variant="dark" maxHeight={120} />
+        <div className="dark-ink" style={{ fontSize: 18, fontWeight: 500 }}>Your first run will appear here</div>
+        <div className="dark-ink-muted small">
+          Describe a goal and review the generated plan. Only an actual run can create a recorded or verified result.
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexWrap: "wrap" }}>
-          <span className="dark-verify-seal__mark" aria-hidden="true"><CheckMark size={12} /></span>
-          <span className="dark-teal mono" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".02em" }}>recorded</span>
-          <span className="dark-ink-muted" aria-hidden="true">·</span>
-          <span className="dark-ink-soft mono" style={{ fontSize: 13 }}>3 steps</span>
-        </div>
-        <div className="dark-ink-muted small">Build your own below — your real runs show up here.</div>
       </div>
     </div>
   );

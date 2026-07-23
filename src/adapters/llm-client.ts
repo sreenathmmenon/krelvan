@@ -49,6 +49,7 @@
 import { fetchWithRetry } from "./http-retry.js";
 import { getLogger } from "../core/observability/logger.js";
 import { recordMeteredCost } from "../core/capability/cost-meter.js";
+import { ExpectedError } from "../core/errors.js";
 
 const log = getLogger("llm-client");
 
@@ -504,9 +505,10 @@ export function getLLMClient(): LLMClient {
   // "Connect a model". Keyless providers (ollama, and compatible/base-URL setups) are exempt.
   const needsKey = provider !== "ollama" && !(provider === "compatible" && baseUrl);
   if (needsKey && !apiKey) {
-    throw new Error(
+    throw new ExpectedError(
       "no model configured — connect a model provider (set KRELVAN_LLM_API_KEY, " +
       "or use a local one with KRELVAN_LLM_PROVIDER=ollama) before running an agent that thinks.",
+      "MODEL_NOT_CONFIGURED",
     );
   }
 

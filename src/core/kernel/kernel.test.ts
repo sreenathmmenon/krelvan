@@ -13,6 +13,7 @@ import { validateManifest, type Manifest } from "../manifest/manifest.js";
 import { admit, needsApproval, Supervisor, type CapabilityPlugin, type EffectCall } from "../capability/capability.js";
 import { Engine } from "./engine.js";
 import { deriveSubRunId } from "./sub-agent-executor.js";
+import { ExpectedError } from "../errors.js";
 
 // ── deterministic test rig ─────────────────────────────────────────────────────
 
@@ -291,6 +292,47 @@ test("engine: a capability that exhausts retries fails the run (does not hang)",
   });
   await assert.rejects(() => engine.run({ effectRetries: 2 }), /transient failure/);
   assert.equal(counters.b!.n, 0, "run never reached toolB");
+});
+
+test("engine: an expected non-retryable capability failure is attempted once and signed", async () => {
+  const m = twoNodeManifest({
+    nodes: [
+      { id: "a", role: "first", autonomy: "full", capabilities: [{ name: "toolA", sideEffect: "read", budgetCents: 500 }] },
+      { id: "b", role: "second", autonomy: "full", capabilities: [{ name: "toolB", sideEffect: "read", budgetCents: 500 }] },
+    ],
+  });
+  const r = rig();
+  const attempts = { n: 0 };
+  let sleeps = 0;
+  const plugins = new Map<string, CapabilityPlugin>();
+  plugins.set("toolA", {
+    name: "toolA",
+    sideEffect: "read",
+    estimateCents: () => 1,
+    async invoke() {
+      attempts.n++;
+      throw new ExpectedError("no model configured", "MODEL_NOT_CONFIGURED");
+    },
+  });
+  plugins.set("toolB", countingPlugin("toolB", "read", 1, { n: 0 }));
+  const engine = new Engine(m, "t1", "run1", {
+    store: r.store,
+    owner: r.owner,
+    supervisor: new Supervisor(plugins),
+    supervisorSigner: r.supervisorSigner,
+    now: r.now,
+    sleep: async () => { sleeps++; },
+  });
+
+  const result = await engine.run({ effectRetries: 2 });
+  assert.equal(result.status, "failed");
+  assert.equal(result.reason, "no model configured");
+  assert.equal(attempts.n, 1, "configuration errors are never retried");
+  assert.equal(sleeps, 0, "configuration errors do not back off");
+  const events = await r.store.read("t1");
+  const failure = events.find(event => event.type === "RunFailed");
+  assert.equal((failure?.payload as Record<string, unknown> | undefined)?.["code"], "MODEL_NOT_CONFIGURED");
+  assert.ok(verify(events, r.ring).ok, "ledger verifies after the expected failure");
 });
 
 test("engine: crash mid-run, resume, no double-execution", async () => {

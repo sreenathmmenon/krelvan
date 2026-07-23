@@ -40,6 +40,7 @@ import type { FoldAccumulator, RunProjection } from "./project.js";
 import { IncrementalFolder } from "./incremental-fold.js";
 import { NoopTracer, type Tracer } from "../observability/spans.js";
 import { executeSubRun, deriveSubRunId } from "./sub-agent-executor.js";
+import { isExpectedError, isRetryableError } from "../errors.js";
 
 /**
  * Recursively converts non-integer numbers to strings so capability outputs
@@ -288,6 +289,17 @@ export class Engine {
       runSpan.end({ status: "failed", reason: "maxSteps exceeded" }, "error");
       return result;
     } catch (err) {
+      if (isExpectedError(err)) {
+        const reason = err.message;
+        await this.append(
+          { type: "RunFailed", scope: this.scope(), payload: { reason, code: err.code } },
+          this.deps.owner,
+        );
+        const failed = await this.fold();
+        result = { status: "failed", reason, projection: failed };
+        runSpan.end({ status: "failed", reason }, "error");
+        return result;
+      }
       // Unexpected exception (e.g. store error). Close the run span before re-throwing
       // so the observability backend receives a completed (error) span record.
       runSpan.endError(err as Error, { status: "failed" });
@@ -320,6 +332,7 @@ export class Engine {
         return await this.deps.supervisor.run(call, idem);
       } catch (err) {
         lastErr = err;
+        if (!isRetryableError(err)) break;
         if (attempt < maxAttempts) {
           const delay = Math.min(2000, 200 * 2 ** (attempt - 1));
           await (this.deps.sleep ? this.deps.sleep(delay) : new Promise(r => setTimeout(r, delay)));
