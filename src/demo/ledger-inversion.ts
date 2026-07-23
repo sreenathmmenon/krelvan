@@ -67,9 +67,9 @@ async function main(): Promise<void> {
   console.log("VIEW 1 — Canvas (node states), folded from the log:");
   console.log(projectCanvas(events));
 
-  console.log("\nVIEW 2 — Cost meter, folded from the log:");
+  console.log("\nVIEW 2 — Budget meter (abstract units), folded from the log:");
   const cost = projectCost(events);
-  console.log(`  total spent: ${cost.totalCents}¢  (per effect: ${JSON.stringify(cost.byEffect)})`);
+  console.log(`  total used: ${cost.totalCents} units  (per effect: ${JSON.stringify(cost.byEffect)})`);
 
   console.log("\nVIEW 3 — Audit timeline, folded from the log:");
   for (const line of projectTimeline(events)) console.log("  " + line);

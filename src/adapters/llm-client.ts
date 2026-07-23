@@ -495,6 +495,21 @@ export function getLLMClient(): LLMClient {
   const apiKey = process.env["KRELVAN_LLM_API_KEY"] ?? process.env["KRELVAN_ANTHROPIC_KEY"] ?? "";
   const baseUrl = process.env["KRELVAN_LLM_BASE_URL"];
 
+  // No-model guard. The default provider is anthropic; with NO key set, we would otherwise
+  // build an Anthropic client with an empty key and actually POST to the API, get a raw 401
+  // auth payload back, and surface that provider error verbatim in the run output — three
+  // times, once per retry. That is confusing (it reads like a Krelvan bug, not "you haven't
+  // connected a model") AND leaks the provider's raw auth response. Stop BEFORE any network
+  // call with one clear, product-level message the UI already knows how to present as
+  // "Connect a model". Keyless providers (ollama, and compatible/base-URL setups) are exempt.
+  const needsKey = provider !== "ollama" && !(provider === "compatible" && baseUrl);
+  if (needsKey && !apiKey) {
+    throw new Error(
+      "no model configured — connect a model provider (set KRELVAN_LLM_API_KEY, " +
+      "or use a local one with KRELVAN_LLM_PROVIDER=ollama) before running an agent that thinks.",
+    );
+  }
+
   log.info({ provider, hasApiKey: !!apiKey, baseUrl }, "llm-client: initialising");
 
   const inner = buildClient({ provider, apiKey, baseUrl });

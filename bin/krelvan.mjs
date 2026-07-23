@@ -168,6 +168,15 @@ async function ensureBuilt() {
 
   // 1. Core build → dist/api/index.js
   if (!existsSync(join(ROOT, "dist", "api", "index.js"))) {
+    // The build is `tsc`, which lives in the root devDependencies. A customer who
+    // runs `npx krelvan` (or clones and runs directly) has NO root node_modules —
+    // npx only fetches the package's own `dependencies`, never its devDependencies —
+    // so `tsc` isn't on PATH and the build dies with "command not found" (exit 127).
+    // Install root deps first when they're missing, exactly as we do for the web UI.
+    if (!existsSync(join(ROOT, "node_modules", ".bin", "tsc"))) {
+      log("installing core dependencies (first run)…");
+      await run(NPM, ["install"], { cwd: ROOT });
+    }
     log("building core (tsc)…");
     await run(NPM, ["run", "build"], { cwd: ROOT });
   } else {
@@ -202,13 +211,22 @@ let shuttingDown = false;
 function shutdown(code = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
+  // Set the exit code IMMEDIATELY. The forced-exit below runs on a timer, and an
+  // .unref()'d timer lets Node exit on its own the moment the event loop empties —
+  // which, on an early build failure with no live children, is right now, at the
+  // default exit code 0. That produced a FALSE SUCCESS: the build died (127) but the
+  // launcher reported 0, so CI/automation read a broken install as working. Pinning
+  // process.exitCode guarantees the real code even if Node exits before the timer.
+  process.exitCode = code;
   log("shutting down…");
   for (const child of children) {
     if (!child.killed) {
       try { child.kill("SIGTERM"); } catch { /* already gone */ }
     }
   }
-  // Give children a moment to exit, then force.
+  // Give children a moment to exit, then force. NOT .unref()'d — we want this timer
+  // to keep the process alive long enough to SIGKILL stragglers; without live
+  // children it fires and exits promptly anyway, now with the correct code.
   setTimeout(() => {
     for (const child of children) {
       if (!child.killed) {
@@ -216,7 +234,7 @@ function shutdown(code = 0) {
       }
     }
     process.exit(code);
-  }, 2000).unref();
+  }, 2000);
 }
 
 process.on("SIGINT", () => shutdown(0));

@@ -37,5 +37,9 @@ web/.env.*
 # Local rule-1 UI evidence (Playwright screenshots) — kept out of the repo; the curated
 # launch screenshots live in docs/screenshots/ instead.
 web/audit/
+# Editor/scratch backups and local evidence harnesses must never ship in the public
+# archive — one such .bak leaked a literal test-login password into the download.
+*.bak
+web/_evidence.*
 .vercel
 .env*.local

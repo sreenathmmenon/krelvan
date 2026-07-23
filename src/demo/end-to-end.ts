@@ -91,21 +91,21 @@ async function main(): Promise<void> {
   console.log("\nVIEW — Canvas (node states), folded from the log:");
   for (const [node, st] of Object.entries(p.nodes)) console.log(`  ${node}: ${st.concluded ? "done" : st.entered ? "running" : "idle"} (visits ${st.visits})`);
 
-  console.log("\nVIEW — Cost meter (exact integer cents), folded from the log:");
-  console.log(`  spent ${p.budget.runSpentCents}¢ of ${manifest.runBudgetCents}¢ budget; reserved open: ${p.budget.runReservedCents}¢`);
+  console.log("\nVIEW — Budget meter (abstract units, folded exactly from the log):");
+  console.log(`  used ${p.budget.runSpentCents} of ${manifest.runBudgetCents} budget units; reserved open: ${p.budget.runReservedCents}`);
 
   console.log("\nVIEW — Who signed each effect result (plugins never self-sign):");
   for (const e of events as LedgerEvent[]) {
     if (e.type === "EffectResult") {
       const pl = e.payload as { idem?: string; costCents?: number };
-      console.log(`  ${pl.idem} → ${pl.costCents}¢, signed by '${e.author}'`);
+      console.log(`  ${pl.idem} → ${pl.costCents} units, signed by '${e.author}'`);
     }
   }
 
   const allOk = res.status === "completed" && v.ok && p.budget.runSpentCents === 15;
   console.log(
     allOk
-      ? "\n✅ End-to-end: a real 3-agent run drove itself off the ledger, gated a human-facing\n   effect, settled cost exactly, and the whole log verifies. Plugins did not self-sign.\n"
+      ? "\n✅ End-to-end: a real 3-agent run drove itself off the ledger, gated a human-facing\n   effect, settled the budget exactly, and the whole log verifies. Plugins did not self-sign.\n"
       : "\n❌ something did not match expectations\n",
   );
   process.exit(allOk ? 0 : 1);

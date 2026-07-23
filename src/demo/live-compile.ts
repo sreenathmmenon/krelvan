@@ -66,7 +66,7 @@ async function main(): Promise<void> {
   }
 
   const m = res.signed.manifest;
-  console.log(`✓ compiled + signed. manifest "${m.name}" — ${m.nodes.length} nodes, budget ${m.runBudgetCents}¢`);
+  console.log(`✓ compiled + signed. manifest "${m.name}" — ${m.nodes.length} nodes, budget ${m.runBudgetCents} units`);
   console.log(`  nodes: ${m.nodes.map((n) => `${n.id}[${n.capabilities.map((c) => c.name).join(",")}]`).join(" → ")}`);
 
   // Register stub plugins for each capability in the manifest.
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
 
   console.log(`  run status: ${run.status}`);
   console.log(`  ledger: ${events.length} signed events, verified: ${v.ok ? "✔" : "✗"}`);
-  console.log(`  cost: ${p.budget.runSpentCents}¢`);
+  console.log(`  budget: ${p.budget.runSpentCents} units used`);
   console.log(
     run.status === "completed" && v.ok
       ? "\n✅ LIVE: a real model proposed a workflow; the compiler signed it within authority;\n   the engine ran it off the ledger and the log verifies.\n"

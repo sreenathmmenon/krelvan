@@ -308,17 +308,25 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
   // "this failed, retry with a fix" panel. Conflating the two makes the run state contradict
   // itself ("awaiting approval" + "retry the failure") on a product whose whole pitch is
   // proving exactly what happened.
+  // Fire the auto-diagnose AT MOST ONCE per run. Guarding on `diagnosis`/`diagnosing`
+  // alone is not enough: when diagnoseRun REJECTS (e.g. no model configured → 503),
+  // `diagnosis` stays null and `.finally` flips `diagnosing` back to false, so the
+  // effect's deps change and it re-fires immediately — an unbounded retry storm
+  // (thousands of 503s in seconds). A ref that records "we already tried this run"
+  // makes the attempt terminal: one request, success or failure, then stop.
+  const diagnoseAttemptedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!detail) return;
     if (detail.run.status !== "failed") return;
-    if (diagnosis || diagnosing) return;
+    if (diagnoseAttemptedFor.current === id) return;
+    diagnoseAttemptedFor.current = id;
     setDiagnosing(true);
     setDiagnoseError(null);
     void diagnoseRun(id)
       .then(res => setDiagnosis(res))
       .catch(err => setDiagnoseError((err as Error).message))
       .finally(() => setDiagnosing(false));
-  }, [detail?.run.status, diagnosis, diagnosing, id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail?.run.status, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRetryWithFix() {
     if (retrying) return;

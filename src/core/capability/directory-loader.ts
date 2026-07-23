@@ -128,7 +128,31 @@ export function loadCapabilityDirectory(
     }
   }
 
+  // A capability shipped as compiled JS keeps its .ts SOURCE beside it in the archive
+  // (e.g. text-transform.js + text-transform.ts). At runtime under plain Node (the
+  // customer path — no tsx registered) importing the .ts throws "Unknown file extension
+  // '.ts'", logging a load failure for a file that is just the source of the .js we already
+  // have. When a runnable sibling (.js/.mjs/.cjs) exists for the same basename+dir, drop the
+  // .ts so it is never import()ed. In tsx dev mode only the .ts exists, so nothing is dropped.
+  result.jsModulePaths = dedupeModulePaths(result.jsModulePaths);
+
   return result;
+}
+
+/**
+ * Collapse a list of module paths so that when both a runnable JS variant and its .ts
+ * source share the same directory+basename, only the runnable one is kept. Order-preserving.
+ */
+function dedupeModulePaths(paths: string[]): string[] {
+  const runnable = new Set(
+    paths
+      .filter(p => /\.(js|mjs|cjs)$/i.test(p))
+      .map(p => p.replace(/\.(js|mjs|cjs)$/i, "")),
+  );
+  return paths.filter(p => {
+    if (!/\.ts$/i.test(p)) return true;
+    return !runnable.has(p.replace(/\.ts$/i, ""));
+  });
 }
 
 /**
