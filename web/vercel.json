@@ -2,10 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "build": {
     "env": {
-      "KRELVAN_API_ORIGIN": "https://api.krelvan.com"
+      "NEXT_PUBLIC_KRELVAN_MARKETING_ONLY": "1"
     }
   },
   "env": {
-    "KRELVAN_API_ORIGIN": "https://api.krelvan.com"
+    "NEXT_PUBLIC_KRELVAN_MARKETING_ONLY": "1"
   }
 }

@@ -73,8 +73,8 @@ export default function LoginPage() {
           </h1>
           <p className="auth-split__sub">
             Krelvan turns plain English into real agents that act across your tools and run on
-            your schedule — extend them from an open marketplace, publish what you make, and
-            sell what works.
+            your schedule — extend them from an open marketplace and publish inspectable agents
+            through the open registry.
           </p>
           <div className="auth-split__trust">
             <span>Open source</span><span aria-hidden="true">·</span>
@@ -112,8 +112,8 @@ export default function LoginPage() {
           </form>
           <p className="small muted" style={{ marginTop: "var(--s5)", lineHeight: 1.6 }}>
             No instance yet? Krelvan is self-hosted — your admin account is created on first run.{" "}
-            <a href="https://github.com/sreenathmmenon/krelvan#quick-start" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", fontWeight: 500 }}>
-              Read the 60-second setup →
+            <a href="https://github.com/sreenathmmenon/krelvan#run-it" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", fontWeight: 500 }}>
+              Read the setup guide →
             </a>
           </p>
         </div>

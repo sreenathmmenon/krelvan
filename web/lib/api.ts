@@ -189,14 +189,13 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     // Keep this in sync with middleware PUBLIC_PATHS. /faq is a public marketing page — a
     // logged-out visitor's FAQ API calls may 401 and must degrade gracefully, NOT bounce the
     // whole window to /login (that made clicking "FAQ" from the nav a dead-end sign-in wall).
-    const isPublic = p === "/" || p === "/faq" || p.startsWith("/login") || p.startsWith("/setup") || p.startsWith("/share/") || p.startsWith("/r/") || p.startsWith("/a/");
+    const isPublic = p === "/" || p === "/faq" || p === "/marketplace" || p.startsWith("/login") || p.startsWith("/setup") || p.startsWith("/share/") || p.startsWith("/r/") || p.startsWith("/a/");
     if (!isPublic) {
       // If a session cookie is present but the server rejects us, the session likely ended (e.g. the
       // server restarted — sessions are in-memory) or the IP tripped the lockout after it ended.
       // Tell the customer why instead of a bare login.
-      const hadSession = document.cookie.includes("krelvan_sid=");
       sessionStorage.removeItem("krelvan_csrf");
-      window.location.href = hadSession ? "/login?reason=session-ended" : "/login";
+      window.location.href = "/login?reason=session-ended";
     }
   }
   if (!res.ok) {

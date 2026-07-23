@@ -50,6 +50,7 @@ import { fetchWithRetry } from "./http-retry.js";
 import { getLogger } from "../core/observability/logger.js";
 import { recordMeteredCost } from "../core/capability/cost-meter.js";
 import { ExpectedError } from "../core/errors.js";
+import { assertOllamaMemorySafe } from "./ollama-memory-guard.js";
 
 const log = getLogger("llm-client");
 
@@ -308,70 +309,90 @@ class OllamaLLMClient implements LLMClient {
   constructor(private readonly baseUrl: string) {}
 
   async complete(req: LLMRequest): Promise<LLMResponse> {
-    // Ollama native API — format:"json" forces valid JSON; passing the full schema
-    // constrains the output to match it (supported in Ollama ≥0.4).
-    // format: a schema constrains to that shape; plainText asks for prose (no format);
-    // otherwise default to "json" (the think/route/compiler callers parse JSON).
-    const format = req.schema ? req.schema.schema : req.plainText ? undefined : "json";
-    const body: Record<string, unknown> = {
-      model: req.model,
-      messages: [{ role: "system", content: req.system }, ...req.messages],
-      stream: false,
-      options: { temperature: req.temperature, num_predict: req.maxTokens },
-    };
-    if (format !== undefined) body["format"] = format;
+    return withOllamaMemoryLease(this.baseUrl, req.model, async () => {
+      // Ollama native API — format:"json" forces valid JSON; passing the full schema
+      // constrains the output to match it (supported in Ollama ≥0.4).
+      // format: a schema constrains to that shape; plainText asks for prose (no format);
+      // otherwise default to "json" (the think/route/compiler callers parse JSON).
+      const format = req.schema ? req.schema.schema : req.plainText ? undefined : "json";
+      const body: Record<string, unknown> = {
+        model: req.model,
+        messages: [{ role: "system", content: req.system }, ...req.messages],
+        stream: false,
+        options: { temperature: req.temperature, num_predict: req.maxTokens },
+        keep_alive: 0,
+      };
+      if (format !== undefined) body["format"] = format;
 
-    // Ollama local inference can be slow on large prompts — allow up to 10 minutes.
-    const outcome = await fetchWithRetry(
-      `${this.baseUrl}/api/chat`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      },
-      { maxAttempts: 1, baseDelayMs: 0, timeoutMs: 600_000 },
-    );
+      // Ollama local inference can be slow on large prompts — allow up to 10 minutes.
+      const outcome = await fetchWithRetry(
+        `${this.baseUrl}/api/chat`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+        { maxAttempts: 1, baseDelayMs: 0, timeoutMs: 600_000 },
+      );
 
-    if (!outcome.ok) {
-      const msg = outcome.status === 0
-        ? `network error (is Ollama running?): ${outcome.rawBody}`
-        : `Ollama API ${outcome.status}: ${outcome.rawBody}`;
-      throw new Error(msg);
-    }
+      if (!outcome.ok) {
+        const msg = outcome.status === 0
+          ? `network error (is Ollama running?): ${outcome.rawBody}`
+          : `Ollama API ${outcome.status}: ${outcome.rawBody}`;
+        throw new Error(msg);
+      }
 
-    const json = (await outcome.resp.json()) as {
-      message?: { content?: string };
-      prompt_eval_count?: number;
-      eval_count?: number;
-    };
+      const json = (await outcome.resp.json()) as {
+        message?: { content?: string };
+        prompt_eval_count?: number;
+        eval_count?: number;
+      };
 
-    const text = (json.message?.content ?? "").trim();
+      const text = (json.message?.content ?? "").trim();
 
-    return {
-      text,
-      inputTokens: json.prompt_eval_count ?? 0,
-      outputTokens: json.eval_count ?? 0,
-    };
+      return {
+        text,
+        inputTokens: json.prompt_eval_count ?? 0,
+        outputTokens: json.eval_count ?? 0,
+      };
+    });
   }
 
   /** Ollama native embeddings — POST /api/embeddings, one call per text (the native
    *  endpoint embeds a single prompt). Local + free (e.g. nomic-embed-text, 768-dim). */
   async embed(texts: string[], model: string): Promise<EmbedResponse> {
-    const vectors: number[][] = [];
-    for (const prompt of texts) {
-      const outcome = await fetchWithRetry(
-        `${this.baseUrl}/api/embeddings`,
-        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model, prompt }) },
-        { maxAttempts: 2, baseDelayMs: 500, timeoutMs: 120_000 },
-      );
-      if (!outcome.ok) {
-        throw new Error(outcome.status === 0 ? `embeddings network error (is Ollama running?): ${outcome.rawBody}` : `Ollama embeddings ${outcome.status}: ${outcome.rawBody}`);
+    return withOllamaMemoryLease(this.baseUrl, model, async () => {
+      const vectors: number[][] = [];
+      for (const prompt of texts) {
+        const outcome = await fetchWithRetry(
+          `${this.baseUrl}/api/embeddings`,
+          { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model, prompt, keep_alive: 0 }) },
+          { maxAttempts: 2, baseDelayMs: 500, timeoutMs: 120_000 },
+        );
+        if (!outcome.ok) {
+          throw new Error(outcome.status === 0 ? `embeddings network error (is Ollama running?): ${outcome.rawBody}` : `Ollama embeddings ${outcome.status}: ${outcome.rawBody}`);
+        }
+        const json = (await outcome.resp.json()) as { embedding?: number[] };
+        if (!Array.isArray(json.embedding) || json.embedding.length === 0) throw new Error("Ollama embeddings returned no vector");
+        vectors.push(json.embedding);
       }
-      const json = (await outcome.resp.json()) as { embedding?: number[] };
-      if (!Array.isArray(json.embedding) || json.embedding.length === 0) throw new Error("Ollama embeddings returned no vector");
-      vectors.push(json.embedding);
-    }
-    return { vectors, inputTokens: 0 };
+      return { vectors, inputTokens: 0 };
+    });
+  }
+}
+
+let ollamaLeaseTail: Promise<void> = Promise.resolve();
+
+async function withOllamaMemoryLease<T>(baseUrl: string, model: string, run: () => Promise<T>): Promise<T> {
+  const previous = ollamaLeaseTail;
+  let release = (): void => {};
+  ollamaLeaseTail = new Promise<void>(resolve => { release = resolve; });
+  await previous;
+  try {
+    await assertOllamaMemorySafe({ baseUrl, model });
+    return await run();
+  } finally {
+    release();
   }
 }
 

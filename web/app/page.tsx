@@ -11,6 +11,7 @@ import {
 } from "./_builder";
 import { loadRegistry, type CatalogEntry } from "../lib/registry";
 import { glyphFor, UI } from "../lib/glyphs";
+import { MARKETING_ONLY } from "../lib/deployment";
 
 // ── Krelvan landing — product-first debut ──────────────────────────────────────
 // The homepage IS the working product. On first paint a visitor lands on a dark
@@ -54,7 +55,7 @@ function HeroBuildPanel() {
             <span className="hero-build__ok" aria-hidden="true">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </span>
-            real registry manifest · {manifest.nodes.length} nodes
+            real registry manifest · {manifest.nodes.length} {manifest.nodes.length === 1 ? "node" : "nodes"}
           </div>
           <MiniGraph
             nodes={manifest.nodes}
@@ -63,8 +64,8 @@ function HeroBuildPanel() {
             variant="dark"
             maxHeight={150}
           />
-          <Link href={`/capabilities?install=${encodeURIComponent(entry.name)}`} className="dark-teal mono" style={{ fontSize: 12 }}>
-            Inspect or install {entry.title} →
+          <Link href={`/marketplace?entry=${encodeURIComponent(entry.name)}`} className="dark-teal mono" style={{ fontSize: 12 }}>
+            Inspect {entry.title} →
           </Link>
         </div>
         )}
@@ -88,7 +89,7 @@ function ConnectorStrip() {
       <span className="connector-strip__label micro">Works with</span>
       <div className="connector-strip__row">
         {CONNECTORS.map(c => <span key={c} className="connector-chip mono">{c}</span>)}
-        <Link href="/capabilities?install=&kind=mcp" className="connector-chip connector-chip--more mono">+ more →</Link>
+        <Link href="/marketplace" className="connector-chip connector-chip--more mono">+ more →</Link>
       </div>
     </div>
   );
@@ -138,9 +139,9 @@ function HeroStatStrip() {
   // Each stat links to the page that PROVES it — on a "don't trust claims, verify them"
   // product, a number the visitor can't click to is just marketing.
   const stats = [
-    { n: c ? String(c.total) : "—", l: "capabilities", href: "/capabilities" },
-    { n: c ? String(c.agents) : "—", l: "ready-to-run agents", href: "/capabilities?kind=template" },
-    { n: c ? String(c.mcp) : "—", l: "MCP connectors", href: "/capabilities?kind=mcp" },
+    { n: c ? String(c.total) : "—", l: "marketplace entries", href: "/marketplace" },
+    { n: c ? String(c.agents) : "—", l: "agent templates", href: "/marketplace" },
+    { n: c ? String(c.mcp) : "—", l: "MCP connectors", href: "/marketplace" },
     { n: "7", l: "LLM providers", href: "/faq" },
   ];
   return (
@@ -177,8 +178,8 @@ function ExampleGallery() {
           Start from a <span style={{ color: "var(--brand)" }}>real agent</span> — or audit one before you trust it.
         </h2>
         <p className="body-lg soft" style={{ maxWidth: "62ch", marginBottom: "var(--s5)" }}>
-          No hosted black box. Every entry is an inspectable file in a public registry. Install any
-          in one click and watch it run — every step recorded, the risky ones pausing for your approval.
+          No hosted black box. Every entry is an inspectable file in a public registry. In your
+          installation, install an entry and watch it run with risky steps pausing for approval.
         </p>
         {/* The depth numbers live in the hero stat strip above the fold; this section is
             about BROWSING, so it leads with the real integrations + the example agents
@@ -187,7 +188,7 @@ function ExampleGallery() {
         <ConnectorStrip />
         <div className="home-examples">
           {items.map(e => (
-            <Link key={e.name} href={`/capabilities?install=${encodeURIComponent(e.name)}`} className="home-example card">
+            <Link key={e.name} href={`/marketplace?entry=${encodeURIComponent(e.name)}`} className="home-example card">
               <span className="home-example__icon" aria-hidden="true">
                 <svg viewBox="0 0 16 16" width={18} height={18} fill="none">
                   <path d={glyphFor(e.name, e.category, e.kind)} stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" />
@@ -196,13 +197,13 @@ function ExampleGallery() {
               <div style={{ minWidth: 0 }}>
                 <div className="home-example__title">{e.title}</div>
                 <div className="home-example__desc small soft">{e.oneLiner}</div>
-                <div className="home-example__cta small">Install &amp; run →</div>
+                <div className="home-example__cta small">Inspect →</div>
               </div>
             </Link>
           ))}
         </div>
         <div style={{ marginTop: "var(--s6)" }}>
-          <Link href="/capabilities" className="btn btn-secondary btn-sm">Browse all {items.length >= 9 ? "agents & connectors" : "agents"} →</Link>
+          <Link href="/marketplace" className="btn btn-secondary btn-sm">Browse all {items.length >= 9 ? "agents & connectors" : "agents"} →</Link>
         </div>
       </div>
     </section>
@@ -296,6 +297,11 @@ export default function Landing() {
   }, [runs, summaries]);
 
   useEffect(() => {
+    if (MARKETING_ONLY) {
+      setAuthenticated(false);
+      setLoading(false);
+      return;
+    }
     void getAuthStatus()
       .then(status => setAuthenticated(status.authenticated))
       .catch(() => setAuthenticated(false));
@@ -312,7 +318,10 @@ export default function Landing() {
   }, [authenticated, reload]);
 
   // Model readiness — drives the build gate + the "Model connected" pill.
-  useEffect(() => { void getStatus().then(s => setModelReady(s.hasLlm)).catch(() => setModelReady(null)); }, []);
+  useEffect(() => {
+    if (MARKETING_ONLY) return;
+    void getStatus().then(s => setModelReady(s.hasLlm)).catch(() => setModelReady(null));
+  }, []);
 
   // Cycle build-stage messages while building (same cadence as the workspace)
   useEffect(() => {
@@ -327,6 +336,10 @@ export default function Landing() {
     // Empty goal: don't error — just guide the eye back to the textarea.
     if (!intent.trim()) {
       document.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+      return;
+    }
+    if (MARKETING_ONLY) {
+      setBuildError("DOWNLOAD_REQUIRED");
       return;
     }
     if (authenticated !== true) {
@@ -397,8 +410,8 @@ export default function Landing() {
               </h1>
               <p className="dark-ink-soft body-lg" style={{ maxWidth: "52ch", marginBottom: "var(--s5)" }}>
                 Krelvan turns plain English into real agents that act across your tools and run
-                on your schedule — then an open marketplace to extend what exists, publish what
-                you make, and sell what works.
+                on your schedule. Extend it from an open Git registry, or publish your own
+                inspectable entry through the registry review process.
               </p>
               <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap", marginTop: "var(--s2)" }}>
                 {/* Primary CTA matches the headline: the product is BUILD-first. */}
@@ -431,7 +444,9 @@ export default function Landing() {
           leads, so the page shows what you can build first. */}
       <section id="builder" className="builder-zone" style={{ scrollMarginTop: "var(--s6)" }}>
         <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s8)", textAlign: "center" }}>
-          <h2 className="h1" style={{ marginBottom: "var(--s3)" }}>Build and run an agent in seconds.</h2>
+          <h2 className="h1" style={{ marginBottom: "var(--s3)" }}>
+            {MARKETING_ONLY ? "Start with a goal. Run it on your own machine." : "Build and run an agent."}
+          </h2>
           <p className="body-lg soft" style={{ maxWidth: "48ch", margin: "0 auto var(--s6)" }}>
             Describe what you want done. Krelvan plans the agent, shows it to you, and runs it on your own machine.
           </p>
@@ -452,7 +467,12 @@ export default function Landing() {
                   </span>
                   <span className="micro" style={{ color: "var(--ink-soft)" }}>Describe your agent</span>
                 </span>
-                {authenticated === false && (
+                {MARKETING_ONLY && (
+                  <span className="model-pill model-pill--on" title="The public website does not run private agents">
+                    <span className="model-pill__dot" /> Runs in your install
+                  </span>
+                )}
+                {!MARKETING_ONLY && authenticated === false && (
                   <Link href="/login" className="model-pill model-pill--off" title="Sign in to build and run this goal">
                     <span className="model-pill__dot" /> Sign in to build
                   </Link>
@@ -490,7 +510,16 @@ export default function Landing() {
                 ))}
               </div>
 
-              {buildError === "SIGN_IN_REQUIRED" ? (
+              {buildError === "DOWNLOAD_REQUIRED" ? (
+                <div role="status" className="build-needs-model" style={{ margin: "var(--s4) 0 0", textAlign: "left" }}>
+                  <div style={{ fontWeight: 700, marginBottom: "var(--s2)" }}>Run this goal in your own Krelvan</div>
+                  <p className="small soft" style={{ margin: "0 0 var(--s3)", lineHeight: 1.55 }}>
+                    The public website is read-only and has no shared customer accounts. Download Krelvan,
+                    connect your model, and build this goal with your data staying in your installation.
+                  </p>
+                  <a href="https://github.com/sreenathmmenon/krelvan#run-it" className="btn btn-primary btn-sm">Download and run →</a>
+                </div>
+              ) : buildError === "SIGN_IN_REQUIRED" ? (
                 <div role="alert" className="build-needs-model" style={{ margin: "var(--s4) 0 0", textAlign: "left" }}>
                   <div style={{ fontWeight: 700, marginBottom: "var(--s2)" }}>Sign in to build this agent</div>
                   <p className="small soft" style={{ margin: "0 0 var(--s3)", lineHeight: 1.55 }}>
@@ -538,7 +567,7 @@ export default function Landing() {
                   title={!intent.trim() ? "Type a goal above to build your agent" : undefined}
                   style={{ minWidth: 150 }}
                 >
-                  {building ? "Building…" : "Build agent →"}
+                  {building ? "Building…" : MARKETING_ONLY ? "Run on my machine →" : "Build agent →"}
                 </button>
               </div>
             </form>
@@ -607,11 +636,11 @@ export default function Landing() {
         <div className="container" style={{ paddingTop: "var(--s9)", paddingBottom: "var(--s9)", textAlign: "center" }}>
           <p className="micro dark-teal" style={{ marginBottom: "var(--s3)" }}>Output where you live</p>
           <h2 className="display dark-ink" style={{ fontSize: "clamp(1.9rem, 4vw, 2.9rem)", fontWeight: 780, letterSpacing: "-0.02em", marginBottom: "var(--s3)" }}>
-            One result. Every channel you already use.
+            One result. Deliver it through supported channels.
           </h2>
           <p className="dark-ink-soft body-lg" style={{ maxWidth: "56ch", margin: "0 auto var(--s5)" }}>
-            Every agent&apos;s output lands in the Agent Inbox out of the box — then fans out to
-            Telegram, email, Slack, WhatsApp, and more. Encrypted, per-user, no lock-in.
+            The Agent Inbox works out of the box. Email, Telegram, Slack, webhooks, and other
+            configured connectors can deliver the same output without moving execution to our website.
           </p>
           <div className="deliver-radial">
             <svg viewBox="0 0 800 340" preserveAspectRatio="none" aria-hidden="true">
@@ -637,7 +666,8 @@ export default function Landing() {
             A framework gives you parts. Krelvan gives you the <span style={{ color: "var(--brand)" }}>whole working system</span>.
           </h2>
           <p className="body-lg soft" style={{ maxWidth: "60ch", marginBottom: "var(--s7)" }}>
-            You could wire this yourself in a raw agent framework. Then you own the hard parts forever.
+            You can wire these layers yourself in a raw agent framework. Krelvan provides an integrated,
+            inspectable implementation you can run and evaluate.
           </p>
           <div className="contrast-grid">
             {[
@@ -671,19 +701,19 @@ export default function Landing() {
             The infrastructure <span style={{ color: "var(--brand)" }}>underneath</span>.
           </h2>
           <p className="body-lg soft" style={{ maxWidth: "60ch", marginBottom: "var(--s7)" }}>
-            The hard parts are solved — full run history, failure diagnosis, human control, a real sandbox —
-            so you build the domain logic and ship agentic solutions in days, not months.
+            Full run history, failure diagnosis, human control, and process isolation are built into
+            the current system, so you can focus more of your work on domain logic.
           </p>
           <div className="depth-grid">
             {[
-              { k: "The canvas IS the runtime", v: "Every step is a real recorded event. The canvas, run history and status views are all pure reads of it — so you can scrub back through any run, step by step, and what you see is exactly what executed.", href: "/runs", cta: "Replay a run", lead: true },
-              { k: "Failure diagnosis + retry", v: "When a run fails, Krelvan reads its full history to diagnose why, drafts a corrected agent, and re-runs it — and the repair attempt is recorded too, pass or fail.", href: "/runs", cta: "Explain a run", lead: true },
-              { k: "Build from plain English", v: "Describe an outcome; get a validated, typed agent graph. The model is a compiler into a manifest the kernel runs — it never executes free-form code.", href: "/dashboard", cta: "Build an agent" },
-              { k: "Human-in-the-loop gate", v: "Dial autonomy per step — suggest, act-with-veto, full. It pauses before the steps you gate and shows the exact action, not a summary.", href: "/approvals", cta: "Open approvals" },
-              { k: "Real OS-process sandbox", v: "Untrusted TS plugins under node --permission, SSRF-guarded brokered egress, secrets injected only at the destination. Adversarially tested.", href: "/capabilities", cta: "Browse capabilities" },
-              { k: "Memory + RAG, offline-capable", v: "Episodic, semantic and trust-aware memory with provenance. rag.ingest / rag.search with local embeddings via Ollama — no key, no network.", href: "/capabilities?install=personal-advisor", cta: "Try the advisor" },
-              { k: "7 providers, swappable", v: "Anthropic, OpenAI, Gemini, Groq, Mistral, any OpenAI-compatible — or Ollama fully local, no key, no network. Switch per agent.", href: "/secrets#model", cta: "Connect a model" },
-              { k: "Scheduled + self-hosted", v: "Cron and interval schedules run agents unattended. Self-hosted auth — scrypt, sessions, CSRF — so an internet-facing box stays yours.", href: "/schedules", cta: "See schedules" },
+              { k: "The canvas IS the runtime", v: "Every step is a real recorded event. The canvas, run history and status views are all pure reads of it — so you can scrub back through any run, step by step, and what you see is exactly what executed.", href: "/faq", cta: "Read how it works", lead: true },
+              { k: "Failure diagnosis + retry", v: "When a run fails, Krelvan reads its full history to diagnose why, drafts a corrected agent, and re-runs it — and the repair attempt is recorded too, pass or fail.", href: "/faq", cta: "Read the details", lead: true },
+              { k: "Build from plain English", v: "Describe an outcome; get a validated, typed agent graph. The model is a compiler into a manifest the kernel runs — it never executes free-form code.", href: "/faq", cta: "See how building works" },
+              { k: "Human-in-the-loop gate", v: "Dial autonomy per step — suggest, act-with-veto, full. It pauses before the steps you gate and shows the exact action, not a summary.", href: "/faq", cta: "Read about approvals" },
+              { k: "Real OS-process sandbox", v: "Untrusted TS plugins run with restricted process permissions, brokered network access, and secrets injected only at the destination.", href: "/marketplace", cta: "Inspect capabilities" },
+              { k: "Memory + RAG, offline-capable", v: "Episodic, semantic and trust-aware memory with provenance. Local embeddings can run through Ollama.", href: "/marketplace?entry=personal-advisor", cta: "Inspect the advisor" },
+              { k: "7 providers, swappable", v: "Anthropic, OpenAI, Gemini, Groq, Mistral, any OpenAI-compatible endpoint, or Ollama locally. Configure the provider in your installation.", href: "/faq", cta: "Compare providers" },
+              { k: "Scheduled + self-hosted", v: "Cron and interval schedules run agents unattended. The downloaded application includes its own admin setup, sessions, and request protection.", href: "/faq", cta: "Read self-hosting guidance" },
             ].map(c => (
               <Link key={c.k} href={c.href} className={`card depth-card${c.lead ? " depth-card--lead" : ""}`}>
                 <div className="depth-card__title">
@@ -741,13 +771,13 @@ export default function Landing() {
           </p>
           <div className="cta-lanes">
             <div className="cta-lane">
-              <div className="cta-lane__time mono">~60 sec</div>
+              <div className="cta-lane__time mono">First run</div>
               <div className="cta-lane__title">Clone &amp; run</div>
               <p className="cta-lane__desc">One command boots the API + web UI on <span className="mono">localhost:3100</span>, or <span className="mono">docker compose up</span>. Describe a goal and get a real agent.</p>
               <InstallCommand />
             </div>
             <div className="cta-lane">
-              <div className="cta-lane__time mono">~3 sec</div>
+              <div className="cta-lane__time mono">Source</div>
               <div className="cta-lane__title">Read the source</div>
               <p className="cta-lane__desc">It&apos;s all open — the builder, the marketplace, the capabilities. Star it if it&apos;s your kind of thing.</p>
               <a href="https://github.com/sreenathmmenon/krelvan" className="btn btn-dark-ghost btn-sm" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s2)" }}>
@@ -756,10 +786,10 @@ export default function Landing() {
               </a>
             </div>
             <div className="cta-lane">
-              <div className="cta-lane__time mono">~15 sec</div>
-              <div className="cta-lane__title">See it work</div>
-              <p className="cta-lane__desc">Watch an agent answer real customer questions, grounded on real data.</p>
-              <button type="button" className="btn btn-dark-ghost btn-sm" onClick={focusBuilder}>Try it →</button>
+              <div className="cta-lane__time mono">Read-only</div>
+              <div className="cta-lane__title">Inspect a real agent</div>
+              <p className="cta-lane__desc">Open a real registry manifest before deciding whether to install it.</p>
+              <Link href="/marketplace?entry=research-analyst" className="btn btn-dark-ghost btn-sm">Inspect it →</Link>
             </div>
           </div>
         </div>

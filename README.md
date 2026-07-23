@@ -89,14 +89,16 @@ npm install
 npx krelvan          # run INSIDE the cloned repo — builds core + web, then starts both
 ```
 
-The first run builds the web UI (~2–3 minutes, one time only). After that, starts take seconds.
+`npm install` is optional: the launcher installs missing dependencies itself. The first run
+builds the web UI and can take several minutes; later starts reuse that build.
 
 ```
-Web UI   http://localhost:3100
-API      http://localhost:3201/api/health
+Web UI        http://localhost:3100
+Internal API http://localhost:3201/api/health
 ```
 
-`Ctrl-C` stops both. Ports: `PORT` (API, default 3201) · `KRELVAN_WEB_PORT` (web, default 3100).
+`Ctrl-C` stops both. Ports: `PORT` or `KRELVAN_WEB_PORT` (public web, default 3100) ·
+`KRELVAN_API_PORT` (internal API, default 3201).
 
 **Or, fully isolated (no Node toolchain needed) — Docker:**
 
@@ -107,8 +109,9 @@ docker compose up --build
 Same URLs. The SQLite database persists in the named volume `krelvan-data`, so your agents
 and runs survive restarts.
 
-> **Note:** `npx krelvan` runs from inside the cloned repository (it invokes the project's own
-> launcher). Krelvan is not published to npm yet — clone the repo to run it.
+> **Note:** Run `npx krelvan` inside the cloned repository. The existing `krelvan@0.0.1`
+> npm package is only a clone-repository pointer, not the application; use the Git repository
+> until a package containing the full product is published.
 
 **Enable LLM features:** copy `.env.example` → `.env` and set a provider + key:
 
@@ -120,6 +123,11 @@ KRELVAN_LLM_API_KEY=sk-ant-...
 
 Or go local with **no key**: `KRELVAN_LLM_PROVIDER=ollama` · `KRELVAN_LLM_MODEL=llama3.2`.
 Without any provider the UI still runs and clearly reports LLM as off.
+
+For Ollama, Krelvan checks host memory before asking Ollama to load a model. It refuses the
+request when projected use reaches the safety ceiling (85% by default and never configurable
+above 85%), and asks Ollama to unload the model after each response. Override to a lower ceiling
+with `KRELVAN_OLLAMA_MEMORY_LIMIT_PERCENT`.
 
 ---
 

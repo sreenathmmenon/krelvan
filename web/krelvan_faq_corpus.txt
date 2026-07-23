@@ -1,14 +1,14 @@
 Q: What is Krelvan?
 A: Krelvan is a self-hostable, open-source platform for building and running AI agents you own. You describe a goal in plain English; Krelvan builds a real agent, shows you the plan before anything executes, runs it on your machine, and keeps a signed, replayable record of every step it took. The core idea: the ledger is the runtime. Every run is an append-only, cryptographically signed event log, and the canvas, the audit timeline, and the run history are all direct reads of that one log — so what you see is exactly what executed, by construction.
 
-Q: Is it free? Is it really open-source?
-A: Yes. Krelvan is Apache-2.0. You self-host it on your own machine, run it for yourself, your team, or your clients, extend it, and build free or paid solutions on top — you own what you build. There is no license fee and no metering; the only running cost is whatever you pay your model provider, and with a local model that can be nothing.
+Q: Is it really open-source?
+A: Yes. Krelvan is Apache-2.0. You self-host it on your own machine, run it for yourself, your team, or your clients, extend it, and own what you build.
 
 Q: Is Krelvan a hosted service? Do I need an account?
-A: No. Krelvan is self-host first: the API, the web UI, and the signed ledger all run on your own box, and there is no hosted edition today. The only account is the admin credential you create for your own install — self-hosted auth with scrypt password hashing, sessions, and CSRF protection — so an internet-facing box stays yours.
+A: No. The public website is a read-only product and registry surface, not a shared customer workspace. The API, web UI, agents, and records run on your own box. The only account is the admin credential you create for your own installation.
 
 Q: How do I install and run it?
-A: Two ways. With Node 22+, clone the repository and run `npx krelvan` — one command builds and starts both the API (port 3201) and the web UI (port 3100). Or run `docker compose up --build` for the same result. Everything Krelvan persists lives in a single data directory — the SQLite ledger plus your signing and secret keys — so backing up your install means backing up one folder.
+A: Two ways. With Node 22+, clone the repository and run `npx krelvan` — one command prepares and starts the web application at localhost:3100 and its internal API. Or run `docker compose up --build`. Everything Krelvan persists lives in a single data directory, so backing up your install means backing up one folder.
 
 Q: Do I need an LLM API key just to try it?
 A: No. The web UI and API boot with no secrets at all — the app runs and clearly reports that LLM features are off. Building agents, run explanations, and failure diagnosis switch on when you connect a provider: either an API key, or a local Ollama model with no key and no network.
@@ -41,7 +41,7 @@ Q: Can an agent act without my approval?
 A: Only to the degree you allow. Every step has an autonomy level — `suggest` (propose only), `act-with-veto` (act, but pause first on anything risky), or `full`. Independently, every capability declares a side-effect class, and irreversible or spend-class actions pause for human approval and show you the exact action it wants to take, not a summary. Capabilities are deny-by-default: one that was never granted never runs, no matter what the model asks for.
 
 Q: What are budgets?
-A: Hard ceilings, enforced before a step runs. Each run and each capability carries a ceiling in integer cents, and admission uses reserve-then-settle: the projected amount is reserved before dispatch, then settled to what was actually observed afterwards. A step that would exceed its run or per-capability ceiling is refused up front — the model can't spend its way past the limit, and concurrent calls can't each sneak under it.
+A: Hard execution allowances, enforced before a step runs. Each run and capability carries a ceiling. The projected allowance is reserved before dispatch and settled from the observed result afterwards. A step that would exceed a ceiling is refused before it starts, including when several calls run concurrently.
 
 Q: How does Krelvan handle prompt injection?
 A: Honestly: no agent platform can make prompt injection impossible, and we won't claim otherwise. What Krelvan does is bound the blast radius with mechanical guards: capability monotonicity in the compiler (content an agent read can never widen what the agent is allowed to do), untrusted inbound content is quarantined in memory with provenance, conditional logic is a restricted typed-AST evaluator — there is no `eval` anywhere — and outbound HTTP goes through an allowlisted, SSRF-guarded egress channel. And because every step lands in the signed ledger, if something does go wrong you can see exactly what happened — provably, after the fact.
@@ -65,7 +65,7 @@ Q: Can agents run on a schedule?
 A: Yes. Cron and interval schedules run agents unattended — a price watcher every hour, a digest every morning. Scheduled runs go through exactly the same pipeline as manual ones: same budgets, same approval gates, same signed ledger.
 
 Q: What are the honest limitations today?
-A: Single-tenant: an install is one workspace. There is no multi-tenant store yet (a PostgreSQL adapter is on the roadmap), so “one team, one box” is the deployment model today. Self-host only: there is no hosted edition. If you want Krelvan, you run it — which is the point, but it does mean you administer it. Local models bypass budget accounting: cost estimates for Ollama and other local endpoints are 0, so budget ceilings don't meaningfully constrain fully-local runs. Some edges are still growing: messaging channels are send-only today (an agent can message you; you can't reply to drive it), and the canvas shows and replays agent graphs but isn't a drag-to-edit editor yet.
+A: Single-tenant: an install is one workspace. There is no multi-tenant store yet, so “one team, one box” is the deployment model today. Self-host only: there is no hosted edition. Before loading an Ollama model, Krelvan refuses requests whose projected host-memory use would reach the configured ceiling, which defaults to and cannot exceed 85%; operating-system and Ollama limits remain the final enforcement boundary. Some edges are still growing: messaging channels are send-only today, and the canvas shows and replays agent graphs but isn't a drag-to-edit editor yet.
 
 Q: Is it production-ready?
 A: We'd rather under-claim. This is an early release, and the status section of the README marks exactly which parts are battle-tested. The load-bearing proof core — the ledger, the signing, the export, the offline verifier, and the plugin sandbox — is the most heavily tested part of the system, including adversarial tests against forgery, downgrade, and chain-breaks. Strict typecheck and the test suite run clean. Judge it yourself: the code, the tests, and a premortem doc enumerating failure modes (each with its guard and status) are all public in the repository.

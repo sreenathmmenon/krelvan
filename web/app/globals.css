@@ -1570,6 +1570,7 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--s4);
 }
+.public-mobile-actions { display: none; align-items: center; gap: var(--s1); }
 /* Primary product nav — icon + label pills with a clear pill active state. */
 .nav-links { position: relative; display: flex; align-items: center; gap: var(--s1); }
 .nav-link {
@@ -1695,6 +1696,11 @@ a.table-row-link:hover > * { background: var(--surface-hover); }
   .nav-more { display: none; }
   .nav-running { display: none; }
   .nav-burger { display: inline-flex; }
+  .public-mobile-actions { display: flex; }
+}
+@media (max-width: 420px) {
+  .public-mobile-actions .nav-link { padding-inline: var(--s2); font-size: 13px; }
+  .public-mobile-actions .btn { padding-inline: var(--s3); }
 }
 @media (prefers-reduced-motion: reduce) {
   .nav-scrim, .nav-mobile, .nav-more__menu { animation: none; }

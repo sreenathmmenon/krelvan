@@ -13,6 +13,7 @@
 
 import { type NextRequest } from "next/server";
 import { SESSION_COOKIE, COOKIE_SECURE, readSessionCookie } from "../../../lib/cookie";
+import { MARKETING_ONLY } from "../../../lib/deployment";
 
 // The backend origin the proxy forwards to.
 //  1. KRELVAN_API_ORIGIN — explicit override (self-hosted / local dev set this).
@@ -46,6 +47,9 @@ function json(status: number, body: unknown): Response {
 }
 
 async function forward(req: NextRequest, path: string[]): Promise<Response> {
+  if (MARKETING_ONLY) {
+    return json(404, { error: "The public website does not expose a private Krelvan workspace." });
+  }
   const apiPath = path.join("/");
   // Read the session from the cookie (direct browser → proxy), OR from the X-Krelvan-Session
   // header when this proxy sits BEHIND another proxy (e.g. a Vercel front door forwards to this

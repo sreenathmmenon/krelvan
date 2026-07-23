@@ -3,7 +3,8 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getAuthStatus, listRuns, logout } from "../lib/api";
+import { listRuns, logout } from "../lib/api";
+import { MARKETING_ONLY } from "../lib/deployment";
 import CommandPalette from "./CommandPalette";
 import { KrelvanLogo } from "./KrelvanLogo";
 
@@ -85,20 +86,24 @@ export default function NavClient() {
   function openCommand() { window.dispatchEvent(new Event("krelvan:open-command")); }
 
   useEffect(() => {
-    if (typeof window !== "undefined" && (window.location.pathname === "/" || window.location.pathname === "/faq")) return;
-    if (pathname === "/" || pathname === "/faq" || pathname === "/login" || pathname === "/setup" || pathname?.startsWith("/share/") || pathname?.startsWith("/r/") || pathname?.startsWith("/a/")) return; // don't poll on auth/public pages
+    if (pathname === "/" || pathname === "/faq" || pathname === "/marketplace" || pathname === "/login" || pathname === "/setup" || pathname?.startsWith("/share/") || pathname?.startsWith("/r/") || pathname?.startsWith("/a/")) return;
     let alive = true;
     async function poll() {
+      if (document.visibilityState !== "visible") return;
       try {
-        const auth = await getAuthStatus();
-        if (!auth.authenticated) return;
         const runs = await listRuns();
         if (alive) setRunningCount(runs.filter(r => r.status === "running").length);
       } catch { /* API not reachable yet / not logged in */ }
     }
     void poll();
-    const t = setInterval(() => void poll(), 5000);
-    return () => { alive = false; clearInterval(t); };
+    const t = setInterval(() => void poll(), 15000);
+    const onVisible = () => { if (document.visibilityState === "visible") void poll(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [pathname]);
 
   useEffect(() => {
@@ -186,7 +191,7 @@ export default function NavClient() {
   // Public marketing pages (home, FAQ) get a MARKETING nav — a logged-out visitor must not
   // see the authenticated app shell (Dashboard/Runs/Secrets/Approvals + sign-out), which
   // reads as a leaked internal build. Just: logo · FAQ · GitHub · one primary CTA.
-  const isPublic = pathname === "/" || pathname === "/faq";
+  const isPublic = pathname === "/" || pathname === "/faq" || pathname === "/marketplace";
   if (isPublic) {
     // The public header renders as a LIGHT (cream) bar on both / and /faq — so the logo and
     // links must use DARK ink, never dark-mode white (which was invisible on the light bar).
@@ -210,19 +215,25 @@ export default function NavClient() {
               {/* Real product nav — what a visitor actually wants: build it, browse the
                   marketplace, read the docs. FAQ + GitHub are secondary, not the whole menu. */}
               <a href={pathname === "/" ? "#builder" : "/#builder"} className="nav-link">Build an agent</a>
-              <a href={pathname === "/" ? "#marketplace" : "/#marketplace"} className="nav-link">Marketplace</a>
+              <Link href="/marketplace" className="nav-link" data-active={pathname === "/marketplace"}>Marketplace</Link>
               <a href="https://github.com/sreenathmmenon/krelvan#readme" className="nav-link" target="_blank" rel="noopener noreferrer">Docs</a>
               <Link href="/faq" className="nav-link" data-active={pathname === "/faq"}>FAQ</Link>
               <a href="https://github.com/sreenathmmenon/krelvan" className="nav-link" target="_blank" rel="noopener noreferrer" aria-label="GitHub repository">GitHub</a>
             </nav>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexShrink: 0 }}>
-            <Link href="/login" className="nav-link" style={{ opacity: 0.9 }}>Sign in</Link>
+            {!MARKETING_ONLY && <Link href="/login" className="nav-link" style={{ opacity: 0.9 }}>Sign in</Link>}
             <a href="https://github.com/sreenathmmenon/krelvan" target="_blank" rel="noopener noreferrer"
               className="btn btn-sm nav-cta btn-primary">
-              Get started
+              Download
             </a>
           </div>
+          {MARKETING_ONLY && (
+            <div className="public-mobile-actions">
+              <Link href="/marketplace" className="nav-link">Registry</Link>
+              <a href="https://github.com/sreenathmmenon/krelvan#run-it" className="btn btn-primary btn-sm">Download</a>
+            </div>
+          )}
         </div>
       </header>
     );

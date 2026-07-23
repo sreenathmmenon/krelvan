@@ -7,11 +7,26 @@
 // the data calls go through the self-gated proxy, which simply returns 401 (swallowed).
 import { NextResponse, type NextRequest } from "next/server";
 import { readSessionCookie } from "./lib/cookie";
+import { MARKETING_ONLY } from "./lib/deployment";
 
-const PUBLIC_PATHS = new Set(["/", "/login", "/setup", "/faq"]);
+const PUBLIC_PATHS = new Set(["/", "/login", "/setup", "/faq", "/marketplace"]);
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  if (MARKETING_ONLY) {
+    const isPublicAsset =
+      pathname.startsWith("/_next") ||
+      pathname.startsWith("/favicon") ||
+      pathname.includes(".");
+    if (isPublicAsset || pathname.startsWith("/proxy") || pathname === "/" || pathname === "/faq" || pathname === "/marketplace") {
+      return NextResponse.next();
+    }
+    const url = req.nextUrl.clone();
+    url.pathname = "/";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
 
   // Allowlist: the proxy (self-gated), the auth pages, Next internals, static files.
   // Public artifact share pages (/share/:token) are read-only and authenticated by the

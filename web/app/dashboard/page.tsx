@@ -109,6 +109,9 @@ export default function Dashboard() {
   // runId → summary text (null = generating, string = done, key absent = not started)
   const [summaries, setSummaries] = useState<Record<string, string | null>>({});
   const fetchingSummaries = useRef<Set<string>>(new Set());
+  const runsRef = useRef<RunRecord[]>(runs);
+
+  useEffect(() => { runsRef.current = runs; }, [runs]);
 
   const reload = useCallback(async () => {
     try {
@@ -136,10 +139,29 @@ export default function Dashboard() {
   }, [runs, summaries]);
 
   useEffect(() => {
-    void reload();
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function poll() {
+      if (!alive) return;
+      if (document.visibilityState === "visible") await reload();
+      if (!alive) return;
+      const active = runsRef.current.some(run => run.status === "pending" || run.status === "running");
+      timer = setTimeout(() => void poll(), active ? 5000 : 30000);
+    }
+    void poll();
     void getStatus().then(status => setModelReady(status.hasLlm)).catch(() => setModelReady(null));
-    const t = setInterval(() => void reload(), 3000);
-    return () => clearInterval(t);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        if (timer) clearTimeout(timer);
+        void poll();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [reload]);
 
   // A visitor can enter a goal on the public homepage before signing in. Restore

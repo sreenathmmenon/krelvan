@@ -1,6 +1,6 @@
 {
   "name": "krelvan",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Krelvan \u2014 own, run, and trust your own AI agents. The ledger is the runtime.",
   "type": "module",
   "license": "Apache-2.0",
@@ -30,6 +30,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
     "start": "node dist/api/index.js",
     "up": "node bin/krelvan.mjs up",
     "typecheck": "tsc -p tsconfig.json --noEmit",

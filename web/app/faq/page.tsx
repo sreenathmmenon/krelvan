@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { glyphFor, UI } from "../../lib/glyphs";
+import { MARKETING_ONLY } from "../../lib/deployment";
 
 // FAQ — grouped, honest answers rendered as native <details>/<summary> accordions
 // (keyboard-accessible for free, zero JS). Every claim on this page is true of the
@@ -41,13 +42,14 @@ const SECTIONS: Section[] = [
       {
         q: "Is Krelvan a hosted service? Do I need an account?",
         a: [
-          "No. Krelvan is self-host first: the API, the web UI, and all your data run on your own box, and there is no hosted edition today. The only account is the admin credential you create for your own install — self-hosted auth with scrypt password hashing, sessions, and CSRF protection — so an internet-facing box stays yours.",
+          "No. This public website is a read-only product and registry surface; it does not provide shared customer workspaces. The API, web UI, agents, and data run in your own Krelvan installation.",
+          "The sign-in screen belongs only to a downloaded installation. It protects that installation's single workspace with the admin credential created during first-run setup.",
         ],
       },
       {
         q: "How do I install and run it?",
         a: [
-          "Two ways. With Node 22+, clone the repository and run `npx krelvan` — one command builds and starts both the API (port 3201) and the web UI (port 3100). Or run `docker compose up --build` for the same result.",
+          "Two ways. With Node 22+, clone the repository and run `npx krelvan` — the launcher prepares and starts the web application at `localhost:3100` and its internal API. Or run `docker compose up --build`.",
           "Everything Krelvan persists lives in a single data directory — the SQLite database plus your secret keys — so backing up your install means backing up one folder.",
         ],
       },
@@ -127,7 +129,7 @@ const SECTIONS: Section[] = [
       {
         q: "What are budgets?",
         a: [
-          "Hard ceilings, enforced before a step runs. Each run and each capability carries a ceiling in integer cents, and admission uses reserve-then-settle: the projected amount is reserved before dispatch, then settled to what was actually observed afterwards. A step that would exceed its run or per-capability ceiling is refused up front — the model can't spend its way past the limit, and concurrent calls can't each sneak under it.",
+          "They are hard execution allowances enforced before a step runs. Each run and capability carries a ceiling; Krelvan reserves the projected allowance before dispatch and settles it from the observed result afterwards. A step that would exceed a ceiling is refused before it starts, including when several calls run concurrently.",
         ],
       },
       {
@@ -196,7 +198,7 @@ const SECTIONS: Section[] = [
         a: [
           "Single-tenant: an install is one workspace. There is no multi-tenant store yet (a PostgreSQL adapter is on the roadmap), so “one team, one box” is the deployment model today.",
           "Self-host only: there is no hosted edition. If you want Krelvan, you run it — which is the point, but it does mean you administer it.",
-          "Local model safety depends on the limits configured in your local model server; Krelvan cannot enforce a host-level memory ceiling on another process.",
+          "Before Krelvan asks Ollama to load a model, it checks host memory and the model metadata available from Ollama. The request is refused when projected host use would cross the configured ceiling, which defaults to 85%. This is a preflight guard; operating-system and Ollama limits remain the final enforcement boundary.",
           "Some edges are still growing: messaging channels are send-only today (an agent can message you; you can't reply to drive it), and the canvas shows and replays agent graphs but isn't a drag-to-edit editor yet.",
         ],
       },
@@ -292,7 +294,9 @@ export default function FaqPage() {
               {"The fastest answer is the product itself — build an agent, run it, and open the full run history. Or read the source; it's all there."}
             </p>
             <div style={{ display: "flex", gap: "var(--s3)", justifyContent: "center", flexWrap: "wrap" }}>
-              <Link href="/dashboard" className="btn btn-primary">Build an agent</Link>
+              {MARKETING_ONLY
+                ? <Link href="/marketplace" className="btn btn-primary">Inspect the registry</Link>
+                : <Link href="/dashboard" className="btn btn-primary">Build an agent</Link>}
               <a href="https://github.com/sreenathmmenon/krelvan" className="btn btn-secondary">Read the source</a>
               <a href="mailto:zreenathmenon@gmail.com" className="btn btn-ghost">Ask us directly</a>
             </div>

@@ -71,8 +71,8 @@ function SetupForm() {
           </h1>
           <p className="auth-split__sub">
             Krelvan turns plain English into real agents that act across your tools and run on
-            your schedule — extend them from an open marketplace, publish what you make, and
-            sell what works.
+            your schedule — extend them from an open marketplace and publish inspectable agents
+            through the open registry.
           </p>
           <div className="auth-split__trust">
             <span>Open source</span><span aria-hidden="true">·</span>
