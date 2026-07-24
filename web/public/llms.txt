@@ -1,0 +1,17 @@
+# Krelvan
+
+> Krelvan lets users describe tasks in plain English, then plans and runs a multi-step agent graph locally, with no coding required.
+
+Krelvan is an open-source, self-hostable platform for building and running AI agents. Users interact with a visual canvas where each node represents a real recorded execution step. Agents can connect to external tools, and risky steps pause for human approval before proceeding.
+
+## Product
+
+- [Home](https://www.krelvan.com/): Overview of Krelvan, the agent builder, and how recorded agent execution works.
+- [Download](https://www.krelvan.com/download): Versioned npm, Docker, and signed-release installation options.
+- [Marketplace](https://www.krelvan.com/marketplace): Inspectable agent templates, capabilities, and connectors from the open registry.
+- [FAQ](https://www.krelvan.com/faq): Installation, model configuration, security, scheduling, and self-hosting guidance.
+
+## Source and registry
+
+- [Source code](https://github.com/sreenathmmenon/krelvan): Krelvan source, documentation, release history, and issue tracker.
+- [Open registry](https://github.com/sreenathmmenon/krelvan-registry): Git-based registry of inspectable agents, capabilities, and connectors.
