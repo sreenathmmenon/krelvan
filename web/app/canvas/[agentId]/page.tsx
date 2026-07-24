@@ -957,7 +957,7 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
             {verification?.ok
               ? <>{verification.signedEvents}/{verification.runEvents} recorded</>
               : verification && !verification.ok ? "Verify failed"
-              : selectedRunId ? "Checking…" : "Replayable"}
+              : selectedRunId ? "Checking…" : runs.length === 0 ? "No run yet" : "Replayable"}
           </Link>
 
           {/* run selector */}
@@ -1023,7 +1023,9 @@ export default function CanvasPage({ params, searchParams }: { params: Promise<{
             disabled={startingRun || detail?.run.status === "running"}
             style={{ flexShrink: 0 }}
           >
-            {startingRun ? <><span className="spinner" aria-hidden="true" style={{ width: 13, height: 13, borderTopColor: "var(--brand-ink)", borderColor: "rgba(255,255,255,.4)" }} /> Starting…</> : <><IconPlay /> Run again</>}
+            {startingRun
+              ? <><span className="spinner" aria-hidden="true" style={{ width: 13, height: 13, borderTopColor: "var(--brand-ink)", borderColor: "rgba(255,255,255,.4)" }} /> Starting…</>
+              : <><IconPlay /> {runs.length === 0 ? "Run now" : "Run again"}</>}
           </button>
         </div>
 

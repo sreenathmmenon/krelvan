@@ -415,8 +415,8 @@ Created — never "re-architected"). Every claim is code-verified. Krelvan is in
 - Shipped it as a full self-hosted product: a visual canvas where the graph you watch *is* the graph that runs, a tamper-evident audit timeline, and agents that diagnose their own failures and rebuild a corrected version automatically.
 
 ## Version 3 — A platform to build on
-**Krelvan — A WordPress-Style Platform for AI Agents** *(in active development)* · TypeScript · Next.js · Plugin Marketplace · MCP · Self-Hosted
-- Building the open layer for agentic AI: download it, self-host it, extend it with plugins, and build & sell agentic solutions on top — the way WordPress opened up the web.
+**Krelvan — A plugin CMS-Style Platform for AI Agents** *(in active development)* · TypeScript · Next.js · Plugin Marketplace · MCP · Self-Hosted
+- Building the open layer for agentic AI: download it, self-host it, extend it with plugins, and build & sell agentic solutions on top — the way plugin CMS opened up the web.
 - Created a natural-language builder that turns a goal into a running, signed agent in seconds, paired with a GitHub-based marketplace where the community publishes installable capabilities.
 - Made any MCP server instantly usable — connect one and every tool it exposes becomes a governed capability, under the same approval gates and signed audit trail as everything else.
 - Designed for the people who build *for* others: agencies and dev shops can self-host per client and hand over a cryptographically-signed record of everything their agents did.

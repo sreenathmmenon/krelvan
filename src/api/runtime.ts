@@ -1780,7 +1780,37 @@ export class KrelvanRuntime {
     const out: { label: string; value: string }[] = [];
     const add = (label: string, v?: string) => { if (v) out.push({ label, value: v.slice(0, 600) }); };
 
-    if (capability === "email_send") {
+    if (capability === "remember") {
+      // A remember node is normally bound to an exact upstream deliverable through
+      // remember_map ("fact_name=nodeId.outputKey"). Show only those values. A generic
+      // result/body preview can otherwise select an earlier fetch and expose pages of
+      // raw HTML instead of the memory write the customer is approving.
+      const map = typeof state["remember_map"] === "string" ? state["remember_map"] : "";
+      for (const pair of map.split(",")) {
+        const eq = pair.indexOf("=");
+        if (eq <= 0) continue;
+        const fact = pair.slice(0, eq).trim();
+        const sourceKey = pair.slice(eq + 1).trim();
+        const value = state[sourceKey];
+        if (!fact || !sourceKey || typeof value !== "string" || !value.trim()) continue;
+        const label = fact === "last_output"
+          ? "Memory"
+          : `Memory · ${fact.replace(/[_-]+/g, " ")}`;
+        add(label, value);
+      }
+
+      // Older manifests may not have remember_map. Keep the preview useful, but skip
+      // fetched markup so approval never masquerades a source document as the fact.
+      if (out.length === 0) {
+        const fallback = Object.entries(state).reverse().find(([key, value]) =>
+          /\.(body|result|output|text)$/.test(key) &&
+          typeof value === "string" &&
+          value.trim().length > 0 &&
+          !/^\s*(?:<!doctype|<html[\s>])/i.test(value),
+        );
+        add("Memory", typeof fallback?.[1] === "string" ? fallback[1] : undefined);
+      }
+    } else if (capability === "email_send") {
       add("To", pick("to", "recipient", "creator_handle"));
       add("Subject", pick("subject"));
       add("Message", pick("message", "body", "reply"));

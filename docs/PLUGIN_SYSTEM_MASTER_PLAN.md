@@ -3,7 +3,7 @@
 *Goal: make the capability/plugin system (YAML · MCP · TypeScript · built-ins) the best and most-talked-about
 in the agent space, and seed the marketplace with the top-25 real-world agent requirements people pay for.
 This plan is grounded in 4 code+market research streams (file:line-cited gaps, MCP-vs-YAML per connector,
-the demand ranking, and the bar set by Composio/n8n/MCP-registry/WordPress).*
+the demand ranking, and the bar set by Composio/n8n/MCP-registry/plugin CMS).*
 
 ---
 
@@ -71,7 +71,7 @@ authoring docs. (See §3 catalog.)
 
 ### Phase D — Best-in-class DX + trust (the buzz) [P2]
 - **D1. `genesis plugin new --kind yaml|mcp|ts` scaffolder + `genesis plugin check`** (the secret/dotfile
-  scan + schema + SSRF lint that gates publish). WordPress-PCP + n8n-linter model.
+  scan + schema + SSRF lint that gates publish). plugin CMS-PCP + n8n-linter model.
 - **D2. Per-connector docs** in the registry (`docsUrl`, input examples) + Connector Packs (curated bundles
   = "Sales Stack", "Support Stack" — one install, whole workflow).
 - **D3. Signed-by line + verified badge** surfaced on every listing (signing already exists).
@@ -96,7 +96,7 @@ covered by a meta-connector (Composio/Pipedream).
 | 9 | GoHighLevel CRM | GoHighLevel | MCP (official GHL) |
 | 10 | WhatsApp bot | Twilio WhatsApp | **YAML** (Messages API) |
 | 11 | AI into apps | http_get/http_post (built-in) | built-in ✓ |
-| 12 | Content pipeline | OpenAI + WordPress + Buffer | YAML (wordpress) + built-in compose |
+| 12 | Content pipeline | OpenAI + plugin CMS + Buffer | YAML (plugin-cms) + built-in compose |
 | 13 | Invoice extraction | OpenAI vision + QuickBooks + Sheets | MCP (quickbooks, sheets) |
 | 14 | CRM sync | HubSpot/Salesforce/Pipedrive + Stripe + Sheets | MCP (hubspot, salesforce, stripe) + YAML (pipedrive) |
 | 15 | Lead scoring | HubSpot + Clay/Apollo + Slack | MCP + YAML (clay) |
@@ -117,7 +117,7 @@ covered by a meta-connector (Composio/Pipedream).
   shopify, gohighlevel, google-workspace (gmail+calendar+sheets+drive via `workspace-mcp`), pinecone,
   resend, airtable, quickbooks.
 - **YAML HTTP wrappers (MCP weak/absent):** twilio (SMS+WhatsApp), pipedrive, clay (webhook), mailchimp
-  marketing, sendgrid, buffer, klaviyo, wordpress.
+  marketing, sendgrid, buffer, klaviyo, plugin-cms.
 - **META-connector (the long-tail catch-all):** one Composio or Pipedream MCP entry → hundreds more apps.
 
 **Security caution (from research):** do NOT ship the archived Anthropic reference servers (slack, gdrive,

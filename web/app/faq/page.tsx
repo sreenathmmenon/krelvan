@@ -49,8 +49,22 @@ const SECTIONS: Section[] = [
       {
         q: "How do I install and run it?",
         a: [
-          "Two ways. With Node 22+, clone the repository and run `npx krelvan` — the launcher prepares and starts the web application at `localhost:3100` and its internal API. Or run `docker compose up --build`.",
-          "Everything Krelvan persists lives in a single data directory — the SQLite database plus your secret keys — so backing up your install means backing up one folder.",
+          "The fastest path is Node 22+ and `npx krelvan@0.1.2`. The version is explicit so a later release cannot replace the package you reviewed. For a container install, download the versioned `docker-compose.release.yml` from the GitHub release and start it with Docker Compose. The Download page has copyable commands for both paths and for the signed tarball.",
+          "The npm launcher's first start builds the web UI and can take a few minutes; later starts reuse that build. It opens at `localhost:3100` and stores persistent data in `~/.krelvan` unless you set another data directory.",
+        ],
+      },
+      {
+        q: "What happens on the first start?",
+        a: [
+          "The terminal prints a one-time setup token and the local URL. Open the URL, paste that token, and create the admin account for this installation. Then open `Settings → Model & secrets`, connect a model, and return to the Dashboard to build an agent.",
+          "The admin account is local to this installation. It is not a krelvan.com account, and the public website does not receive your credential, agents, or run data.",
+        ],
+      },
+      {
+        q: "How do I stop, restart, back up, or upgrade it?",
+        a: [
+          "For the npm launcher, `Ctrl-C` stops the API and web UI; run the same versioned command again to restart. Your admin account, model configuration, agents, memory, and records survive because they live in `~/.krelvan` by default.",
+          "Back up the entire data directory before changing versions, including its identity and secret-key files. Container installs keep the same state in the `krelvan-data` volume. Review the target release notes, back up, then start the new immutable version.",
         ],
       },
       {
@@ -82,8 +96,15 @@ const SECTIONS: Section[] = [
       {
         q: "What happens if a run crashes halfway?",
         a: [
-          "It resumes safely. The run's state lives entirely in its recorded history, so resuming is just re-reading it: the engine sees exactly which steps completed and continues from there. Side effects use a three-step protocol (intent, execution, result), which guarantees an irreversible effect — sending an email, calling a paid API — runs exactly once, never twice, even if the process dies mid-step.",
+          "It resumes safely. The run's state lives entirely in its recorded history, so resuming is just re-reading it: the engine sees exactly which steps completed and continues from there. Side effects use a three-step protocol (intent, execution, result), which guarantees an irreversible effect — sending an email or calling an external API — runs exactly once, never twice, even if the process dies mid-step.",
           "There's a runnable demo: `npm run demo:resume` kills a run mid-flight, resumes it, and shows each irreversible effect executed exactly once.",
+        ],
+      },
+      {
+        q: "Does a signed run record prove the answer is correct?",
+        a: [
+          "No. It proves the record is complete and untampered: which inputs, tool results, model calls, decisions, and outputs actually occurred. A model can still misunderstand a source or produce an unsupported conclusion.",
+          "Use the recorded source values and intermediate steps to review important answers. For high-consequence work, add an independent checking step or require a person to approve the result. Krelvan never labels cryptographic integrity as factual accuracy.",
         ],
       },
     ],
@@ -97,6 +118,13 @@ const SECTIONS: Section[] = [
         q: "Which LLM providers can I use?",
         a: [
           "Seven, behind one client: Anthropic, OpenAI, Google Gemini, Groq, Mistral, Ollama (fully local), and any OpenAI-compatible endpoint — so a self-hosted gateway or another vendor's compatible API works too. The provider is configuration, not architecture: you can switch without rebuilding your agents.",
+        ],
+      },
+      {
+        q: "Where do I add my provider, model, or API key?",
+        a: [
+          "In your downloaded installation, open `Settings → Model & secrets`. Choose the provider, enter the model, add a key when that provider needs one, and set a base URL for Ollama or an OpenAI-compatible endpoint. The Dashboard links here automatically when no model is connected.",
+          "The value is encrypted on your instance and is never shown in full again. For unattended deployments you can use the documented `KRELVAN_LLM_PROVIDER`, `KRELVAN_LLM_MODEL`, `KRELVAN_LLM_API_KEY`, and `KRELVAN_LLM_BASE_URL` environment variables instead.",
         ],
       },
       {

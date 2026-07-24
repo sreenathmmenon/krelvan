@@ -106,7 +106,7 @@ Krelvan agent graph. **Bold = highest-frequency / build first.**
 **CRM/sales:** HubSpot, Pipedrive, GoHighLevel, LinkedIn, Salesforce.
 **Voice (own gig category):** Vapi, Retell, ElevenLabs.
 **Web/data:** scraping (Firecrawl/Apify/Exa — we have `serp.search`), Postgres/Mongo/SQLite/Supabase, vector DBs (Qdrant — already in our stack, Pinecone).
-**Content/commerce:** WordPress, Shopify, WooCommerce, YouTube, X, Reddit, Stripe.
+**Content/commerce:** plugin CMS, Shopify, WooCommerce, YouTube, X, Reddit, Stripe.
 **Meetings/finance:** Zoom, Fireflies, OCR/LlamaParse (invoices), GitHub/GitLab.
 
 ---
@@ -145,7 +145,7 @@ Every competitor sells **convenience** (run an agent, pay per use). We sell **ow
 - **Signed, replayable ledger** — you can *prove what the agent did* (the regulator/auditor story
   none of these marketplaces have). The competitor-monitor and invoice-reconciliation templates are
   the sharpest demos of this, because "what it touched and when" is the whole value.
-- **Marketplace = a Git repo** — anyone publishes a capability by opening a PR (the WordPress model
+- **Marketplace = a Git repo** — anyone publishes a capability by opening a PR (the plugin CMS model
   we already run via `krelvan-registry`).
 
 **Honest framing:** the demand is real and the work is well-understood; our edge isn't "more agents,"

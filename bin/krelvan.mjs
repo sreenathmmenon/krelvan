@@ -97,6 +97,7 @@ const DATA_DIR = process.env.KRELVAN_DATA_DIR ?? (installedPackage ? stableUserD
 const SKIP_BUILD = process.env.KRELVAN_SKIP_BUILD === "1";
 
 const args = process.argv.slice(2);
+const helpRequested = args.includes("--help") || args.includes("-h");
 const cmd = args[0] && !args[0].startsWith("-") ? args[0] : "up";
 const apiOnly = args.includes("--api-only");
 
@@ -107,7 +108,7 @@ function warn(msg) {
   process.stdout.write(`\x1b[33m[krelvan]\x1b[0m ${msg}\n`);
 }
 
-if (cmd === "help" || cmd === "--help" || cmd === "-h") {
+if (cmd === "help" || helpRequested) {
   process.stdout.write(`krelvan — own, run, and trust your own AI agents.
 
 Usage:

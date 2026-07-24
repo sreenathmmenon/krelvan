@@ -14,6 +14,7 @@
  */
 import { Fragment, type ReactNode } from "react";
 import { renderMarkdown } from "./markdown";
+import { parseMarkdownTable } from "./markdown-table";
 
 // ── Plain-text sanitiser: strip every markdown marker so nothing developer-y ever shows ──────
 export function toPlainText(md: string): string {
@@ -156,6 +157,24 @@ export function previewText(body: string, max = 200): string {
     const more = list.items.length > 3 ? ` +${list.items.length - 3} more` : "";
     return (names + more).slice(0, max);
   }
+
+  // Inbox cards are plain-text summaries, so turn a real markdown table into a
+  // readable row summary instead of flattening its pipes into developer-looking text.
+  const lines = body.replace(/\r\n/g, "\n").split("\n");
+  for (let i = 0; i < lines.length - 1; i++) {
+    const table = parseMarkdownTable(lines, i);
+    if (!table || table.rows.length === 0) continue;
+    const heading = lines.slice(0, i).map(toPlainText).find((line) => line.trim())?.trim();
+    const rows = table.rows.slice(0, 4).map((row) => {
+      const label = toPlainText(row[0] ?? "").trim();
+      const value = toPlainText(row[1] ?? "").trim();
+      return label && value ? `${label}: ${value}` : label || value;
+    }).filter(Boolean);
+    const more = table.rows.length > rows.length ? ` +${table.rows.length - rows.length} more` : "";
+    const summary = [heading, ...rows].filter(Boolean).join(" · ") + more;
+    return summary.length > max ? summary.slice(0, max - 1).trimEnd() + "…" : summary;
+  }
+
   const plain = toPlainText(body).replace(/\n+/g, " ");
   return plain.length > max ? plain.slice(0, max - 1).trimEnd() + "…" : plain;
 }

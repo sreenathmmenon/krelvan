@@ -337,10 +337,10 @@ export default function Dashboard() {
         <button
           type="submit"
           className="btn btn-primary btn-lg"
-          disabled={!intent.trim() || building}
+          disabled={!intent.trim() || building || modelReady === false}
           style={{ minWidth: 150 }}
         >
-          {building ? "Building…" : "Build agent →"}
+          {building ? "Building…" : modelReady === false ? "Connect model first" : "Build agent →"}
         </button>
       </div>
     </form>
@@ -355,6 +355,33 @@ export default function Dashboard() {
           onRun={handleRunBuilt}
           onDiscard={() => setBuildResult(null)}
         />
+      )}
+
+      {modelReady === false && !loadFailed && (
+        <section style={{ background: "var(--brand-tint)", borderBottom: "1px solid var(--line)" }}>
+          <div className="container" style={{ paddingTop: "var(--s4)", paddingBottom: "var(--s4)" }}>
+            <div
+              role="status"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "var(--s4)",
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <p style={{ margin: "0 0 var(--s1)", fontWeight: 700, color: "var(--ink)" }}>
+                  Connect a model before building your first agent
+                </p>
+                <p className="small soft" style={{ margin: 0 }}>
+                  Choose OpenAI, Anthropic, Gemini, Groq, Mistral, local Ollama, or an OpenAI-compatible endpoint. Keys are encrypted on this installation.
+                </p>
+              </div>
+              <Link href="/secrets#model" className="btn btn-primary">Connect model →</Link>
+            </div>
+          </div>
+        </section>
       )}
 
       {/* ── load failure (no cached data) — never fall through to the empty hero,

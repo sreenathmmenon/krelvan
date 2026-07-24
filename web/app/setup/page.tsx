@@ -88,7 +88,8 @@ function SetupForm() {
           <div className="micro" style={{ marginBottom: "var(--s2)" }}>First-run setup</div>
           <div className="h2" style={{ color: "var(--ink)", marginBottom: "var(--s2)" }}>Create your admin account</div>
           <p className="small muted" style={{ marginBottom: "var(--s5)", lineHeight: 1.6 }}>
-            This is a one-time step — it sets up the owner account for this Krelvan instance.
+            This one-time step creates the owner account only for this Krelvan installation.
+            It is not a krelvan.com account, and the credential stays on this instance.
           </p>
           <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
             {/* ALWAYS render the token field (prefilled from the URL). Hiding it when ?token= was

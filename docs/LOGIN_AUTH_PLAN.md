@@ -1,4 +1,4 @@
-# Krelvan — WordPress-style Login (first-run setup + username/password + sessions)
+# Krelvan — plugin CMS-style Login (first-run setup + username/password + sessions)
 
 *Production-grade web-UI authentication for the self-hosted product, built from OWASP-2026
 best practice with **zero new dependencies** (Node `crypto` only). The bearer-token API path is
@@ -25,7 +25,7 @@ Headless/agent → API authenticate(bearer)   [unchanged]
 | Session | opaque `randomBytes(32)` (256-bit) token; store **sha256(token)** server-side; NOT JWT (revocation, no secret-in-token). |
 | Cookie | `__Host-krelvan_sid` in prod (`HttpOnly; Secure; SameSite=Lax; Path=/`); plain `krelvan_sid` (no Secure/__Host) on http-localhost dev. |
 | Lifetime | 30-min idle (sliding) + 8-hr absolute; rotate token on login; kill ALL sessions on password change. |
-| First-run | WordPress wizard, PocketBase-safe: a console-printed 30-min **setup token** gates `/setup` so no stranger can claim admin on an exposed box. CLI fallback for headless. |
+| First-run | plugin CMS wizard, PocketBase-safe: a console-printed 30-min **setup token** gates `/setup` so no stranger can claim admin on an exposed box. CLI fallback for headless. |
 | CSRF | no state-change on GET + `Sec-Fetch-Site`/Origin check + HMAC double-submit token on writes. |
 | Brute-force | always run scrypt (dummy hash for missing user → no enumeration); generic error; per-account exponential backoff + per-IP throttle (reuse existing lockout). |
 | Exposed vs local | login ALWAYS required; never auto-detect exposure (a reverse proxy makes everything look like loopback). |
@@ -54,7 +54,7 @@ session token to the API which validates), and only injects the bearer if the se
    bearer-OR-session in `authenticate()`, CSRF + Sec-Fetch check on writes.
 3. **C — proxy gate** (`web/app/proxy/.../route.ts`): forward session cookie → API validates; 401 if
    no session (this is the line that flips "no login" → "login required"). Login/logout set/clear cookie.
-4. **D — web pages** (`web/app/login`, `web/app/setup`, `web/middleware.ts`): the WordPress wizard +
+4. **D — web pages** (`web/app/login`, `web/app/setup`, `web/middleware.ts`): the plugin CMS wizard +
    login page + page-guard.
 5. **E — launcher/boot**: print the setup link with the setup token on first run (replace the
    token-banner). Keep `KRELVAN_AUTH_TOKEN` working for headless.
@@ -104,6 +104,6 @@ authenticated dashboard → CSRF write round-trips → logout); full suite 279/2
 documented live-model tests needing an API key); core + web typecheck clean.
 
 ## Honest scope
-- ONE admin to start (WordPress baseline). Multiple users/roles + social login = separate later builds.
+- ONE admin to start (plugin CMS baseline). Multiple users/roles + social login = separate later builds.
 - Secures the web UI; the API stays token-based (correct: machines use tokens, humans log in).
 - HTTPS is the operator's job (Caddy) — we set Secure cookies correctly behind a trusted proxy.

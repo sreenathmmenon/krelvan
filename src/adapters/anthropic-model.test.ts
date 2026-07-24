@@ -137,7 +137,7 @@ test("MODEL+COMPILER: a malicious model proposal is parsed but REJECTED by the c
 
 // ── A2: the compiler must guide output_map for prose-composing agents ─────────────
 
-test("MODEL: the compiler prompt instructs output_map for the final composing node", async () => {
+test("MODEL: the compiler prompt instructs output_map for customer-facing compose nodes", async () => {
   // Capture the outgoing request body so we can assert on the system prompt the model sees.
   let seenSystem = "";
   const capturingFetch = (async (_url: unknown, init: { body?: string }) => {
@@ -158,7 +158,8 @@ test("MODEL: the compiler prompt instructs output_map for the final composing no
   });
   await model.propose("write me a brief");
   assert.ok(seenSystem.includes("output_map"), "prompt must instruct output_map");
-  assert.ok(/final node/i.test(seenSystem), "prompt must tie output_map to the final composing node");
+  assert.ok(/any node composes customer-facing prose/i.test(seenSystem), "prompt must cover a compose node followed by another action");
+  assert.ok(seenSystem.includes("remember_map"), "prompt must bind a following remember step to the composed deliverable");
 });
 
 test("MODEL+COMPILER: a model schedule proposal survives compilation (validated downstream)", async () => {

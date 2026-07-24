@@ -705,12 +705,18 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               <Glyph kind="seal" size={18} color="#fff" />
             </span>
             <div className="run-seal__headtext">
-              {/* This badge is about the RECORD's completeness — every step of the run is captured,
-                  so a halted or failed run still has a full, replayable record. */}
-              <span className="run-seal__title">Run fully recorded</span>
-              <span className="run-seal__sub">Every run event is signed — replay it end to end, exactly as it ran</span>
+              <span className="run-seal__title">
+                {run.status === "completed" ? "Final run record verified" : "Run record verified so far"}
+              </span>
+              <span className="run-seal__sub">
+                {run.status === "completed"
+                  ? "Every run event is signed — replay it end to end, exactly as it ran"
+                  : "Every recorded event is signed — the final record will be sealed when the run finishes"}
+              </span>
             </div>
-            <span className="run-seal__verified" aria-live="polite"><Glyph kind="check" size={13} color="currentColor" /> Complete</span>
+            <span className="run-seal__verified" aria-live="polite">
+              <Glyph kind="check" size={13} color="currentColor" /> {run.status === "completed" ? "Final record" : "Record so far"}
+            </span>
           </div>
           <div className="run-seal__chips">
             <span className="run-seal__chip"><span className="mono">{verification.signedEvents}/{verification.runEvents}</span> run events signed</span>
@@ -721,6 +727,9 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               </span>
             )}
           </div>
+          <p className="small" style={{ margin: "var(--s3) 0 0", color: "var(--ink-soft)", lineHeight: 1.55 }}>
+            Integrity confirms what executed and that the record was not changed. It does not certify the model&apos;s answer as factually correct; review important results against the recorded sources and intermediate steps.
+          </p>
           <div className="run-seal__actions">
             <a
               href={`${API_BASE}/api/runs/${id}/export`}
@@ -839,7 +848,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                 {verification == null && <span className="soft">Click check to confirm the record is complete.</span>}
                 {verification?.ok && (
                   <span style={{ color: "var(--ok)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <Glyph kind="check" size={14} color="var(--ok)" /> Complete — {verification.signedEvents}/{verification.runEvents} run events signed; {verification.ledgerEvents} workspace ledger events checked end to end.
+                    <Glyph kind="check" size={14} color="var(--ok)" /> Record verified — {verification.signedEvents}/{verification.runEvents} run events signed; {verification.ledgerEvents} workspace ledger events checked end to end.
                   </span>
                 )}
                 {verification && !verification.ok && (

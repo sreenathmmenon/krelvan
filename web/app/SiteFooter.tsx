@@ -27,7 +27,10 @@ export default function SiteFooter() {
     ? [
         link("https://github.com/sreenathmmenon/krelvan#readme", "How it works", true),
         link("https://github.com/sreenathmmenon/krelvan", "Self-host guide", true),
-        ...(!MARKETING_ONLY ? [link("/login", "Sign in")] : []),
+        // A self-hosted public page can be viewed before or after authentication.
+        // "Workspace" remains true in both states: middleware sends a signed-out owner
+        // to login, while an authenticated owner lands directly on their dashboard.
+        ...(!MARKETING_ONLY ? [link("/dashboard", "Workspace")] : []),
       ]
     : [link("/capabilities#connectors", "Connectors"), link("/secrets", "Secrets"), link("/approvals", "Approvals"), link("/download", "Download")];
   return (

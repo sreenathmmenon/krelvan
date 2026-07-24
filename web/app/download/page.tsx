@@ -4,35 +4,17 @@ import {
   NPM_COMMAND,
   RELEASE_ASSET,
   RELEASE_BASE_URL,
+  RELEASE_COMPOSE_ASSET,
   RELEASE_TAG,
   RELEASE_VERSION,
 } from "../../lib/release";
+import { CopyCommand } from "./CopyCommand";
 
 const manualUrl = `${RELEASE_BASE_URL}/${RELEASE_ASSET}`;
 const checksumUrl = `${RELEASE_BASE_URL}/SHA256SUMS`;
-
-function Command({ children }: { children: string }) {
-  return (
-    <pre
-      className="mono"
-      style={{
-        margin: 0,
-        padding: "var(--s4)",
-        overflowX: "auto",
-        borderRadius: "var(--radius)",
-        background: "var(--ink)",
-        color: "var(--canvas)",
-        fontSize: 13,
-        lineHeight: 1.6,
-        whiteSpace: "pre-wrap",
-        overflowWrap: "anywhere",
-        wordBreak: "break-word",
-      }}
-    >
-      <code>{children}</code>
-    </pre>
-  );
-}
+const composeUrl = `${RELEASE_BASE_URL}/${RELEASE_COMPOSE_ASSET}`;
+const composeCommand = `curl -LO ${composeUrl}\ndocker compose -f ${RELEASE_COMPOSE_ASSET} up -d`;
+const manualCommand = `npm install --global ./${RELEASE_ASSET}\nkrelvan`;
 
 export default function DownloadPage() {
   return (
@@ -71,7 +53,7 @@ export default function DownloadPage() {
               Requires Node.js 22 or newer. The explicit version prevents a future release
               from changing an installation you already reviewed.
             </p>
-            <Command>{NPM_COMMAND}</Command>
+            <CopyCommand command={NPM_COMMAND} />
             <a
               className="btn btn-primary btn-sm"
               href="https://www.npmjs.com/package/krelvan"
@@ -88,18 +70,21 @@ export default function DownloadPage() {
               <h2 style={{ margin: 0 }}>Container</h2>
             </div>
             <p className="small soft">
-              Pull the immutable version tag, then use the release&apos;s compose file or
-              your own orchestrator. Keep the data directory on a persistent volume.
+              Download the release compose file and start the immutable image. It binds to
+              your machine only and keeps data in a persistent volume.
             </p>
-            <Command>{`docker pull ${DOCKER_IMAGE}`}</Command>
-            <a
-              className="btn btn-secondary btn-sm"
-              href={`https://github.com/sreenathmmenon/krelvan/pkgs/container/krelvan`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Inspect container
-            </a>
+            <CopyCommand command={composeCommand} />
+            <div style={{ display: "flex", gap: "var(--s3)", flexWrap: "wrap" }}>
+              <a className="btn btn-secondary btn-sm" href={composeUrl}>Download compose file</a>
+              <a
+                className="btn btn-ghost btn-sm"
+                href="https://github.com/sreenathmmenon/krelvan/pkgs/container/krelvan"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Inspect {DOCKER_IMAGE}
+              </a>
+            </div>
           </article>
 
           <article className="card" style={{ padding: "var(--s6)", display: "grid", gap: "var(--s4)" }}>
@@ -111,6 +96,7 @@ export default function DownloadPage() {
               Download the exact tarball published to npm. Verify its checksum and GitHub
               artifact attestation before installing it on a disconnected system.
             </p>
+            <CopyCommand command={manualCommand} />
             <a className="btn btn-primary btn-sm" href={manualUrl}>
               Download {RELEASE_ASSET}
             </a>
@@ -124,6 +110,30 @@ export default function DownloadPage() {
               </a>
             </div>
           </article>
+        </div>
+      </section>
+
+      <section style={{ padding: "0 0 var(--s9)" }}>
+        <div className="container">
+          <div className="card" style={{ padding: "var(--s6)", maxWidth: "92ch" }}>
+            <p className="micro" style={{ marginBottom: "var(--s2)" }}>After you start it</p>
+            <h2 style={{ marginBottom: "var(--s4)" }}>Your first five minutes</h2>
+            <ol className="small soft" style={{ margin: 0, paddingLeft: "var(--s5)", display: "grid", gap: "var(--s3)", lineHeight: 1.65 }}>
+              <li>The first npm start installs and builds the web app, so it can take a few minutes. Later starts reuse that build.</li>
+              <li>Open <code>http://localhost:3100</code>. Copy the one-time setup token printed in the terminal and create the admin account for this installation.</li>
+              <li>Open <strong>Settings → Model &amp; secrets</strong>. Connect a hosted provider, an OpenAI-compatible endpoint, or local Ollama.</li>
+              <li>Return to the Dashboard, describe an outcome, review the compiled plan, and choose <strong>Run now</strong>.</li>
+              <li>Your result appears in Inbox; its signed timeline and downloadable record are available from Runs.</li>
+            </ol>
+            <div style={{ marginTop: "var(--s5)", paddingTop: "var(--s4)", borderTop: "1px solid var(--line)", display: "grid", gap: "var(--s2)" }}>
+              <p className="small" style={{ margin: 0 }}>
+                <strong>No krelvan.com account is created.</strong> Your admin credential, agents, model configuration, and records belong only to your self-hosted installation.
+              </p>
+              <p className="small soft" style={{ margin: 0 }}>
+                The npm launcher stores persistent data in <code>~/.krelvan</code>. <code>Ctrl-C</code> stops it; run the same command again to restart. Back up that data directory before upgrades.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 

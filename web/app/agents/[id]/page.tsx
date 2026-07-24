@@ -902,7 +902,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
       <div style={{ borderBottom: "1px solid var(--line)", background: "var(--surface)", paddingTop: "var(--s5)", paddingBottom: "var(--s6)" }}>
         <div className="container">
           <nav aria-label="Breadcrumb" style={{ marginBottom: "var(--s4)" }}>
-            <Link href="/dashboard" className="small" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s1)", color: "var(--ink-muted)", textDecoration: "none" }}>
+            <Link href="/agents" className="small" style={{ display: "inline-flex", alignItems: "center", gap: "var(--s1)", color: "var(--ink-muted)", textDecoration: "none" }}>
               <Glyph name="back" size={13} color="currentColor" /> Agents
             </Link>
           </nav>
@@ -921,7 +921,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                     : lastRun?.status === "halted"
                       ? (haltedApproval?.nodeId ? `Awaiting approval at ${haltedApproval.nodeId}` : "Awaiting approval")
                     : lastRun ? lastRun.status
-                    : "never run"}
+                    : "no workflow runs"}
                 </span>
                 {/* A "paused" agent is not stuck — its last run is awaiting a person's decision.
                     Say so and link straight to the approval, so there's an obvious next step. */}
@@ -947,7 +947,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               )}
               <div style={{ display: "flex", gap: "var(--s4)", alignItems: "center", flexWrap: "wrap", marginTop: "var(--s3)" }}>
                 <span className="small muted" style={{ display: "inline-flex", alignItems: "baseline", gap: "var(--s2)" }}>
-                  total runs
+                  workflow runs
                   <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{runs.length}</span>
                 </span>
                 <span aria-hidden="true" className="muted">·</span>
@@ -1039,7 +1039,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
             {[
               { label: "steps",         value: String(nodes.length),                live: false                 },
               { label: "connections",   value: String(edges.length),                live: false                 },
-              { label: "total runs",    value: String(runs.length),                 live: false                 },
+              { label: "workflow runs", value: String(runs.length),                 live: false                 },
               { label: "running now",   value: String(liveRunCount),                live: liveRunCount > 0      },
               { label: "built",         value: timeAgo(agent.createdAt),            live: false                 },
             ].map(s => (
@@ -1269,8 +1269,9 @@ function ChatPanel({ agentId, agentName }: { agentId: string; agentName: string 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  // One stable thread id for the life of this mounted panel.
-  const threadIdRef = useRef<string>(`thread-${agentId}-${Date.now()}`);
+  // The private admin conversation uses one stable memory scope per agent. A page reload must
+  // not silently start a new memory thread and make the agent forget the prior conversation.
+  const threadIdRef = useRef<string>(`thread-admin-${agentId}`);
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -1318,9 +1319,14 @@ function ChatPanel({ agentId, agentName }: { agentId: string; agentName: string 
   return (
     <div style={{ maxWidth: 760 }}>
       <h2 className="h3" style={{ marginBottom: "var(--s2)" }}>Talk to this agent</h2>
-      <p className="small soft" style={{ marginBottom: "var(--s5)", lineHeight: 1.6, maxWidth: "60ch" }}>
-        Send a message, follow up, redirect it — it remembers the conversation.
-      </p>
+      <div style={{ marginBottom: "var(--s5)", maxWidth: "66ch" }}>
+        <p className="small soft" style={{ margin: "0 0 var(--s2)", lineHeight: 1.6 }}>
+          Send a message, follow up, redirect it — this private admin thread keeps the agent&apos;s memory across restarts.
+        </p>
+        <p className="micro" style={{ margin: 0, textTransform: "none", letterSpacing: 0 }}>
+          Each turn executes as a signed run. Conversation turns stay out of Inbox and workflow Runs so those views contain deliverable output only.
+        </p>
+      </div>
 
       <div className="card" style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", height: "min(62vh, 620px)" }}>
         {/* message list */}

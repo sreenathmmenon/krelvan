@@ -74,3 +74,40 @@ test("missing edges are auto-chained in node order", () => {
   assert.equal(m.edges.length, 1);
   assert.deepEqual({ from: m.edges[0]!.from, to: m.edges[0]!.to }, { from: "a", to: "b" });
 });
+
+test("missing output_map is repaired to the last compose node", () => {
+  const m = parseManifestProposal(JSON.stringify({
+    version: 1, name: "X", intent: "x", entry: "research", runBudgetCents: 100,
+    nodes: [
+      { id: "research", role: "Research", autonomy: "full", capabilities: [{ name: "think", sideEffect: "read", budgetCents: 50 }] },
+      { id: "draft", role: "Write a report", autonomy: "full", capabilities: [{ name: "compose", sideEffect: "read", budgetCents: 50 }] },
+    ],
+    edges: [{ from: "research", to: "draft" }],
+  }));
+  assert.equal(m.seed?.["output_map"], "title=draft.title,body=draft.body,format=markdown");
+});
+
+test("an existing output_map is preserved", () => {
+  const m = parseManifestProposal(JSON.stringify({
+    version: 1, name: "X", intent: "x", entry: "draft", runBudgetCents: 50,
+    seed: { output_map: "body=draft.text,format=text" },
+    nodes: [
+      { id: "draft", role: "Write a report", autonomy: "full", capabilities: [{ name: "compose", sideEffect: "read", budgetCents: 50 }] },
+    ],
+    edges: [],
+  }));
+  assert.equal(m.seed?.["output_map"], "body=draft.text,format=text");
+});
+
+test("remember after compose receives the exact deliverable through remember_map", () => {
+  const m = parseManifestProposal(JSON.stringify({
+    version: 1, name: "X", intent: "x", entry: "draft", runBudgetCents: 100,
+    nodes: [
+      { id: "draft", role: "Write a report", autonomy: "full", capabilities: [{ name: "compose", sideEffect: "read", budgetCents: 50 }] },
+      { id: "retain", role: "Remember the report", autonomy: "suggest", capabilities: [{ name: "remember", sideEffect: "reversible-write", budgetCents: 10 }] },
+    ],
+    edges: [{ from: "draft", to: "retain" }],
+  }));
+  assert.equal(m.seed?.["output_map"], "title=draft.title,body=draft.body,format=markdown");
+  assert.equal(m.seed?.["remember_map"], "last_output=draft.body");
+});

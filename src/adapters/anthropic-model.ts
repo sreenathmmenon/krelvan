@@ -72,7 +72,7 @@ export class AnthropicModel implements ModelPort {
         maxNodeVisits:  { type: "integer", description: "Max node visits (default 5)" },
         seed: {
           type: "object",
-          description: "Initial run state (e.g. {\"query\": \"...\"} for web_search). When the FINAL node composes prose to deliver, set output_map here, e.g. {\"output_map\": \"title=<node>.title,body=<node>.body,format=markdown\"} pointing at that node's output keys.",
+          description: "Initial run state (e.g. {\"query\": \"...\"} for web_search). When any compose node creates customer-facing prose, set output_map here, e.g. {\"output_map\": \"title=<node>.title,body=<node>.body,format=markdown\"} pointing at that node's output keys. If a remember node follows it, also set remember_map to \"last_output=<node>.body\".",
           additionalProperties: true,
         },
         schedule: {
@@ -151,7 +151,7 @@ export class AnthropicModel implements ModelPort {
       "- Pick capabilities by matching their descriptions to the intent. Every node should have at least one capability.",
       "- Never choose http_get for calculation, transformation, reasoning, or any task without a URL input. For arithmetic or other local reasoning, use think. If the user says not to use external data, do not use http_get or web_search.",
       "- autonomy: full=read-only steps, act-with-veto=steps that message a human (user reviews before send), suggest=irreversible writes/spend.",
-      "- OUTPUT: if the agent's FINAL node composes prose to DELIVER (a brief, digest, summary, reply), that node's role must instruct it to produce a `body` (and ideally a `title`), and you MUST set seed.output_map to \"title=<finalNodeId>.title,body=<finalNodeId>.body,format=markdown\" so the delivered output is captured deterministically. Omit output_map only for agents whose last step is an action (send/write) rather than composed text.",
+      "- OUTPUT: if any node composes customer-facing prose to DELIVER (a brief, digest, summary, reply), that node's role must instruct it to produce a `body` (and ideally a `title`), and you MUST set seed.output_map to \"title=<composeNodeId>.title,body=<composeNodeId>.body,format=markdown\" so the delivered output is captured deterministically — even when a remember or send node follows it. If a remember node follows, also set seed.remember_map to \"last_output=<composeNodeId>.body\" so approval previews and memory use that exact deliverable.",
       "",
       "EXAMPLE — intent: \"fetch a webpage and summarize it for me\":",
       "{",
@@ -381,6 +381,33 @@ export function parseManifestProposal(text: string): Manifest {
     // keep edges only between existing nodes
     const ids = new Set((m.nodes as Record<string, unknown>[]).map((n) => n["id"]));
     m.edges = (m.edges as Record<string, unknown>[]).filter((e) => ids.has(e["from"]) && ids.has(e["to"]));
+  }
+
+  // Customer-facing output must be deterministic even when the model forgets to
+  // declare output_map because a remember/send action follows the compose step.
+  // The last compose node is the final authored deliverable in declaration order.
+  const parsedNodes = m.nodes as Record<string, unknown>[];
+  const composeNodes = parsedNodes.filter((node) =>
+    (node["capabilities"] as Record<string, unknown>[]).some((cap) => cap["name"] === "compose"),
+  );
+  const lastCompose = composeNodes.at(-1);
+  if (lastCompose && typeof lastCompose["id"] === "string") {
+    const seed = m.seed && typeof m.seed === "object" && !Array.isArray(m.seed)
+      ? m.seed as Record<string, unknown>
+      : {};
+    const composeId = lastCompose["id"];
+    if (typeof seed["output_map"] !== "string" || !seed["output_map"].trim()) {
+      seed["output_map"] = `title=${composeId}.title,body=${composeId}.body,format=markdown`;
+    }
+
+    const composeIndex = parsedNodes.indexOf(lastCompose);
+    const rememberFollows = parsedNodes.slice(composeIndex + 1).some((node) =>
+      (node["capabilities"] as Record<string, unknown>[]).some((cap) => cap["name"] === "remember"),
+    );
+    if (rememberFollows && (typeof seed["remember_map"] !== "string" || !seed["remember_map"].trim())) {
+      seed["remember_map"] = `last_output=${composeId}.body`;
+    }
+    m.seed = seed;
   }
 
   // Coerce/normalize into the Manifest shape; the compiler does the real validation.

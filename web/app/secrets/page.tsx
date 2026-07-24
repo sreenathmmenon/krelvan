@@ -92,9 +92,11 @@ export default function SecretsPage() {
   // When the name was chosen from a required-secret / "Set this secret" card (not typed
   // free-hand), lock the name field so it's set for the exact key a capability expects.
   const [lockName, setLockName] = useState(false);
+  const [optionalOpen, setOptionalOpen] = useState(false);
 
   // Scroll to + prefill the Add-secret form with a specific secret name, locking the field.
   const setSecretFor = useCallback((name: string) => {
+    setOptionalOpen(true);
     setPrefillName(name);
     setLockName(true);
     setTimeout(() => document.getElementById("secret-form")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
@@ -120,6 +122,7 @@ export default function SecretsPage() {
   useEffect(() => {
     const name = new URLSearchParams(window.location.search).get("name");
     if (name) {
+      setOptionalOpen(true);
       setPrefillName(name);
       setLockName(true);
       setTimeout(() => document.getElementById("secret-form")?.scrollIntoView({ behavior: "smooth", block: "center" }), 200);
@@ -179,18 +182,22 @@ export default function SecretsPage() {
         </div>
       ) : (
         <>
-          {/* Needed-but-not-set: the actionable to-do list */}
+          {/* Optional integrations bundled with the install. Keep this collapsed by default:
+              none of these keys is required to build a first agent. A deep link opens it. */}
           {stillMissing.length > 0 && (
-            <section style={{ marginBottom: "var(--s7)" }}>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "var(--s3)", marginBottom: "var(--s2)", flexWrap: "wrap" }}>
-                <p className="micro" style={{ margin: 0 }}>Needed by your installed capabilities</p>
-                <span className="small muted">{dedupeByName(required).length - stillMissing.length} of {dedupeByName(required).length} configured</span>
-              </div>
-              <p className="small muted" style={{ margin: "0 0 var(--s4)", maxWidth: "70ch" }}>
-                Only these are needed now — each is required by a capability you&apos;ve already installed.
-                A key you haven&apos;t installed anything for won&apos;t appear here, so &ldquo;not set&rdquo; is
-                expected until you set it or first run that capability.
-              </p>
+            <details open={optionalOpen} onToggle={e => setOptionalOpen(e.currentTarget.open)} style={{ marginBottom: "var(--s7)" }}>
+              <summary className="card" style={{ padding: "var(--s4) var(--s5)", cursor: "pointer", listStylePosition: "inside" }}>
+                <span style={{ fontWeight: 700, color: "var(--ink)", marginLeft: "var(--s2)" }}>
+                  Optional integration secrets
+                </span>
+                <span className="small muted" style={{ marginLeft: "var(--s2)" }}>
+                  {stillMissing.length} not configured
+                </span>
+                <span className="small soft" style={{ display: "block", margin: "var(--s2) 0 0 var(--s5)" }}>
+                  You do not need these to get started. Add one only when an agent uses that integration.
+                </span>
+              </summary>
+              <div style={{ paddingTop: "var(--s4)" }}>
               {/* auto-FIT (not auto-fill) collapses empty column tracks, so a lone last card
                   stretches to fill its row instead of floating beside an empty slot — no orphan.
                   Capped at 2 columns so wide screens stay balanced and readable, and it still
@@ -223,7 +230,8 @@ export default function SecretsPage() {
                   </div>
                 ))}
               </div>
-            </section>
+              </div>
+            </details>
           )}
 
           {/* Add / update form */}
@@ -249,8 +257,8 @@ export default function SecretsPage() {
                 </div>
                 <div className="h3" style={{ color: "var(--ink)" }}>No secrets saved yet</div>
                 <div className="small soft" style={{ maxWidth: "46ch" }}>
-                  The hooks your installed capabilities need are listed above — set one to save
-                  it here, encrypted on your instance. Saved secrets never leave your machine in full.
+                  Add an integration secret only when an agent needs it. It will be encrypted on
+                  this instance, and saved values are never shown in full again.
                 </div>
               </div>
             ) : (
@@ -269,6 +277,7 @@ export default function SecretsPage() {
 
 function ModelSection() {
   const [status, setStatus] = useState<ModelStatus | null>(null);
+  const [modelLoading, setModelLoading] = useState(true);
   const [provider, setProvider] = useState("anthropic");
   const [apiKey, setApiKey] = useState("");
   const [model, setModelName] = useState("");
@@ -282,7 +291,11 @@ function ModelSection() {
       setStatus(s);
       setProvider(s.provider || "anthropic");
       setModelName(s.model || "");
-    } catch { /* API unreachable — leave defaults; the page-level error banner covers it */ }
+    } catch {
+      /* API unreachable — leave defaults; the page-level error banner covers it */
+    } finally {
+      setModelLoading(false);
+    }
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
@@ -329,7 +342,11 @@ function ModelSection() {
           <h2 className="h2">Model</h2>
           <span className={`badge ${ready ? "badge-done" : "badge-paused"}`}>
             <span className="dot" />
-            {ready ? `Connected · ${status?.provider}${status?.model ? ` · ${status.model}` : ""}` : "No model connected"}
+            {modelLoading
+              ? "Loading model…"
+              : ready
+                ? `Connected · ${status?.provider}${status?.model ? ` · ${status.model}` : ""}`
+                : "No model connected"}
           </span>
         </div>
         <p className="small soft" style={{ margin: "0 0 var(--s5)", maxWidth: "62ch" }}>
@@ -341,7 +358,7 @@ function ModelSection() {
         <form onSubmit={(e) => void handleSave(e)} style={{ display: "flex", flexDirection: "column", gap: "var(--s5)" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
             <span className="label" style={{ marginBottom: 0 }}>Provider</span>
-            <select className="input" value={provider} onChange={e => setProvider(e.target.value)} style={{ maxWidth: 280 }}>
+            <select className="input" value={provider} onChange={e => setProvider(e.target.value)} disabled={modelLoading} style={{ maxWidth: 280 }}>
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="openai">OpenAI</option>
               <option value="gemini">Google Gemini</option>
@@ -358,6 +375,7 @@ function ModelSection() {
               <input
                 type="password" className="input input-mono" value={apiKey}
                 onChange={e => setApiKey(e.target.value)} autoComplete="off"
+                disabled={modelLoading}
                 placeholder={provider === "anthropic" ? "sk-ant-…" : provider === "gemini" ? "AIza… or AQ.…" : provider === "groq" ? "gsk_…" : "sk-…"}
               />
               <span className="small muted">Sent once over your local connection, then encrypted. Never shown again.</span>
@@ -367,7 +385,7 @@ function ModelSection() {
           {(provider === "ollama" || provider === "compatible") && (
             <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
               <span className="label" style={{ marginBottom: 0 }}>Base URL {provider === "compatible" ? "(required)" : "(optional)"}</span>
-              <input className="input input-mono" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder={provider === "compatible" ? "https://your-gateway.example/v1" : "http://localhost:11434"} />
+              <input className="input input-mono" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} disabled={modelLoading} placeholder={provider === "compatible" ? "https://your-gateway.example/v1" : "http://localhost:11434"} />
             </label>
           )}
 
@@ -375,6 +393,7 @@ function ModelSection() {
             <span className="label" style={{ marginBottom: 0 }}>Model (optional)</span>
             <input
               className="input input-mono" value={model} onChange={e => setModelName(e.target.value)}
+              disabled={modelLoading}
               placeholder={
                 provider === "anthropic" ? "claude-sonnet-4-6"
                 : provider === "gemini" ? "gemini-2.0-flash"
@@ -398,8 +417,8 @@ function ModelSection() {
           )}
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--s3)", borderTop: "1px solid var(--line)", paddingTop: "var(--s5)" }}>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? "Saving…" : ready ? "Update model" : "Connect model"}
+            <button type="submit" className="btn btn-primary" disabled={saving || modelLoading}>
+              {modelLoading ? "Loading…" : saving ? "Saving…" : ready ? "Update model" : "Connect model"}
             </button>
           </div>
         </form>

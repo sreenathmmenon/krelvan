@@ -80,7 +80,7 @@ instance) stays gated.
 ```
 
 A visitor **browses**; to actually **build & run** agents they self-host their own instance
-(the WordPress.org model: public directory + your own install). The maintainer's admin
+(the plugin CMS.org model: public directory + your own install). The maintainer's admin
 workspace on krelvan.com is not for public use.
 
 ---

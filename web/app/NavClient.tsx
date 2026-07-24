@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { listRuns, logout } from "../lib/api";
+import { getAuthStatus, listRuns, logout } from "../lib/api";
 import { MARKETING_ONLY } from "../lib/deployment";
 import CommandPalette from "./CommandPalette";
 import { KrelvanLogo } from "./KrelvanLogo";
@@ -74,6 +74,7 @@ export default function NavClient() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [isMac, setIsMac] = useState(true);
+  const [publicAuthenticated, setPublicAuthenticated] = useState<boolean | null>(null);
   const moreRef = useRef<HTMLDivElement>(null);
   const moreBtnRef = useRef<HTMLButtonElement>(null);
   const moreItemsRef = useRef<HTMLAnchorElement[]>([]);
@@ -105,6 +106,22 @@ export default function NavClient() {
       clearInterval(t);
       document.removeEventListener("visibilitychange", onVisible);
     };
+  }, [pathname]);
+
+  // FAQ and Download are public on a self-hosted install, but a signed-in owner should
+  // never be offered "Sign in" again. The hosted marketing build has no customer account
+  // surface and skips this request entirely.
+  useEffect(() => {
+    const publicPath = pathname === "/" || pathname === "/faq" || pathname === "/marketplace" || pathname === "/download";
+    if (MARKETING_ONLY || !publicPath) {
+      setPublicAuthenticated(null);
+      return;
+    }
+    let alive = true;
+    void getAuthStatus()
+      .then(status => { if (alive) setPublicAuthenticated(status.authenticated); })
+      .catch(() => { if (alive) setPublicAuthenticated(false); });
+    return () => { alive = false; };
   }, [pathname]);
 
   useEffect(() => {
@@ -224,7 +241,12 @@ export default function NavClient() {
             </nav>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexShrink: 0 }}>
-            {!MARKETING_ONLY && <Link href="/login" className="nav-link" style={{ opacity: 0.9 }}>Sign in</Link>}
+            {!MARKETING_ONLY && publicAuthenticated === true && (
+              <Link href="/dashboard" className="nav-link" style={{ opacity: 0.9 }}>Dashboard</Link>
+            )}
+            {!MARKETING_ONLY && publicAuthenticated === false && (
+              <Link href="/login" className="nav-link" style={{ opacity: 0.9 }}>Sign in</Link>
+            )}
             <Link href="/download" className="btn btn-sm nav-cta btn-primary">
               Download
             </Link>

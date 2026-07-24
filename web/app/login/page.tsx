@@ -89,6 +89,9 @@ export default function LoginPage() {
         <div className="auth-split__card">
           <div className="micro" style={{ marginBottom: "var(--s2)" }}>Welcome back</div>
           <div className="h2" style={{ color: "var(--ink)", marginBottom: "var(--s5)" }}>Sign in to your workspace</div>
+          <p className="small muted" style={{ margin: "calc(-1 * var(--s3)) 0 var(--s5)", lineHeight: 1.55 }}>
+            Use the admin account created on this installation. This is not a krelvan.com account.
+          </p>
           {notice && (
             <div className="small" role="status" style={{ margin: "0 0 var(--s4)", padding: "var(--s2) var(--s3)", borderRadius: "var(--r)", background: "var(--brand-tint)", border: "1px solid var(--line)", color: "var(--ink-soft)", lineHeight: 1.5 }}>
               {notice}
@@ -111,7 +114,7 @@ export default function LoginPage() {
             </button>
           </form>
           <p className="small muted" style={{ marginTop: "var(--s5)", lineHeight: 1.6 }}>
-            No instance yet? Krelvan is self-hosted — your admin account is created on first run.{" "}
+            Setting up another machine? Start Krelvan there and create that installation&apos;s admin account on first run.{" "}
             <a href="https://github.com/sreenathmmenon/krelvan#run-it" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", fontWeight: 500 }}>
               Read the setup guide →
             </a>

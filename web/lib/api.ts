@@ -199,8 +199,16 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     }
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string; code?: string };
-    throw new ApiError(err.error ?? `API error ${res.status}`, res.status, err.code);
+    const err = await res.json().catch(() => ({ error: res.statusText })) as {
+      error?: string;
+      message?: string;
+      code?: string;
+      attempts?: number;
+    };
+    const message = err.error === "compile_failed"
+      ? `The model could not produce a valid agent after ${Number.isInteger(err.attempts) ? err.attempts : 3} attempts. Try a clearer goal, choose a stronger model, or start from a Marketplace agent.`
+      : err.message ?? err.error ?? `API error ${res.status}`;
+    throw new ApiError(message, res.status, err.code ?? err.error);
   }
   return res.json() as Promise<T>;
 }

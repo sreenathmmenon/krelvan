@@ -76,44 +76,77 @@ _Drop the dependency-free widget on any site — shadow-DOM isolated, talks only
 
 ## Run it
 
-The web UI and API boot with **no secrets**. LLM features (building agents, explanations,
-diagnosis) switch on when you add a provider key.
+The web UI and API boot with **no secrets**. Building and running model-powered agents
+switches on after you connect a hosted provider or local Ollama.
 
-**Clone and run (needs Node 22+):**
+### Fastest start — npm (Node 22+)
 
 ```bash
-# check your Node version first:  node -v   (must be 22+)
-git clone https://github.com/sreenathmmenon/krelvan
-cd krelvan
-npm install
-npx krelvan          # run INSIDE the cloned repo — builds core + web, then starts both
+node -v                    # must be 22 or newer
+npx krelvan@0.1.2
 ```
 
-`npm install` is optional: the launcher installs missing dependencies itself. The first run
-builds the web UI and can take several minutes; later starts reuse that build.
+The first start installs and builds the web UI, so it can take a few minutes. Later starts
+reuse that build. The launcher prints the URL, the persistent data directory, and a one-time
+setup token.
 
 ```
 Web UI        http://localhost:3100
 Internal API http://localhost:3201/api/health
 ```
 
-`Ctrl-C` stops both. Ports: `PORT` or `KRELVAN_WEB_PORT` (public web, default 3100) ·
+Open the web UI, paste the setup token from the terminal, and create the admin account for
+this installation. This is a local account: it is not a krelvan.com account and no hosted
+workspace is created.
+
+Next, open **Settings → Model & secrets**, connect a model, return to the Dashboard, and
+build your first agent. Results land in Inbox; signed run records live under Runs.
+
+The npm launcher stores persistent data in `~/.krelvan`. `Ctrl-C` stops both processes; run
+the same command again to restart. Ports: `PORT` or `KRELVAN_WEB_PORT` (web, default 3100) ·
 `KRELVAN_API_PORT` (internal API, default 3201).
 
-**Or, fully isolated (no Node toolchain needed) — Docker:**
+### Production container
+
+Download the versioned compose file; no source checkout or Node toolchain is required:
 
 ```bash
-docker compose up --build
+curl -LO https://github.com/sreenathmmenon/krelvan/releases/download/v0.1.2/docker-compose.release.yml
+docker compose -f docker-compose.release.yml up -d
 ```
 
-Same URLs. The SQLite database persists in the named volume `krelvan-data`, so your agents
-and runs survive restarts.
+Open `http://localhost:3100`. The SQLite database, identity keys, agents, and run records
+persist in the named volume `krelvan-data`.
 
-> **Note:** Run `npx krelvan` inside the cloned repository. The existing `krelvan@0.0.1`
-> npm package is only a clone-repository pointer, not the application; use the Git repository
-> until a package containing the full product is published.
+### Signed manual release
 
-**Enable LLM features:** copy `.env.example` → `.env` and set a provider + key:
+Download `krelvan-0.1.2.tgz`, `SHA256SUMS`, and the attestations from the
+[v0.1.2 release](https://github.com/sreenathmmenon/krelvan/releases/tag/v0.1.2).
+After verification:
+
+```bash
+npm install --global ./krelvan-0.1.2.tgz
+krelvan
+```
+
+### Develop from source
+
+```bash
+git clone https://github.com/sreenathmmenon/krelvan
+cd krelvan
+npm install
+npx krelvan
+```
+
+This path is for contributors. Customers who want an immutable reviewed version should use
+the versioned npm command, release compose file, or signed tarball above.
+
+### Connect a model
+
+The recommended customer path is **Settings → Model & secrets** in the running app. Values
+are encrypted on that installation and are never shown in full again.
+
+For unattended deployments, set provider configuration in the process environment:
 
 ```bash
 KRELVAN_LLM_PROVIDER=anthropic

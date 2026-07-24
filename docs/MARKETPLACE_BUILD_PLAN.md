@@ -18,7 +18,7 @@ already told us exactly what it wants. We need to:
 2. **Make every one of those a `read`/`write` capability whose effects are signed to the ledger**, so
    the user can prove what the agent did — the wedge.
 3. **Make contributing a new capability a 10-minute PR**, so companies/devs/products pile their own
-   connectors onto our registry (the WordPress-for-agents flywheel).
+   connectors onto our registry (the plugin CMS-for-agents flywheel).
 
 ---
 

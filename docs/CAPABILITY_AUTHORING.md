@@ -2,7 +2,7 @@
 
 *Publish a connector or a whole agent to the marketplace — it runs on every self-hosted Krelvan,
 you keep your users, there's no gig fee, and the signed ledger proves your capability did what it
-claims. This is the WordPress-for-agents model: the marketplace **is** a Git repo.*
+claims. This is the plugin CMS-for-agents model: the marketplace **is** a Git repo.*
 
 There are three things you can publish:
 
