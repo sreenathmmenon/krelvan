@@ -11,7 +11,7 @@ import { InMemoryLedgerStore, verify } from "../ledger/store.js";
 import { evalCondition, ExprError, type Expr } from "../manifest/expr.js";
 import { validateManifest, type Manifest } from "../manifest/manifest.js";
 import { admit, needsApproval, Supervisor, type CapabilityPlugin, type EffectCall } from "../capability/capability.js";
-import { Engine } from "./engine.js";
+import { Engine, buildInputEvidence } from "./engine.js";
 import { deriveSubRunId } from "./sub-agent-executor.js";
 import { ExpectedError } from "../errors.js";
 
@@ -26,6 +26,32 @@ function rig() {
   const now = () => clock++;
   return { ring, owner, supervisorSigner, store, now };
 }
+
+test("engine provenance: fingerprints exact capability inputs without copying raw values", () => {
+  const evidence = buildInputEvidence({
+    "fetch.body": "private customer source",
+    "fetch.status": 200,
+    "_engine": "not customer evidence",
+    ratio: 1.25,
+  });
+  assert.deepEqual(evidence.entries.map((entry) => entry.key), ["fetch.body", "fetch.status", "ratio"]);
+  assert.equal(evidence.totalKeys, 3);
+  assert.equal(evidence.omittedKeys, 0);
+  assert.equal(evidence.complete, true);
+  assert.equal(evidence.entries.find((entry) => entry.key === "fetch.body")?.kind, "string");
+  assert.match(evidence.entries.find((entry) => entry.key === "fetch.body")?.digest ?? "", /^sha256:[a-f0-9]{64}$/);
+  assert.doesNotMatch(JSON.stringify(evidence), /private customer source/);
+  assert.equal(evidence.entries.find((entry) => entry.key === "ratio")?.kind, "string", "ledger-unsafe floats are fingerprinted in their sanitized form");
+});
+
+test("engine provenance: discloses bounded input-evidence omissions", () => {
+  const input = Object.fromEntries(Array.from({ length: 130 }, (_, index) => [`key-${String(index).padStart(3, "0")}`, index]));
+  const evidence = buildInputEvidence(input);
+  assert.equal(evidence.entries.length, 128);
+  assert.equal(evidence.totalKeys, 130);
+  assert.equal(evidence.omittedKeys, 2);
+  assert.equal(evidence.complete, false);
+});
 
 /** A counting plugin: records how many times it really executed (for double-exec tests). */
 function countingPlugin(name: string, sideEffect: CapabilityPlugin["sideEffect"], cost: number, counter: { n: number }): CapabilityPlugin {
@@ -134,6 +160,12 @@ test("manifest: dangling edge + bad entry are caught", () => {
   assert.ok(issues.includes("DANGLING_EDGE_TO"));
 });
 
+test("manifest: every displayed node must be reachable from entry", () => {
+  const m = twoNodeManifest({ edges: [] });
+  const issues = validateManifest(m);
+  assert.ok(issues.some((issue) => issue.code === "UNREACHABLE_NODE" && issue.message.includes("'b'")));
+});
+
 // ── capability admission ─────────────────────────────────────────────────────────
 
 test("admit: deny-by-default for ungranted capability", () => {
@@ -177,6 +209,35 @@ test("engine: a 2-node run completes, both effects run exactly once, log verifie
   // budget folded correctly: 99 + 1 = 100¢ spent, 0 reserved open
   assert.equal(res.projection.budget.runSpentCents, 100);
   assert.equal(res.projection.budget.runReservedCents, 0);
+});
+
+test("engine: a terminal capability error fails the run instead of reporting completion", async () => {
+  const m: Manifest = {
+    version: 1,
+    name: "honest-terminal-error",
+    intent: "fetch required data",
+    entry: "fetch",
+    runBudgetCents: 100,
+    maxNodeVisits: 3,
+    nodes: [{
+      id: "fetch",
+      role: "Fetch the required URL.",
+      autonomy: "full",
+      capabilities: [{ name: "fetcher", sideEffect: "read", budgetCents: 10 }],
+    }],
+    edges: [],
+  };
+  const plugins = new Map<string, CapabilityPlugin>([
+    ["fetcher", outputPlugin("fetcher", "read", 1, { ok: false, error: "url is required" })],
+  ]);
+  const { engine, store } = engineFor(m, {}, plugins);
+
+  const result = await engine.run();
+  assert.equal(result.status, "failed");
+  assert.match(result.reason ?? "", /terminal node 'fetch'.*url is required/);
+  const eventTypes = (await store.read("t1")).map((event) => event.type);
+  assert.ok(eventTypes.includes("RunFailed"));
+  assert.equal(eventTypes.includes("RunCompleted"), false);
 });
 
 test("engine: budget ceiling fails the run before the second (over-budget) effect", async () => {
@@ -270,8 +331,13 @@ test("engine: a consequential effect is NOT auto-retried (no duplicate side effe
     store: r.store, owner: r.owner, supervisor: new Supervisor(plugins),
     supervisorSigner: r.supervisorSigner, now: r.now, sleep: async () => {},
   });
-  await assert.rejects(() => engine.run({ effectRetries: 2 }), /transient failure/);
+  const result = await engine.run({ effectRetries: 2 });
+  assert.equal(result.status, "failed");
+  assert.match(result.reason ?? "", /transient failure/);
   assert.equal(counters.b!.n, 0, "run never reached toolB — the single consequential attempt failed it");
+  const events = await r.store.read("t1");
+  assert.equal(events.at(-1)?.type, "RunFailed", "failed effect must still close the signed run");
+  assert.ok(verify(events, r.ring).ok, "ledger verifies after consequential effect failure");
 });
 
 test("engine: a capability that exhausts retries fails the run (does not hang)", async () => {
@@ -290,8 +356,13 @@ test("engine: a capability that exhausts retries fails the run (does not hang)",
     store: r.store, owner: r.owner, supervisor: new Supervisor(plugins),
     supervisorSigner: r.supervisorSigner, now: r.now, sleep: async () => {},
   });
-  await assert.rejects(() => engine.run({ effectRetries: 2 }), /transient failure/);
+  const result = await engine.run({ effectRetries: 2 });
+  assert.equal(result.status, "failed");
+  assert.match(result.reason ?? "", /transient failure/);
   assert.equal(counters.b!.n, 0, "run never reached toolB");
+  const events = await r.store.read("t1");
+  assert.equal(events.at(-1)?.type, "RunFailed", "retry exhaustion must close the signed run");
+  assert.ok(verify(events, r.ring).ok, "ledger verifies after retry exhaustion");
 });
 
 test("engine: an expected non-retryable capability failure is attempted once and signed", async () => {
@@ -396,6 +467,36 @@ test("engine: node output flows into run state — conditional edge routes corre
   assert.equal(res.status, "completed");
   assert.equal(counters.b!.n, 1, "toolB ran because a.score=85 satisfied the edge condition");
   assert.equal(res.projection.state["a.score"], 85, "run state contains the output from node a");
+});
+
+test("engine: downstream capabilities receive concluded-node roles as deterministic context", async () => {
+  const m = twoNodeManifest({
+    nodes: [
+      { id: "a", role: "Calculate 28 multiplied by 14.", autonomy: "full", capabilities: [{ name: "toolA", sideEffect: "read", budgetCents: 50 }] },
+      { id: "b", role: "Compose the exact equation.", autonomy: "full", capabilities: [{ name: "toolB", sideEffect: "read", budgetCents: 50 }] },
+    ],
+  });
+  let downstreamInput: Record<string, unknown> | null = null;
+  const plugins = new Map<string, CapabilityPlugin>([
+    ["toolA", outputPlugin("toolA", "read", 1, { result: 392 })],
+    ["toolB", {
+      name: "toolB",
+      sideEffect: "read",
+      estimateCents: () => 1,
+      async invoke(call) {
+        downstreamInput = call.input as Record<string, unknown>;
+        return { output: { ok: true }, claimedCostCents: 1 };
+      },
+    }],
+  ]);
+
+  const { engine } = engineFor(m, {}, plugins);
+  const result = await engine.run();
+
+  assert.equal(result.status, "completed");
+  assert.equal(downstreamInput?.["a.role"], "Calculate 28 multiplied by 14.");
+  assert.equal(downstreamInput?.["b.role"], "Compose the exact equation.");
+  assert.equal(downstreamInput?.["role"], "Compose the exact equation.");
 });
 
 test("engine: run state seeded via initialState is visible to first node and edge conditions", async () => {

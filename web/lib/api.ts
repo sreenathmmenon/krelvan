@@ -107,7 +107,7 @@ export interface LedgerEvent {
 }
 
 export type RunVerification =
-  | { ok: true; runEvents: number; signedEvents: number; ledgerEvents: number; algorithm: string; nonRepudiable?: boolean }
+  | { ok: true; runEvents: number; signedEvents: number; ledgerEvents: number; algorithm: string; nonRepudiable?: boolean; issuerId?: string | null }
   | { ok: false; error: string; detail: string };
 
 /** Re-verify the run's signed ledger chain (the "prove what happened" action). */
@@ -545,10 +545,12 @@ export interface RunExplanation {
   explanation: string;
   generatedAt: number;
   runId: string;
+  source: "model" | "signed-record";
+  warning?: string;
 }
 
-export async function explainRun(runId: string): Promise<RunExplanation> {
-  return apiFetch<RunExplanation>(`/api/runs/${encodeURIComponent(runId)}/explain`);
+export async function explainRun(runId: string, refresh = false): Promise<RunExplanation> {
+  return apiFetch<RunExplanation>(`/api/runs/${encodeURIComponent(runId)}/explain${refresh ? "?refresh=1" : ""}`);
 }
 
 /**

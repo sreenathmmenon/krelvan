@@ -9,6 +9,7 @@
  * code, links, ordered/unordered lists, blockquotes, fenced code blocks, and paragraphs.
  */
 import { Fragment, type ReactNode } from "react";
+import { parseMarkdownTable } from "./markdown-table";
 
 // Only these link schemes are allowed; everything else (javascript:, data:, …) is dropped.
 function safeHref(url: string): string | null {
@@ -117,6 +118,70 @@ export function renderMarkdown(md: string): ReactNode {
           {renderInline(buf.join(" "), nk())}
         </blockquote>,
       );
+      continue;
+    }
+
+    // GFM-style table. The parser requires an unambiguous separator row (`--- | ---`),
+    // so ordinary prose containing a pipe remains a paragraph. Render real table semantics,
+    // and let the wrapper scroll horizontally on narrow screens rather than overflowing.
+    const table = parseMarkdownTable(lines, i);
+    if (table) {
+      blocks.push(
+        <div
+          key={nk()}
+          className="md-table-wrap"
+          style={{
+            overflowX: "auto",
+            margin: "var(--s3) 0 var(--s4)",
+            border: "1px solid var(--line)",
+            borderRadius: "var(--r)",
+          }}
+        >
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "max-content" }}>
+            <thead style={{ background: "var(--surface-sunken)" }}>
+              <tr>
+                {table.header.map((cell, column) => (
+                  <th
+                    key={column}
+                    scope="col"
+                    style={{
+                      padding: "var(--s3) var(--s4)",
+                      borderBottom: "1px solid var(--line-strong)",
+                      textAlign: table.alignments[column],
+                      color: "var(--ink)",
+                      fontWeight: 650,
+                      verticalAlign: "top",
+                    }}
+                  >
+                    {renderInline(cell, `${nk()}-h-${column}`)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {table.rows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {row.map((cell, column) => (
+                    <td
+                      key={column}
+                      style={{
+                        padding: "var(--s3) var(--s4)",
+                        borderBottom: rowIndex === table.rows.length - 1 ? "none" : "1px solid var(--line)",
+                        textAlign: table.alignments[column],
+                        color: "var(--ink-soft)",
+                        verticalAlign: "top",
+                      }}
+                    >
+                      {renderInline(cell, `${nk()}-${rowIndex}-${column}`)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      i = table.nextLine;
       continue;
     }
 

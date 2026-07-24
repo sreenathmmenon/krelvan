@@ -24,14 +24,16 @@
  *   KRELVAN_API_PORT   internal API port     (default 3201)
  *   KRELVAN_DATA_DIR   SQLite + registries   (default <repo>/data)
  *   KRELVAN_SKIP_BUILD set to "1" to skip the auto-build step
- *   LLM keys (KRELVAN_LLM_PROVIDER / KRELVAN_LLM_API_KEY / KRELVAN_ANTHROPIC_KEY …)
+ *   LLM keys (KRELVAN_LLM_PROVIDER / KRELVAN_LLM_API_KEY / OPENAI_API_KEY /
+ *     KRELVAN_ANTHROPIC_KEY …)
  *     enable LLM features; without them the UI runs and clearly reports LLM as off.
  */
 
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -81,7 +83,17 @@ const WEB_PORT = process.env.PORT ?? process.env.KRELVAN_WEB_PORT ?? "3100";
 // which the launcher derives from API_PORT below, so this stays consistent.)
 let API_PORT = process.env.KRELVAN_API_PORT ?? "3201";
 if (API_PORT === WEB_PORT) API_PORT = WEB_PORT === "3211" ? "3212" : "3211";
-const DATA_DIR = process.env.KRELVAN_DATA_DIR ?? join(ROOT, "data");
+const installedPackage = ROOT.split(sep).includes("node_modules");
+const userDataBase = process.platform === "win32"
+  ? process.env.LOCALAPPDATA
+  : process.env.XDG_DATA_HOME;
+const stableUserDataDir = userDataBase
+  ? join(userDataBase, "krelvan")
+  : join(homedir(), ".krelvan");
+// npx/global packages live in package-manager directories that may be deleted during cache
+// cleanup or upgrades. Installed copies therefore default to stable per-user storage, while a
+// source checkout retains the familiar repository-local ./data default.
+const DATA_DIR = process.env.KRELVAN_DATA_DIR ?? (installedPackage ? stableUserDataDir : join(ROOT, "data"));
 const SKIP_BUILD = process.env.KRELVAN_SKIP_BUILD === "1";
 
 const args = process.argv.slice(2);
@@ -111,7 +123,7 @@ Environment (all optional):
   KRELVAN_API_PORT=${API_PORT}    internal API port
   KRELVAN_DATA_DIR        SQLite ledger + registries dir (default ./data)
   KRELVAN_SKIP_BUILD=1    skip the automatic build step
-  KRELVAN_LLM_PROVIDER / KRELVAN_LLM_API_KEY (or KRELVAN_ANTHROPIC_KEY)
+  KRELVAN_LLM_PROVIDER / KRELVAN_LLM_API_KEY (or OPENAI_API_KEY / KRELVAN_ANTHROPIC_KEY)
                           enable LLM features; without a key the UI still runs.
 
 Once up:
@@ -175,7 +187,7 @@ async function ensureBuilt() {
     // Install root deps first when they're missing, exactly as we do for the web UI.
     if (!existsSync(join(ROOT, "node_modules", ".bin", "tsc"))) {
       log("installing core dependencies (first run)…");
-      await run(NPM, ["install"], { cwd: ROOT });
+      await run(NPM, ["ci", "--ignore-scripts"], { cwd: ROOT });
     }
     log("building core (tsc)…");
     await run(NPM, ["run", "build"], { cwd: ROOT });
@@ -187,8 +199,13 @@ async function ensureBuilt() {
 
   // 2. Web deps
   if (!existsSync(join(WEB, "node_modules"))) {
-    log("installing web UI dependencies (first run)…");
-    await run(NPM, ["install"], { cwd: WEB });
+    if (!existsSync(join(WEB, "package-lock.json"))) {
+      throw new Error("web/package-lock.json is missing — refusing an unpinned dependency install");
+    }
+    log("installing pinned web UI dependencies (first run)…");
+    // Install scripts are unnecessary for Krelvan's JS runtime and are a common package
+    // supply-chain execution path. The committed lockfile pins every fetched artifact.
+    await run(NPM, ["ci", "--ignore-scripts"], { cwd: WEB });
   }
 
   // 3. Web build → web/.next
@@ -199,7 +216,10 @@ async function ensureBuilt() {
   const needBuild = !existsSync(join(WEB, ".next"));
   if (needBuild) {
     log("building the web UI — first run only, this takes ~2-3 minutes. Later starts take seconds…");
-    await run(NPM, ["run", "build"], { cwd: WEB, env: { ...process.env } });
+    await run(NPM, ["run", "build"], {
+      cwd: WEB,
+      env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+    });
   } else {
     log("web UI already built (web/.next) — skipping");
   }
@@ -259,9 +279,12 @@ async function up() {
   mkdirSync(DATA_DIR, { recursive: true });
   await ensureBuilt();
 
-  const hasLlm =
-    !!(process.env.KRELVAN_LLM_API_KEY || process.env.KRELVAN_ANTHROPIC_KEY) ||
-    process.env.KRELVAN_LLM_PROVIDER === "ollama";
+  const envLlmProvider = process.env.KRELVAN_LLM_PROVIDER ?? "anthropic";
+  const envHasLlm =
+    !!process.env.KRELVAN_LLM_API_KEY ||
+    (envLlmProvider === "openai" && !!process.env.OPENAI_API_KEY) ||
+    (envLlmProvider === "anthropic" && !!process.env.KRELVAN_ANTHROPIC_KEY) ||
+    envLlmProvider === "ollama";
 
   // ── Auth: derive ONE shared token and give it to both processes ────────────
   // The launcher owns the plaintext so it can hand it to the web proxy (which
@@ -312,7 +335,17 @@ async function up() {
     // edge, then routes to the container. There the process MUST bind 0.0.0.0 or the edge gets a
     // 502 ("application failed to respond"). So when PORT is injected and no explicit web host is
     // set, default to 0.0.0.0 — the PaaS edge already provides HTTPS.
-    const onPaaS = !!process.env.PORT;
+    // PORT is also the documented local port override; it is not proof that we are on
+    // a managed platform. Inferring "cloud" from PORT alone silently exposed a local
+    // custom-port install on every interface. Detect platform-specific markers instead.
+    const onPaaS = !!(
+      process.env.RAILWAY_ENVIRONMENT ||
+      process.env.RAILWAY_ENVIRONMENT_NAME ||
+      process.env.RENDER ||
+      process.env.FLY_APP_NAME ||
+      process.env.DYNO ||
+      process.env.K_SERVICE
+    );
     const WEB_HOST = process.env.KRELVAN_WEB_HOST ?? (onPaaS ? "0.0.0.0" : "127.0.0.1");
     const webLoopback = WEB_HOST === "127.0.0.1" || WEB_HOST === "::1" || WEB_HOST === "localhost";
     if (!webLoopback) {
@@ -334,12 +367,38 @@ async function up() {
   }
 
   // Banner after a short delay so it lands below child startup logs.
-  setTimeout(() => {
+  setTimeout(async () => {
+    // Ask the running API for the effective status. This includes encrypted in-app settings,
+    // which the launcher intentionally cannot decrypt and which may differ from the environment.
+    // If the API is still starting, fall back to the environment without delaying startup.
+    let llmStatus = {
+      hasLlm: envHasLlm,
+      provider: envLlmProvider,
+      model: process.env.KRELVAN_LLM_MODEL ?? null,
+      source: "env",
+    };
+    try {
+      const response = await fetch(`${apiOrigin}/api/status`, { signal: AbortSignal.timeout(1500) });
+      if (response.ok) {
+        const current = await response.json();
+        if (typeof current?.hasLlm === "boolean" && typeof current?.provider === "string") {
+          llmStatus = {
+            hasLlm: current.hasLlm,
+            provider: current.provider,
+            model: typeof current.model === "string" ? current.model : null,
+            source: current.source === "in-app" ? "in-app" : "env",
+          };
+        }
+      }
+    } catch { /* API is still starting; the environment fallback remains accurate enough */ }
+    const llmLabel = llmStatus.hasLlm
+      ? `configured (${llmStatus.provider}${llmStatus.model ? ` · ${llmStatus.model}` : ""}${llmStatus.source === "in-app" ? " · saved in Settings" : ""})`
+      : "not configured (open Settings → Model & secrets, or set an LLM environment variable)";
     process.stdout.write(
       `\n\x1b[32m\x1b[1m  Krelvan is up.\x1b[0m\n` +
       (apiOnly ? "" : `  Web UI   \x1b[4mhttp://localhost:${WEB_PORT}\x1b[0m\n`) +
       `  API      \x1b[4mhttp://localhost:${API_PORT}/api/health\x1b[0m\n` +
-      `  LLM      ${hasLlm ? "configured" : "not configured (set KRELVAN_LLM_API_KEY or KRELVAN_ANTHROPIC_KEY to enable agent building / explanations)"}\n` +
+      `  LLM      ${llmLabel}\n` +
       `  Data     ${DATA_DIR}\n\n  Press Ctrl-C to stop.\n\n`,
     );
   }, 1500).unref();

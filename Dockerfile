@@ -6,16 +6,18 @@
 #                        and the launcher. SQLite lives on a mounted volume.
 
 # ── Stage 1: build the core ──────────────────────────────────────────────────
-FROM node:22-slim AS core-build
+FROM node:22.23.1-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS core-build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.release.json ./
+COPY scripts/build-release.mjs ./scripts/build-release.mjs
 COPY src ./src
 RUN npm run build
+RUN npm prune --omit=dev
 
 # ── Stage 2: build the web UI ────────────────────────────────────────────────
-FROM node:22-slim AS web-build
+FROM node:22.23.1-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS web-build
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -30,15 +32,21 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ── Stage 3: minimal runner ──────────────────────────────────────────────────
-FROM node:22-slim AS runner
+FROM node:22.23.1-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ARG KRELVAN_VERSION=0.1.0
+LABEL org.opencontainers.image.title="Krelvan" \
+      org.opencontainers.image.version="${KRELVAN_VERSION}" \
+      org.opencontainers.image.source="https://github.com/sreenathmmenon/krelvan" \
+      org.opencontainers.image.licenses="Apache-2.0"
 
 # Core: compiled output + its package manifest + launcher + capabilities.
 COPY package.json ./
 COPY bin ./bin
 COPY capabilities ./capabilities
 COPY --from=core-build /app/dist ./dist
+COPY --from=core-build /app/node_modules ./node_modules
 
 # Web: built app + production node_modules + sources next start needs.
 COPY --from=web-build /app/web/.next ./web/.next
@@ -56,9 +64,13 @@ ENV PORT=3100
 ENV KRELVAN_API_PORT=3201
 # Builds are already done in the image; the launcher just starts both processes.
 ENV KRELVAN_SKIP_BUILD=1
-RUN mkdir -p /data
+RUN mkdir -p /data && chown node:node /data
 
 # Public web port (a PaaS overrides $PORT); the API port is internal-only.
 EXPOSE 3100
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3100').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+
+USER node
 CMD ["node", "bin/krelvan.mjs", "up"]

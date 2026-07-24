@@ -3,18 +3,21 @@
  *
  * Providers supported (selected via KRELVAN_LLM_PROVIDER env var):
  *   "anthropic"   — Anthropic API (default). Uses KRELVAN_LLM_API_KEY or KRELVAN_ANTHROPIC_KEY.
- *   "openai"      — OpenAI API (chat/completions). Set KRELVAN_LLM_BASE_URL to override.
+ *   "openai"      — OpenAI Responses API. Set KRELVAN_LLM_BASE_URL to override.
  *   "ollama"      — Ollama native API (http://localhost:11434). No API key needed.
  *   "gemini"      — Google Gemini (generativelanguage API). Uses KRELVAN_LLM_API_KEY.
  *   "groq"        — Groq (OpenAI-compatible, https://api.groq.com/openai/v1).
  *   "mistral"     — Mistral (OpenAI-compatible, https://api.mistral.ai/v1).
- *   "compatible"  — Generic OpenAI-compatible endpoint. REQUIRES KRELVAN_LLM_BASE_URL.
+ *   "compatible"  — Generic OpenAI-compatible chat-completions endpoint. REQUIRES
+ *                   KRELVAN_LLM_BASE_URL.
  *                   Unlocks OpenRouter, Together, Fireworks, DeepSeek, vLLM, LM Studio,
  *                   and any other server that speaks the OpenAI /chat/completions shape.
  *
  * Env vars:
  *   KRELVAN_LLM_PROVIDER      — see list above (default: "anthropic")
- *   KRELVAN_LLM_API_KEY       — API key for the provider (falls back to KRELVAN_ANTHROPIC_KEY for anthropic)
+ *   KRELVAN_LLM_API_KEY       — API key for the provider
+ *   OPENAI_API_KEY            — standard OpenAI key fallback when provider=openai
+ *   KRELVAN_ANTHROPIC_KEY     — Anthropic key fallback when provider=anthropic
  *   KRELVAN_LLM_BASE_URL      — Base URL override (required for "compatible")
  *   KRELVAN_LLM_MODEL         — Default model to use (overrides per-capability defaults).
  *                               For "compatible"/"groq"/"mistral"/openrouter you must set this
@@ -55,9 +58,9 @@ import { assertOllamaMemorySafe } from "./ollama-memory-guard.js";
 const log = getLogger("llm-client");
 
 /**
- * Provider identifiers. "openai", "groq", "mistral", and "compatible" all use the
- * OpenAI-compatible /chat/completions wire format under the hood — they differ only
- * in their default base URL. "gemini" uses Google's native generativelanguage API.
+ * Provider identifiers. OpenAI uses its native Responses API. Groq, Mistral, and
+ * "compatible" use the OpenAI-compatible /chat/completions shape. Gemini uses
+ * Google's native generativelanguage API.
  */
 export type LLMProvider =
   | "anthropic"
@@ -68,7 +71,7 @@ export type LLMProvider =
   | "mistral"
   | "compatible";
 
-/** Providers that speak the OpenAI /chat/completions wire format. */
+/** Providers with an OpenAI-family base URL. OpenAI itself uses /responses. */
 const OPENAI_COMPATIBLE: ReadonlySet<LLMProvider> = new Set<LLMProvider>([
   "openai",
   "groq",
@@ -94,6 +97,8 @@ export interface LLMRequest {
   model: string;
   maxTokens: number;
   temperature: number;
+  /** Optional caller cancellation. Explain uses this to stop provider work at its deadline. */
+  signal?: AbortSignal;
   /**
    * When set, the provider is asked to return a JSON object matching this schema.
    * Each provider implements this via its native mechanism:
@@ -102,7 +107,18 @@ export interface LLMRequest {
    *   Ollama    → format: <schema>
    * The response `.text` will be valid JSON matching the schema.
    */
-  schema?: { name: string; description?: string; schema: Record<string, unknown> };
+  schema?: {
+    name: string;
+    description?: string;
+    schema: Record<string, unknown>;
+    /**
+ * OpenAI strict structured outputs require a restricted JSON-Schema subset
+     * where every property is required. Set false for broader schemas that are
+     * still validated by Krelvan after generation (for example, manifests with
+     * optional seed/schedule fields). Defaults to true.
+     */
+    strict?: boolean;
+  };
   /**
    * Ask for PLAIN TEXT output (prose), not JSON. Matters for Ollama: its client otherwise
    * forces `format:"json"` on every call, which wraps a translation/haiku/summary in a JSON
@@ -121,6 +137,8 @@ export interface LLMClientConfig {
   provider: LLMProvider;
   apiKey?: string;
   baseUrl?: string;
+  /** Injected only by transport-contract tests. Production uses the built-in fetch. */
+  fetchImpl?: typeof fetch;
 }
 
 export interface EmbedResponse {
@@ -160,7 +178,7 @@ class AnthropicLLMClient implements LLMClient {
       };
       const outcome = await fetchWithRetry(
         `${this.baseUrl}/v1/messages`,
-        { method: "POST", headers: { "content-type": "application/json", "x-api-key": this.apiKey, "anthropic-version": "2023-06-01" }, body: JSON.stringify(body) },
+        { method: "POST", headers: { "content-type": "application/json", "x-api-key": this.apiKey, "anthropic-version": "2023-06-01" }, body: JSON.stringify(body), signal: req.signal },
         { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
       );
       if (!outcome.ok) throw new Error(outcome.status === 0 ? `network error: ${outcome.rawBody}` : `LLM API ${outcome.status}: ${outcome.rawBody}`);
@@ -184,6 +202,7 @@ class AnthropicLLMClient implements LLMClient {
         method: "POST",
         headers: { "content-type": "application/json", "x-api-key": this.apiKey, "anthropic-version": "2023-06-01" },
         body: JSON.stringify(body),
+        signal: req.signal,
       },
       { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
     );
@@ -198,8 +217,12 @@ class AnthropicLLMClient implements LLMClient {
 
 // ── OpenAI-compatible client (OpenAI, OpenRouter, Groq, Together, LM Studio) ─
 
-class OpenAILLMClient implements LLMClient {
-  constructor(private readonly apiKey: string, private readonly baseUrl: string) {}
+class OpenAICompatibleLLMClient implements LLMClient {
+  constructor(
+    private readonly apiKey: string,
+    private readonly baseUrl: string,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
 
   async complete(req: LLMRequest): Promise<LLMResponse> {
     const headers: Record<string, string> = { "content-type": "application/json" };
@@ -220,7 +243,7 @@ class OpenAILLMClient implements LLMClient {
     // still steered toward the right shape (think.ts already lists them in the role).
     const modes: Array<Record<string, unknown> | null> = req.schema
       ? [
-          { type: "json_schema", json_schema: { name: req.schema.name, strict: true, schema: req.schema.schema } },
+          { type: "json_schema", json_schema: { name: req.schema.name, strict: req.schema.strict ?? true, schema: req.schema.schema } },
           { type: "json_object" },
           null,
         ]
@@ -245,8 +268,9 @@ class OpenAILLMClient implements LLMClient {
         : { ...baseBody };
       outcome = await fetchWithRetry(
         `${this.baseUrl}/chat/completions`,
-        { method: "POST", headers, body: JSON.stringify(body) },
+        { method: "POST", headers, body: JSON.stringify(body), signal: req.signal },
         { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
+        this.fetchImpl,
       );
       // Degrade on a 400 that means "this structured mode won't work here":
       //  - response_format unsupported (model can't do json_schema/json_object), OR
@@ -294,12 +318,116 @@ class OpenAILLMClient implements LLMClient {
       `${this.baseUrl}/embeddings`,
       { method: "POST", headers, body: JSON.stringify({ model, input: texts }) },
       { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
+      this.fetchImpl,
     );
     if (!outcome.ok) throw new Error(outcome.status === 0 ? `embeddings network error: ${outcome.rawBody}` : `embeddings API ${outcome.status}: ${outcome.rawBody}`);
     const json = (await outcome.resp.json()) as { data?: { embedding: number[] }[]; usage?: { prompt_tokens: number } };
     const vectors = (json.data ?? []).map((d) => d.embedding);
     if (vectors.length !== texts.length) throw new Error(`embeddings: expected ${texts.length} vectors, got ${vectors.length}`);
     return { vectors, inputTokens: json.usage?.prompt_tokens ?? 0 };
+  }
+}
+
+// ── OpenAI Responses API client ──────────────────────────────────────────────
+
+/**
+ * OpenAI has its own adapter instead of being treated as a generic
+ * chat-completions gateway. This keeps Krelvan on OpenAI's current Responses API
+ * while Groq, Mistral, and user-supplied compatible endpoints retain their
+ * existing wire format.
+ */
+class OpenAIResponsesLLMClient implements LLMClient {
+  private readonly embeddingsClient: OpenAICompatibleLLMClient;
+
+  constructor(
+    private readonly apiKey: string,
+    private readonly baseUrl: string,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {
+    this.embeddingsClient = new OpenAICompatibleLLMClient(apiKey, baseUrl, fetchImpl);
+  }
+
+  async complete(req: LLMRequest): Promise<LLMResponse> {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      authorization: `Bearer ${this.apiKey}`,
+    };
+    const body: Record<string, unknown> = {
+      model: req.model,
+      instructions: req.system,
+      input: req.messages,
+      max_output_tokens: req.maxTokens,
+      // Krelvan persists the captured result in its own signed ledger. Do not ask
+      // the provider to retain another application-level copy.
+      store: false,
+    };
+
+    // Do not send sampling parameters on the Responses API. Current reasoning
+    // models (including the GPT-5.6 family) reject `temperature`; omitting it is
+    // portable across both reasoning and non-reasoning OpenAI models.
+
+    if (req.schema) {
+      body["text"] = {
+        format: {
+          type: "json_schema",
+          name: req.schema.name,
+          strict: req.schema.strict ?? true,
+          schema: req.schema.schema,
+        },
+      };
+    }
+
+    const outcome = await fetchWithRetry(
+      `${this.baseUrl}/responses`,
+      { method: "POST", headers, body: JSON.stringify(body), signal: req.signal },
+      { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
+      this.fetchImpl,
+    );
+    if (!outcome.ok) {
+      throw new Error(
+        outcome.status === 0
+          ? `network error: ${outcome.rawBody}`
+          : `OpenAI API ${outcome.status}: ${outcome.rawBody}`,
+      );
+    }
+
+    const json = (await outcome.resp.json()) as {
+      status?: string;
+      error?: { message?: string } | null;
+      incomplete_details?: { reason?: string } | null;
+      output?: Array<{
+        type?: string;
+        content?: Array<{ type?: string; text?: string; refusal?: string }>;
+      }>;
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    if (json.error?.message) throw new Error(`OpenAI response failed: ${json.error.message}`);
+    if (json.status === "incomplete") {
+      throw new Error(`OpenAI response incomplete: ${json.incomplete_details?.reason ?? "unknown reason"}`);
+    }
+
+    const parts = (json.output ?? [])
+      .filter((item) => item.type === "message")
+      .flatMap((item) => item.content ?? []);
+    const text = parts
+      .filter((part) => part.type === "output_text")
+      .map((part) => part.text ?? "")
+      .join("")
+      .trim();
+    if (!text) {
+      const refusal = parts.find((part) => part.type === "refusal")?.refusal?.trim();
+      throw new Error(refusal ? `OpenAI refused the request: ${refusal}` : "OpenAI returned no text");
+    }
+
+    return {
+      text,
+      inputTokens: json.usage?.input_tokens ?? 0,
+      outputTokens: json.usage?.output_tokens ?? 0,
+    };
+  }
+
+  embed(texts: string[], model: string): Promise<EmbedResponse> {
+    return this.embeddingsClient.embed(texts, model);
   }
 }
 
@@ -331,6 +459,7 @@ class OllamaLLMClient implements LLMClient {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
+          signal: req.signal,
         },
         { maxAttempts: 1, baseDelayMs: 0, timeoutMs: 600_000 },
       );
@@ -441,7 +570,7 @@ class GeminiLLMClient implements LLMClient {
 
     const outcome = await fetchWithRetry(
       url,
-      { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": this.apiKey }, body: JSON.stringify(body) },
+      { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": this.apiKey }, body: JSON.stringify(body), signal: req.signal },
       { maxAttempts: 3, baseDelayMs: 1000, timeoutMs: 120_000 },
     );
 
@@ -514,7 +643,7 @@ export function getLLMClient(): LLMClient {
   if (_sharedClient) return _sharedClient;
 
   const provider = (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") as LLMProvider;
-  const apiKey = process.env["KRELVAN_LLM_API_KEY"] ?? process.env["KRELVAN_ANTHROPIC_KEY"] ?? "";
+  const apiKey = resolveProviderApiKey(provider);
   const baseUrl = process.env["KRELVAN_LLM_BASE_URL"];
 
   // No-model guard. The default provider is anthropic; with NO key set, we would otherwise
@@ -567,7 +696,7 @@ export function getEmbeddingsClient(): { client: LLMClient & { embed: NonNullabl
   // Anthropic (or anything that can't embed) → fall back to local Ollama.
   if (!explicit && provider === "anthropic") provider = "ollama";
 
-  const apiKey = process.env["KRELVAN_EMBED_API_KEY"] ?? process.env["KRELVAN_LLM_API_KEY"] ?? process.env["KRELVAN_ANTHROPIC_KEY"] ?? "";
+  const apiKey = process.env["KRELVAN_EMBED_API_KEY"] ?? resolveProviderApiKey(provider);
   const baseUrl = process.env["KRELVAN_EMBED_BASE_URL"] ?? (provider === (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") ? process.env["KRELVAN_LLM_BASE_URL"] : undefined);
   const model = process.env["KRELVAN_EMBED_MODEL"] ?? defaultEmbedModel(provider);
 
@@ -586,6 +715,15 @@ function defaultEmbedModel(provider: LLMProvider): string {
   }
 }
 
+/** Resolve only credentials that belong to the selected provider. */
+export function resolveProviderApiKey(provider: LLMProvider): string {
+  const shared = process.env["KRELVAN_LLM_API_KEY"];
+  if (shared) return shared;
+  if (provider === "openai") return process.env["OPENAI_API_KEY"] ?? "";
+  if (provider === "anthropic") return process.env["KRELVAN_ANTHROPIC_KEY"] ?? "";
+  return "";
+}
+
 /**
  * Shared construction logic used by both getLLMClient (env-driven) and makeLLMClient
  * (explicit-config). Keeping it in one place means every provider behaves identically
@@ -593,6 +731,14 @@ function defaultEmbedModel(provider: LLMProvider): string {
  */
 function buildClient(cfg: LLMClientConfig): LLMClient {
   const apiKey = cfg.apiKey ?? "";
+
+  if (cfg.provider === "openai") {
+    return new OpenAIResponsesLLMClient(
+      apiKey,
+      cfg.baseUrl ?? OPENAI_COMPATIBLE_DEFAULT_BASE.openai!,
+      cfg.fetchImpl ?? fetch,
+    );
+  }
 
   if (OPENAI_COMPATIBLE.has(cfg.provider)) {
     const base = cfg.baseUrl ?? OPENAI_COMPATIBLE_DEFAULT_BASE[cfg.provider];
@@ -603,7 +749,7 @@ function buildClient(cfg: LLMClientConfig): LLMClient {
         `llm-client: provider "${cfg.provider}" requires KRELVAN_LLM_BASE_URL (e.g. https://openrouter.ai/api/v1)`,
       );
     }
-    return new OpenAILLMClient(apiKey, base);
+    return new OpenAICompatibleLLMClient(apiKey, base, cfg.fetchImpl ?? fetch);
   }
 
   switch (cfg.provider) {
@@ -756,10 +902,9 @@ export const PROVIDER_REGISTRY: readonly ProviderInfo[] = [
     needsBaseUrl: false,
     customModel: false,
     models: [
-      { provider: "openai", model: "gpt-4o", label: "GPT-4o" },
-      { provider: "openai", model: "gpt-4o-mini", label: "GPT-4o mini" },
-      { provider: "openai", model: "gpt-4-turbo", label: "GPT-4 Turbo" },
-      { provider: "openai", model: "o3-mini", label: "o3-mini" },
+      { provider: "openai", model: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+      { provider: "openai", model: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
+      { provider: "openai", model: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
       { provider: "openai", model: "", label: "Custom model id…", note: "type any OpenAI model id" },
     ],
   },
@@ -850,7 +995,7 @@ export function defaultModelForProvider(
 ): string {
   switch (provider) {
     case "anthropic": return tier === "cheap" ? "claude-haiku-4-5" : "claude-sonnet-4-6";
-    case "openai":    return tier === "cheap" ? "gpt-4o-mini" : "gpt-4o";
+    case "openai":    return tier === "cheap" ? "gpt-5.6-luna" : "gpt-5.6-sol";
     case "gemini":    return tier === "cheap" ? "gemini-2.5-flash" : "gemini-2.5-flash";
     case "groq":      return tier === "cheap" ? "llama-3.1-8b-instant" : "llama-3.3-70b-versatile";
     case "mistral":   return tier === "cheap" ? "mistral-small-latest" : "mistral-large-latest";

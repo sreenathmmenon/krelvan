@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { cleanComposedText } from "./compose.js";
+import { buildCompositionContext, cleanComposedText } from "./compose.js";
 
 test("compose: strips a leading title:/body: label pair", () => {
   const out = cleanComposedText("title: My Headline\nbody: The actual prose here.");
@@ -49,4 +49,34 @@ test("compose: unwraps a JSON-object answer", () => {
 
 test("compose: unwraps a fenced code block around the whole answer", () => {
   assert.equal(cleanComposedText("```\nHello world.\n```"), "Hello world.");
+});
+
+test("compose: turns simple model-emitted TeX arithmetic into clean customer-facing text", () => {
+  assert.equal(cleanComposedText(String.raw`Verified: \(28 \times 14 = 392\).`), "Verified: 28 × 14 = 392.");
+  assert.equal(cleanComposedText(String.raw`\[144 \div 12 = 12\]`), "144 ÷ 12 = 12");
+});
+
+test("compose: keeps short scalar results from prior nodes as grounded context", () => {
+  const context = buildCompositionContext({
+    "calculate.result": 392,
+    "calculate.verified": true,
+    "calculate.risk_level": "low",
+    "calculate.role": "Calculate 28 multiplied by 14 and verify the arithmetic.",
+    "answer.role": "Compose the exact equation.",
+    role: "current composing instruction",
+    _engine: "hidden",
+  }, "answer");
+
+  assert.deepEqual(context, [
+    "[calculate.result]\n392",
+    "[calculate.verified]: true",
+    "[calculate.risk_level]: low",
+    "[calculate.role]: Calculate 28 multiplied by 14 and verify the arithmetic.",
+  ]);
+});
+
+test("compose: hosted context keeps a multi-record result beyond the former 3000-char ceiling", () => {
+  const longResult = "record;".repeat(700);
+  const context = buildCompositionContext({ "audit.result": longResult }, "report");
+  assert.equal(context[0], `[audit.result]\n${longResult}`);
 });

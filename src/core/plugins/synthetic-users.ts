@@ -38,7 +38,9 @@ const log = getLogger("synthetic-users");
 function hasLlm(): boolean {
   const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
   return provider === "ollama"
-    || !!(process.env["KRELVAN_LLM_API_KEY"] || process.env["KRELVAN_ANTHROPIC_KEY"]);
+    || !!process.env["KRELVAN_LLM_API_KEY"]
+    || (provider === "openai" && !!process.env["OPENAI_API_KEY"])
+    || (provider === "anthropic" && !!process.env["KRELVAN_ANTHROPIC_KEY"]);
 }
 
 // A value is a directive/role prompt, not a scenario subject, if it opens like a command. We prefer

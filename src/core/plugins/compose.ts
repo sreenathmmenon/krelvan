@@ -54,6 +54,15 @@ export function cleanComposedText(raw: string): string {
   const labelRe = new RegExp(`^[ \\t]*(?:${LABELS.join("|")})\\s*[:=][ \\t]*`, "gim");
   text = text
     .replace(labelRe, "")
+    // Krelvan renders composed output as customer-facing prose, not as a TeX document.
+    // Models occasionally wrap a simple equation in inline/display TeX despite being asked for
+    // plain text. Remove only the unambiguous delimiters and translate common arithmetic
+    // operators; leave every operand and the rest of the prose untouched.
+    .replace(/\\\(([\s\S]*?)\\\)/g, "$1")
+    .replace(/\\\[([\s\S]*?)\\\]/g, "$1")
+    .replace(/\\times\b/g, "×")
+    .replace(/\\div\b/g, "÷")
+    .replace(/\\cdot\b/g, "·")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return text;
@@ -76,6 +85,54 @@ function defaultModel(): string {
   // resolveModel guards against a stale KRELVAN_LLM_MODEL that belongs to another provider
   // (e.g. an Ollama tag left in .env while the provider is Gemini) — see llm-client.resolveModel.
   return resolveModel(currentProvider(), "cheap");
+}
+
+/**
+ * Build the grounded context handed to the composing model.
+ *
+ * Short scalar values are often the entire answer: `392`, `true`, `low`, or `US`. Dropping
+ * values shorter than ten characters caused a correct upstream calculation to disappear before
+ * the final composing step. Keep every non-empty scalar while still excluding engine metadata
+ * and the current node's role (which is sent separately as the task).
+ */
+export function buildCompositionContext(
+  input: Record<string, unknown>,
+  currentNodeId?: string,
+  maxChars = 12000,
+): string[] {
+  const MAX_CHARS = Math.max(1000, Math.min(32768, Math.floor(maxChars)));
+  const priority: string[] = [];
+  const rest: string[] = [];
+
+  for (const [k, v] of Object.entries(input)) {
+    if (k.startsWith("_")) continue;
+    if (k === "topic" || k === "prompt" || k === "style" || k === "role") continue;
+    // The PRIOR node's role often contains the original operands, URL, source, or constraints.
+    // Keep it as grounding. Only the current role is redundant because it is sent separately as
+    // "Your instruction for this step".
+    if ((currentNodeId && k === `${currentNodeId}.role`) ||
+        k.endsWith(".ok") || k.endsWith(".status") ||
+        k.endsWith(".contentType") || k.endsWith(".truncated") || k.endsWith(".headers") ||
+        k.endsWith(".next") || k.endsWith(".thought")) continue;
+
+    let val: string;
+    if (typeof v === "string") val = v.trim();
+    else if (typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") val = String(v);
+    else {
+      try { val = JSON.stringify(v) ?? ""; }
+      catch { continue; }
+    }
+    if (!val) continue;
+
+    const truncated = val.length > MAX_CHARS ? val.slice(0, MAX_CHARS) + "…" : val;
+    const item = k.endsWith(".result") || k.endsWith(".body") || k.endsWith(".snippet")
+      ? `[${k}]\n${truncated}`
+      : `[${k}]: ${truncated}`;
+    if (k.endsWith(".result") || k.endsWith(".body") || k.endsWith(".snippet")) priority.push(item);
+    else rest.push(item);
+  }
+
+  return [...priority, ...rest];
 }
 
 export const composeCapability: CapabilityPlugin = {
@@ -106,24 +163,11 @@ export const composeCapability: CapabilityPlugin = {
     // Build a context section from prior node outputs — same approach as think.
     // Priority: .result and .body values first (domain content), then other scalars.
     // This is what prevents compose from writing generic articles when real data exists.
-    const MAX_CHARS = 3000;
-    const contextParts: string[] = [];
-    for (const [k, v] of Object.entries(input)) {
-      if (k.startsWith("_")) continue;
-      if (k === "topic" || k === "prompt" || k === "style") continue;
-      if (k.endsWith(".role") || k.endsWith(".ok") || k.endsWith(".status") ||
-          k.endsWith(".contentType") || k.endsWith(".truncated") || k.endsWith(".headers") ||
-          k.endsWith(".next") || k.endsWith(".thought")) continue;
-      const val = typeof v === "string" ? v : JSON.stringify(v);
-      if (val.length < 10) continue;
-      const truncated = val.length > MAX_CHARS ? val.slice(0, MAX_CHARS) + "…" : val;
-      // Prioritise .result and .body (most informative)
-      if (k.endsWith(".result") || k.endsWith(".body") || k.endsWith(".snippet")) {
-        contextParts.unshift(`[${k}]\n${truncated}`);
-      } else {
-        contextParts.push(`[${k}]: ${truncated}`);
-      }
-    }
+    const contextParts = buildCompositionContext(
+      input,
+      call.nodeId,
+      currentProvider() === "ollama" ? 3000 : 12000,
+    );
 
     log.info({ nodeId: call.nodeId, topic, style, model, provider, contextKeys: contextParts.length }, "compose: calling LLM");
 
@@ -151,6 +195,7 @@ export const composeCapability: CapabilityPlugin = {
         // the instruction didn't request.",
         "FOLLOW THE REQUESTED FORMAT EXACTLY. If the instruction specifies a length (e.g. \"2 sentences\", \"3 bullets\") or shape, match it precisely. Do not add a title, heading, or extra sections unless asked.",
         "NEVER prefix lines with field labels like \"title:\" or \"body:\" — write the actual prose directly. Those are internal field names, not something the reader should ever see.",
+        "Use plain customer-facing text. For equations, use Unicode operators such as × and ÷; never emit LaTeX delimiters or commands.",
         styleInstruction(style),
         "Output only the composed text — no preamble, no meta-commentary, no JSON wrapper.",
       ].join("\n"),

@@ -124,7 +124,10 @@ export class Compiler {
     }
 
     // 1. structural validation
-    const vIssues = fatalIssues(validateManifest(proposal));
+    const vIssues = [
+      ...fatalIssues(validateManifest(proposal)),
+      ...checkCapabilityInputs(proposal),
+    ];
     if (vIssues.length) return { ok: false, stage: "validate", issues: vIssues };
 
     // 2. capability monotonicity (the security core)
@@ -152,6 +155,38 @@ export class Compiler {
 
     return { ok: true, signed: { manifest: proposal, id, provenance, sig } };
   }
+}
+
+/**
+ * Reject model-selected capabilities whose minimum input cannot possibly be
+ * supplied by the manifest or a normal run input. This is deliberately narrow:
+ * the compiler is untrusted, and a capability name that merely exists is not a
+ * working plan. Additional capability contracts can be added here as they gain
+ * typed input declarations.
+ */
+export function checkCapabilityInputs(m: Manifest): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const seedKeys = new Set(Object.keys(m.seed ?? {}).map((key) => key.toLowerCase()));
+
+  for (const node of m.nodes) {
+    for (const cap of node.capabilities) {
+      if (cap.name !== "http_get") continue;
+      const roleNamesUrlInput = /\b(url|uri|web\s?page|website|endpoint|feed)\b/i.test(node.role);
+      const hasUrlSeed = [...seedKeys].some((key) =>
+        key === "url" || key.endsWith("_url") || key.endsWith(".url"),
+      );
+      if (!roleNamesUrlInput && !hasUrlSeed) {
+        issues.push({
+          code: "CAPABILITY_INPUT_UNSATISFIED",
+          message:
+            `node '${node.id}' selects http_get but declares no URL input in its role or seed; ` +
+            "use a capability that performs the requested task or declare where the URL comes from",
+        });
+      }
+    }
+  }
+
+  return issues;
 }
 
 /**

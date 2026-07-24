@@ -379,7 +379,9 @@ export const webSearchCapability: CapabilityPlugin = {
 
     const llmProvider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
     const hasLlm = llmProvider === "ollama"
-      || !!(process.env["KRELVAN_LLM_API_KEY"] || process.env["KRELVAN_ANTHROPIC_KEY"]);
+      || !!process.env["KRELVAN_LLM_API_KEY"]
+      || (llmProvider === "openai" && !!process.env["OPENAI_API_KEY"])
+      || (llmProvider === "anthropic" && !!process.env["KRELVAN_ANTHROPIC_KEY"]);
 
     // ── Path 1: the customer's configured search provider (ANY vendor) ─────────
     // Whichever provider the customer set a key for (Brave/Tavily/Serper/SerpApi/You/Bing/…) is

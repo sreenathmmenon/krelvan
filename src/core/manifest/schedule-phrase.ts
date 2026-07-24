@@ -3,9 +3,10 @@
  *
  * The codebase treats the LLM as untrusted, so scheduling is parsed deterministically FIRST:
  * this pure module recognizes the high-frequency phrasings ("every weekday at 8am", "every
- * 15 minutes", "daily") and turns them into a validated cron or interval. Only the long tail
- * falls back to the model's proposal (which the API re-validates). No LLM, no eval, no clock,
- * no I/O — just string → structured data — so it lives in core and is exhaustively testable.
+ * 15 minutes", "daily") and turns them into a validated cron or interval. The API may consider
+ * a re-validated model proposal for the long tail only when the customer's own words explicitly
+ * request recurrence. No LLM, no eval, no clock, no I/O — just string → structured data — so it
+ * lives in core and is exhaustively testable.
  *
  * By construction it only ever emits well-formed 5-field cron strings and interval millis
  * with a 60s floor, so its output is safe without a separate validator.
@@ -44,7 +45,7 @@ function hhmm(hour: number, minute: number): string {
 
 /**
  * Parse a scheduling phrase. Returns the schedule, or null when nothing recognizable is
- * present (the caller then falls back to the model's proposal).
+ * present.
  */
 export function parseSchedulePhrase(text: string): SchedulePhrase | null {
   const t = text.toLowerCase();

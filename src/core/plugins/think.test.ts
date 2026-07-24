@@ -10,7 +10,50 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeThinkOutputs } from "./think.js";
+import {
+  hasUsableThinkOutput,
+  createModelContextEvidence,
+  normalizeThinkOutputs,
+  resolveThinkMaxBodyChars,
+  resolveThinkMaxTokens,
+  resolveThinkMaxValueChars,
+} from "./think.js";
+
+test("think provenance: records exact context coverage without copying source data", () => {
+  const evidence = createModelContextEvidence("fetch.body", "private source value", 7, "source");
+  assert.equal(evidence.key, "fetch.body");
+  assert.equal(evidence.observedChars, 20);
+  assert.equal(evidence.includedChars, 7);
+  assert.equal(evidence.truncated, true);
+  assert.match(evidence.sha256, /^[a-f0-9]{64}$/);
+  assert.doesNotMatch(JSON.stringify(evidence), /private source value/);
+});
+
+test("think: hosted reasoning gets headroom while Ollama keeps a conservative default", () => {
+  assert.equal(resolveThinkMaxTokens("openai"), 8192);
+  assert.equal(resolveThinkMaxTokens("anthropic"), 4096);
+  assert.equal(resolveThinkMaxTokens("ollama"), 2048);
+});
+
+test("think: explicit output budget is bounded and invalid values fall back safely", () => {
+  assert.equal(resolveThinkMaxTokens("openai", "6000"), 6000);
+  assert.equal(resolveThinkMaxTokens("openai", "100"), 512);
+  assert.equal(resolveThinkMaxTokens("openai", "999999"), 32768);
+  assert.equal(resolveThinkMaxTokens("openai", "not-a-number"), 8192);
+});
+
+test("think: hosted providers receive a complete default HTTP body while Ollama stays smaller", () => {
+  assert.equal(resolveThinkMaxBodyChars("openai"), 32768);
+  assert.equal(resolveThinkMaxBodyChars("anthropic"), 32768);
+  assert.equal(resolveThinkMaxBodyChars("ollama"), 12000);
+  assert.equal(resolveThinkMaxBodyChars("openai", "48000"), 48000);
+});
+
+test("think: hosted downstream steps retain long intermediate results while Ollama stays bounded", () => {
+  assert.equal(resolveThinkMaxValueChars("openai"), 12000);
+  assert.equal(resolveThinkMaxValueChars("anthropic"), 12000);
+  assert.equal(resolveThinkMaxValueChars("ollama"), 2000);
+});
 
 test("think: only declared keys are adopted from a FLAT response (garbage ignored)", () => {
   // A model that flattened output AND leaked prose words as keys.
@@ -60,4 +103,11 @@ test("think: leading-zero identifiers are NOT coerced to numbers (zip/code/order
   assert.equal(out["code"], "007", "code keeps leading zeros");
   assert.equal(out["order_id"], "0042");
   assert.equal(out["qty"], 42, "a genuine quantity still coerces to a number");
+});
+
+test("think: empty model output is not considered a real result", () => {
+  assert.equal(hasUsableThinkOutput("", {}), false);
+  assert.equal(hasUsableThinkOutput("   ", { answer: "" }), false);
+  assert.equal(hasUsableThinkOutput("customer-facing result", {}), true);
+  assert.equal(hasUsableThinkOutput("", { exact_answer: 391 }), true);
 });

@@ -15,13 +15,13 @@ export default function SiteFooter() {
   if (pathname?.startsWith("/canvas/")) return null;
   // On public pages, a logged-out visitor must not be handed app-gated links (Dashboard,
   // Secrets, Approvals…) that bounce to the login wall — show public-safe destinations instead.
-  const isPublic = pathname === "/" || pathname === "/faq" || pathname === "/marketplace";
+  const isPublic = pathname === "/" || pathname === "/faq" || pathname === "/marketplace" || pathname === "/download";
   const link = (href: string, label: string, ext = false) =>
     ext
       ? <li key={href}><a href={href} className="small" style={{ color: "var(--ink-soft)" }} target="_blank" rel="noopener noreferrer">{label}</a></li>
       : <li key={href}><Link href={href} className="small" style={{ color: "var(--ink-soft)" }}>{label}</Link></li>;
   const productLinks = isPublic
-    ? [link("/marketplace", "Marketplace"), link("/faq", "FAQ"), link("https://github.com/sreenathmmenon/krelvan#readme", "Docs", true), link("https://github.com/sreenathmmenon/krelvan/blob/main/LICENSE", "License", true)]
+    ? [link("/marketplace", "Marketplace"), link("/download", "Download"), link("/faq", "FAQ"), link("https://github.com/sreenathmmenon/krelvan#readme", "Docs", true), link("https://github.com/sreenathmmenon/krelvan/blob/main/LICENSE", "License", true)]
     : [link("/dashboard", "Dashboard"), link("/capabilities", "Marketplace"), link("/runs", "Runs"), link("/schedules", "Schedules"), link("/faq", "FAQ")];
   const workspaceLinks = isPublic
     ? [
@@ -29,7 +29,7 @@ export default function SiteFooter() {
         link("https://github.com/sreenathmmenon/krelvan", "Self-host guide", true),
         ...(!MARKETING_ONLY ? [link("/login", "Sign in")] : []),
       ]
-    : [link("/capabilities#connectors", "Connectors"), link("/secrets", "Secrets"), link("/approvals", "Approvals"), link("https://github.com/sreenathmmenon/krelvan", "Download", true)];
+    : [link("/capabilities#connectors", "Connectors"), link("/secrets", "Secrets"), link("/approvals", "Approvals"), link("/download", "Download")];
   return (
     <footer style={{ background: "var(--canvas)", borderTop: "1px solid var(--line)" }}>
       <div className="container" style={{ paddingTop: "var(--s8)", paddingBottom: "var(--s7)" }}>

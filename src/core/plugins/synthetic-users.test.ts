@@ -12,11 +12,13 @@ import type { EffectCall } from "../capability/capability.js";
 const priorProvider = process.env["KRELVAN_LLM_PROVIDER"];
 const priorKey = process.env["KRELVAN_LLM_API_KEY"];
 const priorAnthropic = process.env["KRELVAN_ANTHROPIC_KEY"];
-function noLlm() { delete process.env["KRELVAN_LLM_PROVIDER"]; delete process.env["KRELVAN_LLM_API_KEY"]; delete process.env["KRELVAN_ANTHROPIC_KEY"]; }
+const priorOpenAI = process.env["OPENAI_API_KEY"];
+function noLlm() { delete process.env["KRELVAN_LLM_PROVIDER"]; delete process.env["KRELVAN_LLM_API_KEY"]; delete process.env["KRELVAN_ANTHROPIC_KEY"]; delete process.env["OPENAI_API_KEY"]; }
 function restore() {
   if (priorProvider === undefined) delete process.env["KRELVAN_LLM_PROVIDER"]; else process.env["KRELVAN_LLM_PROVIDER"] = priorProvider;
   if (priorKey === undefined) delete process.env["KRELVAN_LLM_API_KEY"]; else process.env["KRELVAN_LLM_API_KEY"] = priorKey;
   if (priorAnthropic === undefined) delete process.env["KRELVAN_ANTHROPIC_KEY"]; else process.env["KRELVAN_ANTHROPIC_KEY"] = priorAnthropic;
+  if (priorOpenAI === undefined) delete process.env["OPENAI_API_KEY"]; else process.env["OPENAI_API_KEY"] = priorOpenAI;
 }
 
 test("synthetic_users: casts a structured spread from the scenario (no LLM → archetypes)", async () => {

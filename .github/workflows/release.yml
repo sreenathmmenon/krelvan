@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release candidate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Use Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22.23.1"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+      - name: Install locked core dependencies
+        run: npm ci --ignore-scripts
+      - name: Install locked web dependencies
+        run: npm --prefix web ci --ignore-scripts
+      - name: Verify tag and release versions
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          test "${GITHUB_REF_NAME}" = "v${VERSION}"
+          npm run release:check
+      - name: Typecheck core
+        run: npm run typecheck
+      - name: Test core
+        run: npm test
+      - name: Typecheck web
+        run: npm --prefix web run typecheck
+      - name: Build web
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: npm --prefix web run build
+      - name: Audit production dependency locks
+        run: |
+          npm audit --omit=dev --audit-level=high
+          npm --prefix web audit --omit=dev --audit-level=high
+
+  publish:
+    name: Publish npm, container and release assets
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      packages: write
+      attestations: write
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Use Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22.23.1"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+      - name: Use a Trusted Publishing capable npm CLI
+        run: npm install --global npm@11.18.0
+      - name: Install locked build dependencies
+        run: npm ci --ignore-scripts
+      - name: Build the exact npm and manual-release artifact
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          test "${GITHUB_REF_NAME}" = "v${VERSION}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          npm run release:package
+        id: version
+      - name: Generate an SPDX dependency record
+        run: npm sbom --omit=dev --sbom-format=spdx > "release/krelvan-${{ steps.version.outputs.version }}.spdx.json"
+      - name: Attest the release artifacts
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: |
+            release/krelvan-${{ steps.version.outputs.version }}.tgz
+            release/SHA256SUMS
+            release/release-manifest.json
+            release/krelvan-${{ steps.version.outputs.version }}.spdx.json
+      - name: Sign in to the GitHub container registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build and publish the immutable container
+        id: container
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/sreenathmmenon/krelvan:${{ steps.version.outputs.version }}
+          build-args: KRELVAN_VERSION=${{ steps.version.outputs.version }}
+          provenance: mode=max
+          sbom: true
+      - name: Attest the published container
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-name: ghcr.io/sreenathmmenon/krelvan
+          subject-digest: ${{ steps.container.outputs.digest }}
+          push-to-registry: true
+      - name: Publish the attested package through npm Trusted Publishing
+        run: npm publish "release/krelvan-${{ steps.version.outputs.version }}.tgz" --access public --provenance
+      - name: Create the immutable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --verify-tag \
+            --title "Krelvan ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            "release/krelvan-${{ steps.version.outputs.version }}.tgz" \
+            "release/SHA256SUMS" \
+            "release/release-manifest.json" \
+            "release/krelvan-${{ steps.version.outputs.version }}.spdx.json" \
+            "docker-compose.release.yml"

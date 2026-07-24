@@ -124,6 +124,21 @@ function advanceOrComplete(
       return { kind: "advance", fromNodeId, toNodeId: edge.to };
     }
   }
+  // No outgoing edge taken: this node is terminal. A capability may return a
+  // typed failure instead of throwing so a graph can route around it. If no
+  // route handled that failure, do not stamp the run "completed".
+  const ok = p.state[`${fromNodeId}.ok`];
+  const error = p.state[`${fromNodeId}.error`];
+  const hasUsefulOutput = ["result", "body", "text", "reply"]
+    .some((key) => {
+      const value = p.state[`${fromNodeId}.${key}`];
+      return typeof value === "string" ? value.trim().length > 0 : value !== undefined && value !== null;
+    });
+  if (ok === false || (typeof error === "string" && error.trim() && !hasUsefulOutput)) {
+    const detail = typeof error === "string" && error.trim() ? `: ${error.trim()}` : "";
+    return { kind: "fail", reason: `terminal node '${fromNodeId}' returned an error${detail}` };
+  }
+
   // no outgoing edge taken → the run is complete
   return { kind: "complete" };
 }

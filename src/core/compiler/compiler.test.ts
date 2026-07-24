@@ -118,7 +118,7 @@ test("compiler: never raises the budget above the principal ceiling", async () =
       capabilities: [{ name: "web_search" as const, sideEffect: "read" as const, budgetCents: 100 }],
     })),
     entry: "n0",
-    edges: [],
+    edges: Array.from({ length: 5 }, (_, i) => ({ from: `n${i}`, to: `n${i + 1}` })),
   });
   const { s } = signer();
   const res = await new Compiler(fakeModel(big), s).compile("big", ownerPrincipal, 100);
@@ -185,6 +185,48 @@ test("compiler: structurally invalid proposal is rejected before monotonicity", 
   const c = new Compiler(fakeModel(broken), s);
   const res = await c.compile("x", ownerPrincipal, 100);
   assert.ok(!res.ok && res.stage === "validate");
+});
+
+test("compiler: rejects http_get when the model invented it for a task with no URL input", async () => {
+  const wrongTool = manifest({
+    intent: "multiply 17 by 23",
+    nodes: [{
+      id: "a",
+      role: "Multiply 17 by 23 and return the exact answer.",
+      autonomy: "full",
+      capabilities: [{ name: "http_get", sideEffect: "read", budgetCents: 10 }],
+    }],
+  });
+  const principal: Principal = {
+    kind: "owner",
+    id: "owner",
+    maxRunBudgetCents: 1000,
+    allowedCapabilities: [{ name: "http_get", sideEffect: "read", maxBudgetCents: 100 }],
+  };
+  const { s } = signer();
+  const res = await new Compiler(fakeModel(wrongTool), s).compile("multiply 17 by 23", principal, 100);
+  assert.ok(!res.ok && res.stage === "validate");
+  assert.ok(res.issues.some((issue) => issue.code === "CAPABILITY_INPUT_UNSATISFIED"));
+});
+
+test("compiler: accepts http_get when the role declares a runtime URL input", async () => {
+  const fetcher = manifest({
+    nodes: [{
+      id: "a",
+      role: "Fetch the URL supplied by the customer and return the page.",
+      autonomy: "full",
+      capabilities: [{ name: "http_get", sideEffect: "read", budgetCents: 10 }],
+    }],
+  });
+  const principal: Principal = {
+    kind: "owner",
+    id: "owner",
+    maxRunBudgetCents: 1000,
+    allowedCapabilities: [{ name: "http_get", sideEffect: "read", maxBudgetCents: 100 }],
+  };
+  const { s } = signer();
+  const res = await new Compiler(fakeModel(fetcher), s).compile("fetch a supplied URL", principal, 100);
+  assert.ok(res.ok, !res.ok ? JSON.stringify(res.issues) : "");
 });
 
 test("compiler: signature binds the provenance (tamper detectable)", async () => {

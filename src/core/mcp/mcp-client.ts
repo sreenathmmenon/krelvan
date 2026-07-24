@@ -34,6 +34,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { getLogger } from "../observability/logger.js";
 import type { CapabilityPlugin, EffectCall } from "../capability/capability.js";
 import type { SideEffectClass } from "../manifest/manifest.js";
+import { KRELVAN_VERSION } from "../../version.js";
 
 const log = getLogger("mcp-client");
 
@@ -219,7 +220,7 @@ export class StdioMcpTransport {
     await this.request("initialize", {
       protocolVersion: "2024-11-05",
       capabilities: { tools: {} },
-      clientInfo: { name: "krelvan", version: "0.0.1" },
+      clientInfo: { name: "krelvan", version: KRELVAN_VERSION },
     });
 
     // Send initialized notification (no response expected)
@@ -298,7 +299,7 @@ export class HttpMcpTransport {
     await this.request("initialize", {
       protocolVersion: "2024-11-05",
       capabilities: { tools: {} },
-      clientInfo: { name: "krelvan", version: "0.0.1" },
+      clientInfo: { name: "krelvan", version: KRELVAN_VERSION },
     });
     this.ready = true;
     log.info({ server: this.config.name, url: this.config.url }, "mcp http server connected");

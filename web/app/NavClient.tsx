@@ -10,10 +10,11 @@ import { KrelvanLogo } from "./KrelvanLogo";
 
 // ── Product nav ──────────────────────────────────────────────────────────────
 // The authenticated header is a real product surface, not an admin panel:
-//   [ logo · Dashboard · Agents · Marketplace · Runs ]     [ N running · ⌘K · Build agent · More ▾ ]
+//   [ logo · Dashboard · Agents · Marketplace · Runs ]     [ N running · ⌘K · Build agent · Settings ▾ ]
 // The four primary links each carry a small teal glyph. Utility routes
-// (Schedules / Connectors / Secrets / Approvals + Sign out) live in an
-// accessible "More" dropdown so the top row stays clean.
+// (Model & secrets / Schedules / Connectors / Approvals + Sign out) live in an
+// accessible "Settings" dropdown. Model setup is first because it is required
+// for the core customer journey and must be discoverable without knowing a URL.
 
 // 16×16 stroke glyphs, house style (matches lib/glyphs.ts). key → path.
 const G = {
@@ -58,11 +59,11 @@ const PRIMARY: NavItem[] = [
 ];
 
 const MORE: NavItem[] = [
+  { label: "Model & secrets",  href: "/secrets#model",        glyph: "secrets" },
   { label: "Schedules",       href: "/schedules",             glyph: "schedules" },
   { label: "Connectors",      href: "/capabilities#connectors", glyph: "connectors" },
   { label: "Connect Telegram", href: "/connections/telegram",  glyph: "connectors" },
   { label: "Connect Email",    href: "/connections/email",     glyph: "connectors" },
-  { label: "Secrets",         href: "/secrets",               glyph: "secrets" },
   { label: "Approvals",       href: "/approvals",             glyph: "approvals" },
 ];
 
@@ -86,7 +87,7 @@ export default function NavClient() {
   function openCommand() { window.dispatchEvent(new Event("krelvan:open-command")); }
 
   useEffect(() => {
-    if (pathname === "/" || pathname === "/faq" || pathname === "/marketplace" || pathname === "/login" || pathname === "/setup" || pathname?.startsWith("/share/") || pathname?.startsWith("/r/") || pathname?.startsWith("/a/")) return;
+    if (pathname === "/" || pathname === "/faq" || pathname === "/marketplace" || pathname === "/download" || pathname === "/login" || pathname === "/setup" || pathname?.startsWith("/share/") || pathname?.startsWith("/r/") || pathname?.startsWith("/a/")) return;
     let alive = true;
     async function poll() {
       if (document.visibilityState !== "visible") return;
@@ -191,7 +192,7 @@ export default function NavClient() {
   // Public marketing pages (home, FAQ) get a MARKETING nav — a logged-out visitor must not
   // see the authenticated app shell (Dashboard/Runs/Secrets/Approvals + sign-out), which
   // reads as a leaked internal build. Just: logo · FAQ · GitHub · one primary CTA.
-  const isPublic = pathname === "/" || pathname === "/faq" || pathname === "/marketplace";
+  const isPublic = pathname === "/" || pathname === "/faq" || pathname === "/marketplace" || pathname === "/download";
   if (isPublic) {
     // The public header renders as a LIGHT (cream) bar on both / and /faq — so the logo and
     // links must use DARK ink, never dark-mode white (which was invisible on the light bar).
@@ -216,6 +217,7 @@ export default function NavClient() {
                   marketplace, read the docs. FAQ + GitHub are secondary, not the whole menu. */}
               <a href={pathname === "/" ? "#builder" : "/#builder"} className="nav-link">Build an agent</a>
               <Link href="/marketplace" className="nav-link" data-active={pathname === "/marketplace"}>Marketplace</Link>
+              <Link href="/download" className="nav-link" data-active={pathname === "/download"}>Download</Link>
               <a href="https://github.com/sreenathmmenon/krelvan#readme" className="nav-link" target="_blank" rel="noopener noreferrer">Docs</a>
               <Link href="/faq" className="nav-link" data-active={pathname === "/faq"}>FAQ</Link>
               <a href="https://github.com/sreenathmmenon/krelvan" className="nav-link" target="_blank" rel="noopener noreferrer" aria-label="GitHub repository">GitHub</a>
@@ -223,15 +225,14 @@ export default function NavClient() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexShrink: 0 }}>
             {!MARKETING_ONLY && <Link href="/login" className="nav-link" style={{ opacity: 0.9 }}>Sign in</Link>}
-            <a href="https://github.com/sreenathmmenon/krelvan" target="_blank" rel="noopener noreferrer"
-              className="btn btn-sm nav-cta btn-primary">
+            <Link href="/download" className="btn btn-sm nav-cta btn-primary">
               Download
-            </a>
+            </Link>
           </div>
           {MARKETING_ONLY && (
             <div className="public-mobile-actions">
               <Link href="/marketplace" className="nav-link">Registry</Link>
-              <a href="https://github.com/sreenathmmenon/krelvan#run-it" className="btn btn-primary btn-sm">Download</a>
+              <Link href="/download" className="btn btn-primary btn-sm">Download</Link>
             </div>
           )}
         </div>
@@ -279,7 +280,7 @@ export default function NavClient() {
           </nav>
         </div>
 
-        {/* right — running badge + ⌘K + Build agent + More dropdown */}
+        {/* right — running badge + ⌘K + Build agent + Settings dropdown */}
         <div style={{ display: "flex", alignItems: "center", gap: "var(--s3)", flexShrink: 0 }}>
           {runningCount > 0 && (
             <span className="badge badge-running nav-running">
@@ -307,7 +308,7 @@ export default function NavClient() {
             Build agent
           </a>
 
-          {/* More dropdown — utility routes + sign out */}
+          {/* Settings dropdown — model connection first, then utility routes + sign out */}
           <div className="nav-more" ref={moreRef}>
             <button
               type="button"
@@ -319,14 +320,14 @@ export default function NavClient() {
               onClick={() => (moreOpen ? setMoreOpen(false) : openMore(false))}
               onKeyDown={onMoreBtnKeyDown}
             >
-              <span>More</span>
+              <span>Settings</span>
               <svg className="nav-more__chev" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"
                 style={{ transform: moreOpen ? "rotate(180deg)" : "none" }}>
                 <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
             {moreOpen && (
-              <div className="nav-more__menu" role="menu" aria-label="More">
+              <div className="nav-more__menu" role="menu" aria-label="Settings">
                 {MORE.map((link, idx) => {
                   const active = isActive(link.href);
                   return (

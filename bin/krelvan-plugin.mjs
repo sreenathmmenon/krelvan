@@ -78,15 +78,16 @@ function check() {
   const leak = text.match(LEAK_RE);
   if (leak) problems.push(`inlined credential detected ("${leak[0].slice(0, 12)}…") — use {{secret:NAME}} instead`);
 
-  // 2) Shape — YAML compiles (delegates to the real loader via tsx) OR MCP json parses.
+  // 2) Shape — YAML compiles through the shipped loader OR MCP json parses.
   if (file.endsWith(".yaml") || file.endsWith(".yml")) {
-    const r = spawnSync(process.execPath, ["--import", "tsx", "-e",
-      `import {loadYamlCapability} from "./src/core/extensions/yaml-capability.js";` +
+    const loaderUrl = new URL("../dist/core/extensions/yaml-capability.js", import.meta.url).href;
+    const r = spawnSync(process.execPath, ["--input-type=module", "-e",
+      `import {loadYamlCapability} from ${JSON.stringify(loaderUrl)};` +
       `import {readFileSync} from "node:fs";` +
       `const out=loadYamlCapability(readFileSync(${JSON.stringify(file)},"utf8"),()=>undefined);` +
       `if(!out.ok){console.error("YAML_ERROR "+JSON.stringify(out.error??out));process.exit(2);}` +
       `else console.log("OK "+out.plugin.name+" sideEffect="+out.plugin.sideEffect+" secretRefs="+JSON.stringify(out.secretRefs));`,
-    ], { cwd: process.cwd(), encoding: "utf8" });
+    ], { encoding: "utf8" });
     if (r.status !== 0) problems.push(`YAML does not compile: ${(r.stderr || r.stdout || "").trim().slice(0, 200)}`);
     else console.log(`  ${r.stdout.trim()}`);
   } else if (file.endsWith(".json")) {

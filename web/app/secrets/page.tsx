@@ -381,7 +381,7 @@ function ModelSection() {
                 : provider === "groq" ? "llama-3.3-70b-versatile"
                 : provider === "mistral" ? "mistral-large-latest"
                 : provider === "ollama" ? "llama3.2"
-                : "gpt-4o"
+                : "gpt-5.6-sol"
               }
             />
             <span className="small muted">Leave blank to use the provider&apos;s default.</span>

@@ -1,7 +1,7 @@
 {
   "name": "krelvan",
-  "version": "0.0.2",
-  "description": "Krelvan \u2014 own, run, and trust your own AI agents. The ledger is the runtime.",
+  "version": "0.1.0",
+  "description": "Krelvan — own, run, and trust your own AI agents. The ledger is the runtime.",
   "type": "module",
   "license": "Apache-2.0",
   "bin": {
@@ -12,16 +12,19 @@
   "files": [
     "bin/",
     "dist/",
-    "src/",
     "web/app/",
     "web/components/",
     "web/lib/",
     "web/public/",
+    "web/middleware.ts",
+    "web/next-env.d.ts",
     "web/package.json",
+    "web/package-lock.json",
     "web/next.config.mjs",
     "web/tsconfig.json",
+    "!web/**/*.test.ts",
+    "!web/**/*.test.tsx",
     "capabilities/",
-    "tsconfig.json",
     "README.md",
     ".env.example"
   ],
@@ -29,12 +32,16 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "prepack": "npm run build",
+    "build": "node scripts/build-release.mjs",
+    "prepack": "npm run release:check && npm run build",
     "start": "node dist/api/index.js",
     "up": "node bin/krelvan.mjs up",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\" \"templates/**/*.test.ts\" \"registry/**/*.test.ts\"",
+    "release:check": "node scripts/check-release.mjs",
+    "release:package": "node scripts/package-release.mjs",
+    "release:scan": "node scripts/scan-release.mjs",
+    "stats:downloads": "node scripts/download-stats.mjs",
     "demo:ledger": "tsx src/demo/ledger-inversion.ts",
     "demo:resume": "tsx src/demo/kill-and-resume.ts",
     "demo:e2e": "tsx src/demo/end-to-end.ts",
@@ -47,7 +54,7 @@
     "registry:check": "tsx scripts/sync-registry.ts -- --check"
   },
   "dependencies": {
-    "tsx": "^4.19.0"
+    "tsx": "4.22.4"
   },
   "overrides": {
     "esbuild": "0.28.1"
@@ -55,6 +62,10 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "keywords": [
     "ai",

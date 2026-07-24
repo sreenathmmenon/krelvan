@@ -57,19 +57,26 @@ function firstUrlIn(text: unknown): string | null {
 
 /**
  * Resolve the URL to fetch from run state, in precedence order:
- *   1. input.url  2. input["<nodeId>.url"]
- *   3. any descriptively-named url key the agent carries (competitor_url, target_url,
+ *   1. input["<nodeId>.url"]  2. a URL embedded in this node's role
+ *   3. input.url
+ *   4. any descriptively-named url key the agent carries (competitor_url, target_url,
  *      site_url, lead_url, source_url, page_url, …) that holds a real http(s) URL
- *   4. a URL embedded in the node's role text.
- * Step 3 makes agents robust: a manifest that seeds a URL under a natural name (not the bare
+ *   5. a URL embedded in the generic role text.
+ * Step 4 makes agents robust: a manifest that seeds a URL under a natural name (not the bare
  * key "url") still fetches, instead of failing with "url is required".
+ *
+ * The current node's scoped input/role MUST win over a generic URL carried in run state.
+ * Otherwise a multi-source graph fetches the first node's URL again for every later HTTP node.
  */
-function resolveUrl(input: Record<string, unknown>, nodeId: string): string | null {
-  const explicit = input["url"];
-  if (typeof explicit === "string" && explicit.trim() !== "") return explicit.trim();
-
+export function resolveHttpGetUrl(input: Record<string, unknown>, nodeId: string): string | null {
   const scoped = input[`${nodeId}.url`];
   if (typeof scoped === "string" && scoped.trim() !== "") return scoped.trim();
+
+  const currentRoleUrl = firstUrlIn(input[`${nodeId}.role`]);
+  if (currentRoleUrl) return currentRoleUrl;
+
+  const explicit = input["url"];
+  if (typeof explicit === "string" && explicit.trim() !== "") return explicit.trim();
 
   // Any key named like a URL (ends in "url" or "_url") that actually holds an http(s) URL.
   for (const [k, v] of Object.entries(input)) {
@@ -80,7 +87,7 @@ function resolveUrl(input: Record<string, unknown>, nodeId: string): string | nu
     }
   }
 
-  return firstUrlIn(input[`${nodeId}.role`]) ?? firstUrlIn(input["role"]);
+  return firstUrlIn(input["role"]);
 }
 
 export const httpGetCapability: CapabilityPlugin = {
@@ -100,7 +107,7 @@ export const httpGetCapability: CapabilityPlugin = {
     // (3) lets the compiler express the target purely in the node role — e.g.
     // "Fetch ... from https://hn.algolia.com/..." — without the manifest needing
     // a separate seed key, which is the common single-call fetch pattern.
-    const rawUrl = resolveUrl(input, call.nodeId);
+    const rawUrl = resolveHttpGetUrl(input, call.nodeId);
     if (!rawUrl || typeof rawUrl !== "string" || rawUrl.trim() === "") {
       return {
         output: { ok: false, error: "url is required" },

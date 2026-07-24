@@ -522,7 +522,7 @@ export function BuildPreviewModal({ result, onRun, onDiscard }: { result: BuildR
       style={{
         position: "fixed", inset: 0, zIndex: 1000,
         background: "rgba(17,32,31,.42)", backdropFilter: "blur(4px)",
-        display: "flex", alignItems: "center", justifyContent: "center", padding: "var(--s6)",
+        display: "flex", alignItems: "center", justifyContent: "center", padding: "var(--s3)",
       }}
       onClick={e => { if (e.target === e.currentTarget) onDiscard(); }}
     >
@@ -532,7 +532,15 @@ export function BuildPreviewModal({ result, onRun, onDiscard }: { result: BuildR
         aria-modal="true"
         aria-labelledby="build-preview-title"
         className="card"
-        style={{ maxWidth: 680, width: "100%", padding: "var(--s6)", animation: "fade-in 150ms ease forwards" }}
+        style={{
+          maxWidth: 680,
+          maxHeight: "calc(100dvh - (2 * var(--s3)))",
+          width: "100%",
+          padding: "var(--s6)",
+          overflowY: "auto",
+          overscrollBehavior: "contain",
+          animation: "fade-in 150ms ease forwards",
+        }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "var(--s5)" }}>
           <div>
@@ -665,7 +673,19 @@ export function BuildPreviewModal({ result, onRun, onDiscard }: { result: BuildR
           </div>
         )}
 
-        <div style={{ display: "flex", gap: "var(--s3)", justifyContent: "flex-end", alignItems: "center" }}>
+        <div style={{
+          position: "sticky",
+          bottom: "calc(-1 * var(--s6))",
+          display: "flex",
+          gap: "var(--s3)",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          margin: "0 calc(-1 * var(--s6)) calc(-1 * var(--s6))",
+          padding: "var(--s3) var(--s6) var(--s6)",
+          background: "var(--surface)",
+          borderTop: "1px solid var(--line)",
+          boxShadow: "0 -8px 16px rgba(17,32,31,.05)",
+        }}>
           <button className="btn btn-secondary" onClick={onDiscard}>Discard</button>
           <button className="btn btn-primary btn-lg" onClick={() => void confirmAndRun()} disabled={saving}>
             {saving ? "Saving…" : schedule && scheduleOn ? "Create & run once now" : "Run now"}

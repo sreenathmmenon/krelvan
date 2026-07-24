@@ -25,7 +25,7 @@
  */
 
 import type { LedgerStore } from "../ledger/store.js";
-import type { Signer } from "../ledger/crypto.js";
+import { contentAddress, type Signer } from "../ledger/crypto.js";
 import type { EventScope, NewEvent } from "../ledger/event.js";
 import {
   admit,
@@ -40,7 +40,8 @@ import type { FoldAccumulator, RunProjection } from "./project.js";
 import { IncrementalFolder } from "./incremental-fold.js";
 import { NoopTracer, type Tracer } from "../observability/spans.js";
 import { executeSubRun, deriveSubRunId } from "./sub-agent-executor.js";
-import { isExpectedError, isRetryableError } from "../errors.js";
+import { ExpectedError, isExpectedError, isRetryableError } from "../errors.js";
+import { canonicalize } from "../ledger/canonical.js";
 
 /**
  * Recursively converts non-integer numbers to strings so capability outputs
@@ -60,6 +61,60 @@ function sanitizeOutput(v: unknown): unknown {
     return out;
   }
   return v;
+}
+
+export interface InputEvidence {
+  key: string;
+  kind: "null" | "string" | "number" | "boolean" | "array" | "object";
+  canonicalChars: number;
+  digest: string;
+}
+
+export interface InputEvidenceSet {
+  version: 1;
+  entries: InputEvidence[];
+  totalKeys: number;
+  omittedKeys: number;
+  complete: boolean;
+}
+
+/**
+ * Mechanically fingerprint the exact state offered to a capability without copying raw customer
+ * data into metadata. This record is placed inside the supervisor-signed EffectResult, so a later
+ * audit can prove which inputs were available to the step and detect silent source substitution.
+ * The bounded record explicitly reports omissions; it can never imply complete coverage after
+ * truncation.
+ */
+export function buildInputEvidence(input: unknown): InputEvidenceSet {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+    return { version: 1, entries: [], totalKeys: 0, omittedKeys: 0, complete: true };
+  }
+  const candidates = Object.entries(input as Record<string, unknown>)
+    .filter(([key, value]) => !key.startsWith("_") && value !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  const entries = candidates.slice(0, 128).flatMap(([key, raw]) => {
+    const value = sanitizeOutput(raw);
+    let canonical: string;
+    try { canonical = canonicalize(value); }
+    catch { return []; }
+    const kind: InputEvidence["kind"] =
+      value === null ? "null"
+      : Array.isArray(value) ? "array"
+      : typeof value === "object" ? "object"
+      : typeof value === "string" ? "string"
+      : typeof value === "number" ? "number"
+      : "boolean";
+    return [{ key, kind, canonicalChars: canonical.length, digest: contentAddress(canonical) }];
+  });
+  const omittedKeys = candidates.length - entries.length;
+  return {
+    version: 1,
+    entries,
+    totalKeys: candidates.length,
+    omittedKeys,
+    complete: omittedKeys === 0,
+  };
 }
 
 export interface EngineDeps {
@@ -339,7 +394,12 @@ export class Engine {
         }
       }
     }
-    throw lastErr;
+    if (isExpectedError(lastErr)) throw lastErr;
+    const message = lastErr instanceof Error ? lastErr.message : String(lastErr);
+    // A plugin/provider failure is operational, not an engine crash. Convert it to the typed
+    // failure path so the engine appends a signed terminal RunFailed event. Infrastructure and
+    // ledger append failures still escape from their own call sites and remain loud.
+    throw new ExpectedError(message || "capability execution failed", "CAPABILITY_EXECUTION_FAILED");
   }
 
   /**
@@ -358,11 +418,20 @@ export class Engine {
     const node = getNode(this.m, nodeId);
     if (!node) throw new Error(`manifest references unknown node '${nodeId}'`);
 
-    // Inject the node's declared role into run state so the think/compose plugins
-    // can read it as "<nodeId>.role" or "role". This is deterministic — derived
-    // from the manifest which is already in the ledger — so no ledger event needed.
+    // Inject the current role plus roles of nodes that have ALREADY concluded. The current
+    // capability reads its own task from `role`; downstream composition can also see the exact
+    // upstream instruction (operands, URL, constraints) at `<priorNode>.role`. Do not expose
+    // future-node roles: they are not context yet and could confuse an intermediate composer.
+    // This is deterministic — derived from the signed manifest + folded ledger — so no new
+    // ledger event is needed.
     if (node.role) {
-      p = { ...p, state: { ...p.state, [`${nodeId}.role`]: node.role, role: node.role } };
+      const visibleRoles: Record<string, string> = {};
+      for (const candidate of this.m.nodes) {
+        if (candidate.id === nodeId || p.nodes[candidate.id]?.concluded) {
+          visibleRoles[`${candidate.id}.role`] = candidate.role;
+        }
+      }
+      p = { ...p, state: { ...p.state, ...visibleRoles, role: node.role } };
     }
 
     // Collect this node's effect outputs (for run state at conclude time).
@@ -555,7 +624,15 @@ export class Engine {
         {
           type: "EffectResult",
           scope: this.scope(nodeId),
-          payload: { idem, costCents: observed.costCents, output: sanitizeOutput(observed.output), pluginClaim: observed.pluginClaim },
+          payload: {
+            idem,
+            costCents: observed.costCents,
+            output: sanitizeOutput(observed.output),
+            pluginClaim: observed.pluginClaim,
+            // Hashes/sizes only: enough to prove which exact inputs were available, without
+            // duplicating raw connector bodies or customer data in metadata.
+            inputEvidence: buildInputEvidence(call.input),
+          },
           determinism: "captured",
         },
         this.deps.supervisorSigner,

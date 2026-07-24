@@ -16,7 +16,7 @@
 
 import type { ModelPort, ManifestProposal } from "../core/compiler/compiler.js";
 import type { Manifest } from "../core/manifest/manifest.js";
-import { makeLLMClient, type LLMClientConfig } from "./llm-client.js";
+import { defaultModelForProvider, makeLLMClient, type LLMClientConfig } from "./llm-client.js";
 import { fetchWithRetry, type RetryOptions } from "./http-retry.js";
 import { getLogger } from "../core/observability/logger.js";
 
@@ -44,17 +44,10 @@ export class AnthropicModel implements ModelPort {
   private readonly fetchImpl: typeof fetch;
 
   constructor(private readonly cfg: AnthropicConfig) {
-    const providerDefault = (() => {
-      const p = cfg.llmConfig?.provider ?? process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
-      if (p === "openai") return "gpt-4o";
-      if (p === "ollama") return "llama3.2";
-      if (p === "gemini") return "gemini-2.0-flash";
-      if (p === "groq") return "llama-3.3-70b-versatile";
-      if (p === "mistral") return "mistral-large-latest";
-      // "compatible" has no safe default — the user must set KRELVAN_LLM_MODEL.
-      if (p === "compatible") return "";
-      return "claude-sonnet-4-6";
-    })();
+    const provider = cfg.llmConfig?.provider ??
+      (process.env["KRELVAN_LLM_PROVIDER"] as LLMClientConfig["provider"] | undefined) ??
+      "anthropic";
+    const providerDefault = defaultModelForProvider(provider);
     this.model = cfg.model ?? process.env["KRELVAN_LLM_MODEL"] ?? providerDefault;
     this.fetchImpl = cfg.fetchImpl ?? fetch;
   }
@@ -84,7 +77,7 @@ export class AnthropicModel implements ModelPort {
         },
         schedule: {
           type: ["object", "null"],
-          description: "OPTIONAL. If the intent asks the agent to run on a recurring schedule, propose one: {\"kind\":\"cron\",\"expr\":\"0 8 * * 1-5\"} (5-field cron, server-local time) or {\"kind\":\"interval\",\"ms\":3600000} (>= 60000). Omit or null if no recurrence is requested. This is a suggestion — it is re-validated before use.",
+          description: "OPTIONAL. Include this ONLY when the user's own words explicitly request recurring execution. Never infer or invent recurrence for a one-off task. Use {\"kind\":\"cron\",\"expr\":\"0 8 * * 1-5\"} (5-field cron, server-local time) or {\"kind\":\"interval\",\"ms\":3600000} (>= 60000). Omit or null otherwise. This suggestion is re-validated and cannot create recurrence without explicit user intent.",
           additionalProperties: true,
         },
         nodes: {
@@ -135,6 +128,7 @@ export class AnthropicModel implements ModelPort {
     // budget-before-spend), never a price shown to anyone.
     const capDescriptions = this.cfg.allowedCapabilities.map(c => {
       let line = `- ${c.name} (${c.sideEffect}, budget weight: ${c.estimateCents ?? 5}): ${c.description ?? c.name}`;
+      if (c.useWhen) line += `. USE WHEN: ${c.useWhen}`;
       if (c.notes) line += `. NOTE: ${c.notes}`;
       return line;
     }).join("\n");
@@ -153,7 +147,9 @@ export class AnthropicModel implements ModelPort {
       "  * role = a plain-English instruction describing what the step does, e.g. \"Fetch the page contents\". NEVER a capability name.",
       "  * capabilities = a list; each item's name MUST be chosen from the CAPABILITIES list below (use the exact name). Set sideEffect to that capability's listed side-effect.",
       "- entry = the id of the FIRST node. It MUST exactly match one of your node ids.",
+      "- Every node MUST be reachable from entry through edges. Connect the complete sequence, including the final result node. Never emit disconnected/dead nodes.",
       "- Pick capabilities by matching their descriptions to the intent. Every node should have at least one capability.",
+      "- Never choose http_get for calculation, transformation, reasoning, or any task without a URL input. For arithmetic or other local reasoning, use think. If the user says not to use external data, do not use http_get or web_search.",
       "- autonomy: full=read-only steps, act-with-veto=steps that message a human (user reviews before send), suggest=irreversible writes/spend.",
       "- OUTPUT: if the agent's FINAL node composes prose to DELIVER (a brief, digest, summary, reply), that node's role must instruct it to produce a `body` (and ideally a `title`), and you MUST set seed.output_map to \"title=<finalNodeId>.title,body=<finalNodeId>.body,format=markdown\" so the delivered output is captured deterministically. Omit output_map only for agents whose last step is an action (send/write) rather than composed text.",
       "",
@@ -224,7 +220,10 @@ export class AnthropicModel implements ModelPort {
         model: this.model,
         maxTokens: 4096,
         temperature: 0,
-        schema: { name: "build_manifest", description: "Build the agent manifest", schema: manifestSchema },
+        // The manifest schema intentionally has optional seed/schedule fields, so
+        // it is not in OpenAI's all-properties-required strict subset. Krelvan
+        // validates the returned manifest before signing or running it.
+        schema: { name: "build_manifest", description: "Build the agent manifest", schema: manifestSchema, strict: false },
       });
       log.info({ model: this.model, preview: response.text.slice(0, 120) }, "manifest-compiler: structured output received");
       return parseManifestProposal(response.text);

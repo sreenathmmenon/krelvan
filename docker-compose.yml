@@ -19,7 +19,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: krelvan:latest
+    image: ghcr.io/sreenathmmenon/krelvan:0.1.0
     # Publish ONLY the web UI, and bind it to LOOPBACK by default so it is not exposed on the
     # network by accident. To expose it (behind an HTTPS reverse proxy), change this to
     # "3100:3100" and set KRELVAN_SECURE_COOKIES=1. The API port is internal-only by design.
@@ -37,6 +37,15 @@ services:
       # KRELVAN_LLM_MODEL: ${KRELVAN_LLM_MODEL:-}
     volumes:
       - krelvan-data:/data
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/web/.next/cache
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     restart: unless-stopped
 
 volumes:

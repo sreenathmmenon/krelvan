@@ -5,10 +5,10 @@
  *   KRELVAN_ANTHROPIC_KEY=sk-ant-… npm run api
  *
  * Usage (OpenAI):
- *   KRELVAN_LLM_PROVIDER=openai KRELVAN_LLM_API_KEY=sk-… npm run api
+ *   KRELVAN_LLM_PROVIDER=openai OPENAI_API_KEY=sk-… npm run api
  *
  * Usage (OpenRouter):
- *   KRELVAN_LLM_PROVIDER=openai
+ *   KRELVAN_LLM_PROVIDER=compatible
  *   KRELVAN_LLM_BASE_URL=https://openrouter.ai/api/v1
  *   KRELVAN_LLM_API_KEY=sk-or-…
  *   KRELVAN_LLM_MODEL=anthropic/claude-sonnet-4-6
@@ -56,23 +56,13 @@ const isLoopback = HOST === "127.0.0.1" || HOST === "::1" || HOST === "localhost
 
 // LLM config — new unified vars take precedence; KRELVAN_ANTHROPIC_KEY is legacy fallback
 const LLM_PROVIDER = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
-const LLM_API_KEY = process.env["KRELVAN_LLM_API_KEY"] ?? process.env["KRELVAN_ANTHROPIC_KEY"];
+const LLM_API_KEY = process.env["KRELVAN_LLM_API_KEY"] ??
+  (LLM_PROVIDER === "openai" ? process.env["OPENAI_API_KEY"] : undefined) ??
+  (LLM_PROVIDER === "anthropic" ? process.env["KRELVAN_ANTHROPIC_KEY"] : undefined);
 const LLM_BASE_URL = process.env["KRELVAN_LLM_BASE_URL"];
 const LLM_MODEL = process.env["KRELVAN_LLM_MODEL"];
 
-const hasLlm = !!(LLM_API_KEY) || LLM_PROVIDER === "ollama";
-
 async function main(): Promise<void> {
-  log.info({
-    port: PORT,
-    dataDir: DATA_DIR,
-    capsDir: CAPABILITIES_DIR,
-    llmProvider: LLM_PROVIDER,
-    llmModel: LLM_MODEL ?? "(provider default)",
-    llmBaseUrl: LLM_BASE_URL ?? "(provider default)",
-    hasLlm,
-  }, "starting Krelvan API");
-
   const runtime = new KrelvanRuntime({
     dataDir: DATA_DIR,
     port: PORT,
@@ -85,6 +75,19 @@ async function main(): Promise<void> {
   });
 
   await runtime.init();
+
+  // Log the EFFECTIVE model state after encrypted in-app settings have loaded. Logging the
+  // environment before init made a connected model look disconnected after restart.
+  const modelStatus = runtime.modelStatus;
+  log.info({
+    port: PORT,
+    dataDir: DATA_DIR,
+    capsDir: CAPABILITIES_DIR,
+    llmProvider: modelStatus.provider,
+    llmModel: modelStatus.model ?? "(provider default)",
+    llmSource: modelStatus.source,
+    hasLlm: modelStatus.hasLlm,
+  }, "starting Krelvan API");
 
   // ── Authentication (Phase 1 token) ─────────────────────────────────────────
   mkdirSync(DATA_DIR, { recursive: true });

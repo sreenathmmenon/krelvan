@@ -1,0 +1,27 @@
+# Standalone customer compose file for the immutable Krelvan 0.1.0 container image.
+# This file is uploaded with the v0.1.0 release; it does not require a source checkout.
+services:
+  krelvan:
+    image: ghcr.io/sreenathmmenon/krelvan:0.1.0
+    ports:
+      - "127.0.0.1:3100:3100"
+    environment:
+      PORT: "3100"
+      KRELVAN_WEB_HOST: "0.0.0.0"
+      KRELVAN_API_PORT: "3201"
+      KRELVAN_DATA_DIR: /data
+    volumes:
+      - krelvan-data:/data
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/web/.next/cache
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+volumes:
+  krelvan-data:

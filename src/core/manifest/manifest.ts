@@ -196,6 +196,28 @@ export function validateManifest(m: Manifest): ValidationIssue[] {
     if (!ids.has(e.to)) issues.push({ code: "DANGLING_EDGE_TO", message: `edge to unknown node '${e.to}'` });
   }
 
+  // Every declared node must be executable from the entry. A disconnected node is
+  // not an alternate plan: it is dead code that the canvas shows but the runtime
+  // can never reach. This caught a real customer build where the advertised final
+  // result node was disconnected and the run silently stopped one step early.
+  if (ids.has(m.entry)) {
+    const reachable = new Set<string>([m.entry]);
+    const queue = [m.entry];
+    while (queue.length > 0) {
+      const from = queue.shift()!;
+      for (const edge of m.edges) {
+        if (edge.from !== from || !ids.has(edge.to) || reachable.has(edge.to)) continue;
+        reachable.add(edge.to);
+        queue.push(edge.to);
+      }
+    }
+    for (const id of ids) {
+      if (!reachable.has(id)) {
+        issues.push({ code: "UNREACHABLE_NODE", message: `node '${id}' is not reachable from entry '${m.entry}'` });
+      }
+    }
+  }
+
   if (m.runBudgetCents < 0) issues.push({ code: "BAD_BUDGET", message: "runBudgetCents must be >= 0" });
   if (m.maxNodeVisits < 1) issues.push({ code: "BAD_MAX_VISITS", message: "maxNodeVisits must be >= 1" });
 

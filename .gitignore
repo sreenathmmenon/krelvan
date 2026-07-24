@@ -19,6 +19,12 @@ web/tsconfig.tsbuildinfo
 .shot.mjs
 release/
 
+# Generated customer-validation evidence. Keep curated screenshots in docs/screenshots;
+# raw browser sessions, proof exports, and output captures remain local.
+.playwright-cli/
+output/
+krelvan-proof-*.json
+
 # Secret material — never commit (defense in depth beyond /data/)
 secret.key
 secrets.json

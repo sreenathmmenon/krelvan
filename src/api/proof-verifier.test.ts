@@ -19,7 +19,7 @@ import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { generateKeyPairSync, sign as edSign, createHash } from "node:crypto";
+import { generateKeyPairSync, sign as edSign, createHash, createPublicKey } from "node:crypto";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -39,6 +39,28 @@ function writeBundleKeys(bundle: { publicKeys: { publicKeyPem: string }[] }): st
     writeFileSync(p, k.publicKeyPem);
     return p;
   });
+}
+
+function writeIssuerKeyring(bundle: { publicKeys: { keyId: string; epoch: number; publicKeyPem: string }[] }): string {
+  const keys = bundle.publicKeys.map((key) => {
+    const fingerprint = `sha256:${createHash("sha256")
+      .update(createPublicKey(key.publicKeyPem).export({ type: "spki", format: "der" }))
+      .digest("hex")}`;
+    return { ...key, fingerprint };
+  });
+  const issuerId = `sha256:${createHash("sha256")
+    .update(keys.map((key) => `${key.keyId}#${key.epoch}:${key.fingerprint}`).sort().join("\n"), "utf8")
+    .digest("hex")}`;
+  const dir = mkdtempSync(join(tmpdir(), "krelvan-keyring-"));
+  const path = join(dir, "issuer-keyring.json");
+  writeFileSync(path, JSON.stringify({
+    krelvanIssuerKeyring: 1,
+    issuerId,
+    algorithm: "ed25519",
+    nonRepudiable: true,
+    keys,
+  }, null, 2));
+  return path;
 }
 
 function writeTemp(bundle: unknown): string {
@@ -65,6 +87,27 @@ test("pinned to the issuer's real keys, the same bundle is VERIFIED · authentic
   assert.equal(code, 0, `expected exit 0, got ${code}\n${out}`);
   assert.match(out, /✓ VERIFIED · authentic/);
   assert.match(out, /matches pinned key/);
+});
+
+test("a separately saved issuer keyring upgrades the bundle to VERIFIED · authentic", () => {
+  const bundle = JSON.parse(readFileSync(FIXTURE, "utf8"));
+  const keyring = writeIssuerKeyring(bundle);
+  const { code, out } = runVerifier(FIXTURE, "--keyring", keyring);
+  assert.equal(code, 0, `expected exit 0, got ${code}\n${out}`);
+  assert.match(out, /✓ VERIFIED · authentic/);
+  assert.match(out, /matches pinned key/);
+});
+
+test("a malformed or internally inconsistent issuer keyring fails closed", () => {
+  const bundle = JSON.parse(readFileSync(FIXTURE, "utf8"));
+  const keyring = writeIssuerKeyring(bundle);
+  const bad = JSON.parse(readFileSync(keyring, "utf8"));
+  bad.keys[0].fingerprint = "sha256:" + "0".repeat(64);
+  writeFileSync(keyring, JSON.stringify(bad));
+  const { code, out } = runVerifier(FIXTURE, "--keyring", keyring);
+  assert.equal(code, 1);
+  assert.match(out, /fingerprint mismatch/);
+  assert.doesNotMatch(out, /VERIFIED · authentic/);
 });
 
 test("FORGERY: a re-signed bundle with the forger's own keys passes UNPINNED but is caught when pinned", () => {

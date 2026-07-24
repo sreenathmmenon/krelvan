@@ -24,7 +24,7 @@
  *
  * Usage:
  *   node bin/krelvan-verify.mjs <proof.json> [--key <issuer-pubkey.pem> ...]
- *   npx krelvan verify <proof.json> [--key <issuer-pubkey.pem> ...]
+ *   npx krelvan verify <proof.json> --keyring <issuer-keyring.json>
  *
  * Exit: 0 = verified (Ed25519, all checks pass) · 1 = failed/forged/tampered ·
  *       2 = could not independently verify (HMAC bundle — not third-party provable).
@@ -107,28 +107,37 @@ function contentAddress(canonicalBytes) {
 //                           their own keypair.
 const args = process.argv.slice(2);
 if (!args.length || args[0] === "--help" || args[0] === "-h") {
-  process.stdout.write(`Usage: krelvan verify <proof.json> [--key <pubkey.pem> ...]
+  process.stdout.write(`Usage: krelvan verify <proof.json> [--key <pubkey.pem> ...] [--keyring <issuer-keyring.json>]
 
 Independently verify a Krelvan signed-run proof bundle, offline.
 
 Without --key, the bundle is checked against the public keys EMBEDDED in it — this proves
 the run is internally consistent and unaltered, but NOT that it came from a particular
 instance (a forger could embed their own keys). To prove authenticity of origin, pin the
-issuer's real public key: fetch it from GET /api/ledger/keys on the source instance and pass
-it with --key.
+issuer's real public keys independently: save GET /api/ledger/keys from the source instance
+and pass it with --keyring (or pass individual PEM files with repeated --key).
 `);
   process.exit(args.length ? 0 : 1);
 }
 
 const pinnedKeyPems = [];
+const pinnedKeyringFiles = [];
 let file = null;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--key") {
     const p = args[++i];
     if (!p) die("--key needs a path to a PEM public key");
     try { pinnedKeyPems.push(readFileSync(p, "utf8")); } catch (e) { die(`could not read pinned key ${p}: ${e.message}`); }
+  } else if (args[i] === "--keyring") {
+    const p = args[++i];
+    if (!p) die("--keyring needs a path to an issuer-keyring JSON file");
+    pinnedKeyringFiles.push(p);
+  } else if (args[i]?.startsWith("--")) {
+    die(`unknown argument: ${args[i]}`);
   } else if (!file) {
     file = args[i];
+  } else {
+    die(`unknown argument: ${args[i]}`);
   }
 }
 if (!file) die("no proof bundle given");
@@ -149,6 +158,37 @@ process.stdout.write(dim(`  ${bundle.events.length} events · ${bundle.algorithm
 
 // SPKI DER fingerprint of a public key — stable, comparable across PEM whitespace.
 const keyFingerprint = (keyObj) => createHash("sha256").update(keyObj.export({ type: "spki", format: "der" })).digest("hex");
+
+// A keyring is deliberately a SEPARATE file from the proof. The auditor obtains/pins it through
+// an independent channel; accepting a keyring embedded in the proof would recreate the exact
+// self-signing weakness pinning is meant to prevent.
+for (const keyringFile of pinnedKeyringFiles) {
+  let keyring;
+  try { keyring = JSON.parse(readFileSync(keyringFile, "utf8")); }
+  catch (e) { die(`could not read issuer keyring ${keyringFile}: ${e.message}`); }
+  if (!keyring || keyring.krelvanIssuerKeyring !== 1 || keyring.algorithm !== "ed25519" || !Array.isArray(keyring.keys) || keyring.keys.length === 0) {
+    die(`${keyringFile} is not an Ed25519 Krelvan issuer keyring`);
+  }
+  const identityParts = [];
+  for (const key of keyring.keys) {
+    if (!key || typeof key.publicKeyPem !== "string" || typeof key.keyId !== "string" || !Number.isInteger(key.epoch)) {
+      die(`${keyringFile} contains a malformed issuer key`);
+    }
+    let keyObj;
+    try { keyObj = createPublicKey(key.publicKeyPem); }
+    catch (e) { die(`bad public key ${key.keyId}#${key.epoch} in ${keyringFile}: ${e.message}`); }
+    const fingerprint = `sha256:${keyFingerprint(keyObj)}`;
+    if (key.fingerprint !== undefined && key.fingerprint !== fingerprint) {
+      die(`${keyringFile} fingerprint mismatch for ${key.keyId}#${key.epoch}`);
+    }
+    identityParts.push(`${key.keyId}#${key.epoch}:${fingerprint}`);
+    pinnedKeyPems.push(key.publicKeyPem);
+  }
+  const computedIssuerId = `sha256:${createHash("sha256").update(identityParts.sort().join("\n"), "utf8").digest("hex")}`;
+  if (keyring.issuerId !== computedIssuerId) {
+    die(`${keyringFile} issuerId does not match its public keys`);
+  }
+}
 
 // The set of trusted fingerprints, if the caller pinned any.
 const pinnedFps = new Set();
@@ -176,7 +216,7 @@ const isEd25519 = bundle.algorithm === "ed25519";
 // HMAC bundle is a category error — there's no public key to check — and silently ignoring
 // it would let a forger downgrade to HMAC and bypass the pin. Fail loudly.
 if (pinnedFps.size && !isEd25519) {
-  die(`--key was given but this bundle's algorithm is "${bundle.algorithm}", not ed25519. HMAC signatures have no public key to pin against and cannot be independently verified. Ask the issuer for an Ed25519-signed export.`);
+  die(`a pinned key/keyring was given but this bundle's algorithm is "${bundle.algorithm}", not ed25519. HMAC signatures have no public key to pin against and cannot be independently verified. Ask the issuer for an Ed25519-signed export.`);
 }
 if (!isEd25519) {
   process.stdout.write(`${C.yellow}!${C.reset} This bundle is signed with ${bundle.algorithm} (tamper-EVIDENT, instance-local).\n`);

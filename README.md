@@ -121,6 +121,14 @@ KRELVAN_LLM_MODEL=claude-sonnet-4-6
 KRELVAN_LLM_API_KEY=sk-ant-...
 ```
 
+For OpenAI, the standard key name works directly:
+
+```bash
+KRELVAN_LLM_PROVIDER=openai
+KRELVAN_LLM_MODEL=gpt-5.6-sol
+OPENAI_API_KEY=sk-...
+```
+
 Or go local with **no key**: `KRELVAN_LLM_PROVIDER=ollama` · `KRELVAN_LLM_MODEL=llama3.2`.
 Without any provider the UI still runs and clearly reports LLM as off.
 

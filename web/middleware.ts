@@ -9,7 +9,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { readSessionCookie } from "./lib/cookie";
 import { MARKETING_ONLY } from "./lib/deployment";
 
-const PUBLIC_PATHS = new Set(["/", "/login", "/setup", "/faq", "/marketplace"]);
+const PUBLIC_PATHS = new Set(["/", "/login", "/setup", "/faq", "/marketplace", "/download"]);
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -19,7 +19,7 @@ export function middleware(req: NextRequest) {
       pathname.startsWith("/_next") ||
       pathname.startsWith("/favicon") ||
       pathname.includes(".");
-    if (isPublicAsset || pathname.startsWith("/proxy") || pathname === "/" || pathname === "/faq" || pathname === "/marketplace") {
+    if (isPublicAsset || pathname.startsWith("/proxy") || PUBLIC_PATHS.has(pathname)) {
       return NextResponse.next();
     }
     const url = req.nextUrl.clone();

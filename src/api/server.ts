@@ -47,8 +47,9 @@ import { diffManifests } from "./manifest-diff.js";
 import { applyCustomize } from "../core/manifest/customize.js";
 import { parseSchedulePhrase, isDigestCadence } from "../core/manifest/schedule-phrase.js";
 import { validateCron } from "./scheduler.js";
-import { getLLMClient } from "../adapters/llm-client.js";
+import { getLLMClient, resolveModel, type LLMProvider } from "../adapters/llm-client.js";
 import { authenticate, clientIp, type AuthState } from "./auth.js";
+import { buildExplanationFacts, buildExplanationPrompt, type ExplanationSource } from "./run-explanation.js";
 
 // The single allowed CORS origin (the web UI). Override via KRELVAN_WEB_ORIGIN.
 // We never use "*" — a wildcard with credentials is unsafe and the wildcard alone
@@ -460,7 +461,15 @@ async function handleAuthLogout(req: IncomingMessage, res: ServerResponse, rt: K
  * third party can independently verify the ledger. Public-key material only; no secret.
  */
 async function handleLedgerKeys(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
-  json(res, 200, rt.getLedgerSigningInfo());
+  const data = JSON.stringify(rt.getLedgerSigningInfo(), null, 2);
+  const download = new URL(_req.url ?? "/", "http://localhost").searchParams.get("download") === "1";
+  res.writeHead(200, {
+    "Content-Type": "application/json; charset=utf-8",
+    ...(download ? { "Content-Disposition": 'attachment; filename="krelvan-issuer-keyring.json"' } : {}),
+    "Access-Control-Allow-Origin": CORS_ORIGIN,
+    "Vary": "Origin",
+  });
+  res.end(data);
 }
 
 async function handleHealth(_req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -530,6 +539,25 @@ export function scheduleFromIntent(intent: string): ScheduleProposal | null {
   return { kind: p.kind, spec: p.spec, label: p.label, onMissed: isDigestCadence(p) ? "runOnce" : "skip" };
 }
 
+/**
+ * True only when the CUSTOMER explicitly asked for recurrence.
+ *
+ * A model-generated schedule is untrusted. Merely returning a valid cron expression is not
+ * evidence that the user wanted an agent to keep running. This deliberately avoids broad
+ * words such as "every" or "each" on their own: "audit every formula" and "calculate each
+ * SKU" are common non-scheduling instructions.
+ */
+export function hasExplicitScheduleIntent(intent: string): boolean {
+  const text = intent.toLowerCase();
+  if (/\b(?:schedule|scheduled|recurring|recurrence|periodic|periodically|hourly|daily|nightly|weekly|monthly|quarterly|yearly|annually)\b/.test(text)) {
+    return true;
+  }
+  if (/\b(?:every|each)\s+(?:(?:\d+|one|two|three)\s+)?(?:minutes?|hours?|days?|weeks?|months?|years?|morning|afternoon|evening|night)\b/.test(text)) {
+    return true;
+  }
+  return /\b(?:once|twice|three times)\s+(?:a|per)\s+(?:day|week|month|year)\b/.test(text);
+}
+
 /** Validate the MODEL's schedule proposal (untrusted): cron via validateCron, interval floored
  *  at 60s. Returns a proposal only if it passes; otherwise null (silently dropped). */
 export function validatedModelSchedule(s: { kind: "cron"; expr: string } | { kind: "interval"; ms: number }): ScheduleProposal | null {
@@ -544,6 +572,22 @@ export function validatedModelSchedule(s: { kind: "cron"; expr: string } | { kin
   return null;
 }
 
+/**
+ * Resolve the builder's schedule proposal. Deterministic parsing wins. A validated model
+ * proposal is considered only for an explicitly recurring intent that the deterministic
+ * parser did not understand. No explicit recurrence means no schedule, even if the model
+ * invented a syntactically valid one.
+ */
+export function scheduleForBuild(
+  intent: string,
+  modelSchedule?: { kind: "cron"; expr: string } | { kind: "interval"; ms: number },
+): ScheduleProposal | null {
+  const deterministic = scheduleFromIntent(intent);
+  if (deterministic) return deterministic;
+  if (!hasExplicitScheduleIntent(intent) || !modelSchedule) return null;
+  return validatedModelSchedule(modelSchedule);
+}
+
 async function handleBuildAgent(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
   const raw = await readBody(req);
   let body: { intent?: string };
@@ -554,7 +598,7 @@ async function handleBuildAgent(req: IncomingMessage, res: ServerResponse, rt: K
   // emit a junk placeholder agent and pass it off as success — the worst first-run outcome.
   // Fail loudly with the same clear 503 the other LLM routes use, so the UI can prompt setup.
   if (!rt.hasLlm) {
-    jsonError(res, 503, "no LLM provider configured — set KRELVAN_LLM_PROVIDER + KRELVAN_LLM_API_KEY (or KRELVAN_ANTHROPIC_KEY for Anthropic, or run Ollama locally)");
+    jsonError(res, 503, "no LLM provider configured — set KRELVAN_LLM_PROVIDER + a provider API key (OPENAI_API_KEY is accepted for OpenAI), or run Ollama locally");
     return;
   }
 
@@ -573,14 +617,10 @@ async function handleBuildAgent(req: IncomingMessage, res: ServerResponse, rt: K
   const { agent, attempts, warnings } = result;
   const manifest = agent.signed.manifest;
 
-  // Schedule detection (C3): the DETERMINISTIC phrase parser runs first and, when it matches,
-  // always wins (LLM-is-untrusted posture). Only if it finds nothing do we consider the model's
-  // proposal on the manifest — and only after re-validating it (validateCron / interval floor),
-  // so a bad model spec is silently dropped rather than trusted.
-  let schedule = scheduleFromIntent(body.intent.trim());
-  if (!schedule && manifest.schedule) {
-    schedule = validatedModelSchedule(manifest.schedule);
-  }
+  // Schedule detection (C3): deterministic parsing wins. A model proposal is considered only
+  // when the customer's own words explicitly request recurrence, then re-validated. This keeps
+  // a model from turning a one-off request into an unattended recurring action.
+  const schedule = scheduleForBuild(body.intent.trim(), manifest.schedule);
 
   json(res, 201, {
     agent,
@@ -1374,80 +1414,145 @@ async function handleExportRun(_req: IncomingMessage, res: ServerResponse, param
  * panel (GET /explain) and the "Share this run" one-pager (POST /share). Returns the explanation
  * text, or a typed error the caller maps to an HTTP status. No side effects.
  */
+type GeneratedRunExplanation = {
+  ok: true;
+  explanation: string;
+  generatedAt: number;
+  source: ExplanationSource;
+  warning?: string;
+};
+
+// Detail pages and background run-list summaries can request the same explanation at once.
+// Coalesce by runtime + run id so they share one bounded provider call.
+const explanationInFlight = new WeakMap<KrelvanRuntime, Map<string, Promise<GeneratedRunExplanation>>>();
+
 async function generateRunExplanation(
   rt: KrelvanRuntime,
   record: RunRecord,
-): Promise<{ ok: true; explanation: string } | { ok: false; status: number; error: string }> {
-  if (!rt.hasLlm) return { ok: false, status: 503, error: "no LLM provider configured — set KRELVAN_LLM_PROVIDER + KRELVAN_LLM_API_KEY (or KRELVAN_ANTHROPIC_KEY for Anthropic)" };
+  force = false,
+): Promise<GeneratedRunExplanation> {
+  let perRuntime = explanationInFlight.get(rt);
+  if (!perRuntime) {
+    perRuntime = new Map();
+    explanationInFlight.set(rt, perRuntime);
+  }
+  const existing = perRuntime.get(record.runId);
+  if (existing) return existing;
 
+  const pending = generateRunExplanationOnce(rt, record, force);
+  perRuntime.set(record.runId, pending);
+  try {
+    return await pending;
+  } finally {
+    if (perRuntime.get(record.runId) === pending) perRuntime.delete(record.runId);
+  }
+}
+
+async function generateRunExplanationOnce(
+  rt: KrelvanRuntime,
+  record: RunRecord,
+  force: boolean,
+): Promise<GeneratedRunExplanation> {
   const events = await rt.store.readRun("default", record.runId);
+  const latestEventId = events.at(-1)?.id ?? "";
+  if (
+    !force &&
+    latestEventId &&
+    record.explanation &&
+    record.explanationEventId === latestEventId &&
+    record.explanationGeneratedAt &&
+    record.explanationSource
+  ) {
+    return {
+      ok: true,
+      explanation: record.explanation,
+      generatedAt: record.explanationGeneratedAt,
+      source: record.explanationSource,
+      ...(record.explanationWarning ? { warning: record.explanationWarning } : {}),
+    };
+  }
 
-  const eventLines = events.map(e => {
-    const base = `[${e.offset}] ${e.type}`;
-    const nodePrefix = e.scope.nodeId ? ` node=${e.scope.nodeId}` : "";
-    const p = e.payload as Record<string, unknown>;
-    let detail = "";
-    switch (e.type) {
-      case "RunStarted":        detail = ` manifest=${String(p["manifest"] ?? "")}`;  break;
-      case "AdmissionDecision": detail = p["admitted"] ? ` admitted` : ` DENIED reason=${String(p["reason"] ?? "")}`; break;
-      case "NodeEntered":       detail = ""; break;
-      case "EffectRequested":   detail = ` cap=${String(p["capability"] ?? "")}`; break;
-      case "EffectResult":      detail = ` cap=${String(p["capability"] ?? "")} ok=${String(p["ok"] ?? "")} output=${JSON.stringify(p["output"] ?? {}).slice(0, 120)}`; break;
-      case "NodeConcluded":     detail = ""; break;
-      case "RunCompleted":      detail = ` completed`; break;
-      case "RunFailed":         detail = ` reason=${String(p["reason"] ?? "")}`; break;
-      case "AwaitRequested":    detail = ` capability=${String((p["call"] as Record<string, unknown>)?.["capability"] ?? "")} correlationId=${String(p["correlationId"] ?? "")}`; break;
-      case "AwaitResolved":     detail = ` decision=${String(p["decision"] ?? "")} correlationId=${String(p["correlationId"] ?? "")}`; break;
-    }
-    return `${base}${nodePrefix}${detail}`;
+  const manifest = rt.agentRegistry.get(record.agentId)?.signed.manifest ?? null;
+  const facts = buildExplanationFacts({
+    events,
+    manifest,
+    agentName: record.manifestName,
+    status: record.status,
+    ...(record.reason ? { failureReason: record.reason } : {}),
   });
 
-  const runSummary = [
-    `Run ID: ${record.runId}`,
-    `Agent: ${record.manifestName}`,
-    `Status: ${record.status}`,
-    `Started: ${new Date(record.createdAt).toISOString()}`,
-    record.finishedAt ? `Finished: ${new Date(record.finishedAt).toISOString()}` : null,
-  ].filter(Boolean).join("\n");
+  const persist = (result: {
+    explanation: string;
+    source: ExplanationSource;
+    warning?: string;
+  }): {
+    ok: true;
+    explanation: string;
+    generatedAt: number;
+    source: ExplanationSource;
+    warning?: string;
+  } => {
+    const generatedAt = Date.now();
+    // Cache against the last signed event. A live run naturally invalidates this when its next
+    // event arrives; terminal runs stop repeatedly calling the provider from list/detail views.
+    rt.runRegistry.update(record.runId, {
+      explanation: result.explanation,
+      explanationGeneratedAt: generatedAt,
+      explanationEventId: latestEventId,
+      explanationSource: result.source,
+      ...(result.warning ? { explanationWarning: result.warning } : { explanationWarning: undefined }),
+    });
+    return { ok: true, generatedAt, ...result };
+  };
 
-  const prompt = [
-    "You are explaining a Krelvan AI agent run to a non-technical user.",
-    "Given the event log below, write a clear, friendly explanation:",
-    "1. What the agent did overall (1–2 sentences).",
-    "2. What each node did and what it produced (one bullet per node, in order).",
-    "3. If the run failed: why it failed, which step caused it, and what might fix it.",
-    "Be specific. Use the actual node names and capability names. Do not mention 'ledger' or 'events'.",
-    "Do NOT mention cost, money, cents, dollars, budget, or spend — pricing is never shown to the user.",
-    "",
-    `=== Run summary ===`,
-    runSummary,
-    "",
-    `=== Event log (${events.length} events) ===`,
-    eventLines.join("\n"),
-  ].join("\n");
+  if (!rt.hasLlm) {
+    return persist({
+      explanation: facts.markdown,
+      source: "signed-record",
+      warning: "Generated directly from the signed run record because no model is connected.",
+    });
+  }
 
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
-    const model = process.env["KRELVAN_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
+    const model = resolveModel(provider as LLMProvider, "cheap");
     const client = getLLMClient();
-    const EXPLAIN_TIMEOUT_MS = Math.max(2000, Number(process.env["KRELVAN_EXPLAIN_TIMEOUT_MS"]) || 25_000);
+    const configuredTimeout = Number(process.env["KRELVAN_EXPLAIN_TIMEOUT_MS"]);
+    const EXPLAIN_TIMEOUT_MS = Math.max(2_000, Math.min(60_000, Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 20_000));
+    const controller = new AbortController();
+    timeout = setTimeout(() => controller.abort(), EXPLAIN_TIMEOUT_MS);
     const response = await Promise.race([
       client.complete({
         system: "You are explaining a Krelvan AI agent run to a non-technical user. Be clear, specific, and friendly.",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user", content: buildExplanationPrompt(facts) }],
         model,
         maxTokens: 1024,
         temperature: 0,
+        signal: controller.signal,
       }),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("explain timed out")), EXPLAIN_TIMEOUT_MS)),
+      new Promise<never>((_, reject) => {
+        controller.signal.addEventListener("abort", () => reject(new Error("explain timed out")), { once: true });
+      }),
     ]);
     const explanation = response.text;
-    if (!explanation) return { ok: false, status: 502, error: "LLM returned no content" };
-    return { ok: true, explanation };
+    if (!explanation) throw new Error("LLM returned no content");
+    return persist({ explanation, source: "model" });
   } catch (err) {
     const msg = (err as Error).message;
     log.warn({ err: msg }, "explain LLM failed");
-    return { ok: false, status: msg.includes("timed out") ? 504 : 502, error: `explain unavailable: ${msg}` };
+    // Explain is an interpretation surface, not an execution dependency. Never turn a valid,
+    // inspectable run into a 504 because a model is slow: fall back to a deterministic rendering
+    // of the signed record and disclose the degradation.
+    return persist({
+      explanation: facts.markdown,
+      source: "signed-record",
+      warning: msg.includes("timed out")
+        ? "The model exceeded the Explain deadline. This explanation was generated directly from the signed run record."
+        : "The model was unavailable. This explanation was generated directly from the signed run record.",
+    });
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
   }
 }
 
@@ -1455,9 +1560,9 @@ async function handleRunExplain(_req: IncomingMessage, res: ServerResponse, para
   const record = rt.runRegistry.get(params["id"] ?? "");
   if (!record) { jsonError(res, 404, "run not found"); return; }
 
-  const gen = await generateRunExplanation(rt, record);
-  if (!gen.ok) { jsonError(res, gen.status, gen.error); return; }
-  json(res, 200, { explanation: gen.explanation, generatedAt: Date.now(), runId: record.runId });
+  const force = new URL(_req.url ?? "/", "http://localhost").searchParams.get("refresh") === "1";
+  const gen = await generateRunExplanation(rt, record, force);
+  json(res, 200, { ...gen, runId: record.runId });
 }
 
 /**
@@ -1477,7 +1582,6 @@ async function handleRunShare(req: IncomingMessage, res: ServerResponse, params:
   }
 
   const gen = await generateRunExplanation(rt, record);
-  if (!gen.ok) { jsonError(res, gen.status, gen.error); return; }
   const token = rt.runRegistry.mintShare(record.runId, gen.explanation);
   if (!token) { jsonError(res, 404, "run not found"); return; }
   json(res, 201, { token, url: `/r/${token}` });
@@ -1562,7 +1666,7 @@ async function handleRunDiagnose(_req: IncomingMessage, res: ServerResponse, par
 
   try {
     const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
-    const model = process.env["KRELVAN_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
+    const model = resolveModel(provider as LLMProvider, "cheap");
     const client = getLLMClient();
     const response = await client.complete({
       system: "You are a precise failure analyst. You output only valid JSON. You reason strictly from the provided event log.",
@@ -1628,7 +1732,7 @@ async function resolveFixStrategy(
     }).join("\n");
     try {
       const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
-      const model = process.env["KRELVAN_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
+      const model = resolveModel(provider as LLMProvider, "cheap");
       const client = getLLMClient();
       const r = await client.complete({
         system: "You are a failure analyst. Output one concrete sentence describing the fix. No prose, no cost mentions.",
@@ -1796,7 +1900,7 @@ async function handleExplainBuild(_req: IncomingMessage, res: ServerResponse, pa
   let rationale: string;
   try {
     const provider = process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
-    const model = process.env["KRELVAN_LLM_MODEL"] ?? (provider === "ollama" ? "llama3.2" : provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001");
+    const model = resolveModel(provider as LLMProvider, "cheap");
     const client = getLLMClient();
     const response = await client.complete({
       system: "You are a concise AI architect explaining your design decisions. Write in first person. Under 60 words.",

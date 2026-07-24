@@ -46,15 +46,19 @@ export async function fetchWithRetry(
   let lastBody = "";
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (init.signal?.aborted) {
+      return { ok: false, status: 0, rawBody: "request aborted by caller", attempts: attempt };
+    }
     let resp: Response;
     let abortTimer: ReturnType<typeof setTimeout> | undefined;
     const controller = timeoutMs > 0 ? new AbortController() : null;
     if (controller && timeoutMs > 0) {
       abortTimer = setTimeout(() => controller.abort(), timeoutMs);
     }
-    const initWithSignal: RequestInit = controller
-      ? { ...init, signal: controller.signal }
-      : init;
+    const signal = controller && init.signal
+      ? AbortSignal.any([controller.signal, init.signal])
+      : controller?.signal ?? init.signal;
+    const initWithSignal: RequestInit = signal ? { ...init, signal } : init;
     try {
       resp = await fetchImpl(url, initWithSignal);
       if (abortTimer !== undefined) clearTimeout(abortTimer);
@@ -62,6 +66,9 @@ export async function fetchWithRetry(
       if (abortTimer !== undefined) clearTimeout(abortTimer);
       lastBody = (e as Error).message;
       lastStatus = 0;
+      if (init.signal?.aborted) {
+        return { ok: false, status: 0, rawBody: "request aborted by caller", attempts: attempt };
+      }
       if (attempt < maxAttempts) {
         await sleep(jitteredDelay(baseDelay, attempt, maxDelay));
         continue;

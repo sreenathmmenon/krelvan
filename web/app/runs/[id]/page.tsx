@@ -297,19 +297,14 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
     if (!detail) return;
     if (detail.run.status !== "completed" && detail.run.status !== "failed") return;
     if (explanation) return;
-    if (modelReady === null) return;
     autoExplainedRef.current = true;
-    if (!modelReady) {
-      setExplainError(NO_MODEL_MESSAGE);
-      return;
-    }
     setExplaining(true);
     setExplainError(null);
     void explainRun(id)
       .then(res => setExplanation(res))
       .catch(err => setExplainError((err as Error).message))
       .finally(() => setExplaining(false));
-  }, [detail?.run.status, explanation, id, modelReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail?.run.status, explanation, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-diagnose ONLY genuinely FAILED runs. A halted run is NOT a failure — it is paused
   // waiting for human approval (working as designed), and must show the approval UI, never a
@@ -713,13 +708,18 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
               {/* This badge is about the RECORD's completeness — every step of the run is captured,
                   so a halted or failed run still has a full, replayable record. */}
               <span className="run-seal__title">Run fully recorded</span>
-              <span className="run-seal__sub">Every step is captured — replay it end to end, exactly as it ran</span>
+              <span className="run-seal__sub">Every run event is signed — replay it end to end, exactly as it ran</span>
             </div>
             <span className="run-seal__verified" aria-live="polite"><Glyph kind="check" size={13} color="currentColor" /> Complete</span>
           </div>
           <div className="run-seal__chips">
-            <span className="run-seal__chip"><span className="mono">{verification.signedEvents}/{verification.runEvents}</span> steps recorded</span>
-            <span className="run-seal__chip"><span className="mono">{verification.ledgerEvents}</span> events in order</span>
+            <span className="run-seal__chip"><span className="mono">{verification.signedEvents}/{verification.runEvents}</span> run events signed</span>
+            <span className="run-seal__chip"><span className="mono">{verification.ledgerEvents}</span> workspace ledger events checked</span>
+            {verification.issuerId && (
+              <span className="run-seal__chip" title={verification.issuerId}>
+                issuer <span className="mono">{verification.issuerId.slice(7, 19)}</span>
+              </span>
+            )}
           </div>
           <div className="run-seal__actions">
             <a
@@ -730,6 +730,16 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
             >
               Download run record ↓
             </a>
+            {verification.nonRepudiable && (
+              <a
+                href={`${API_BASE}/api/ledger/keys?download=1`}
+                download
+                className="run-seal__cta"
+                title="Save this separately from the run record, then pin it during offline verification to prove origin"
+              >
+                Download issuer keyring ↓
+              </a>
+            )}
             <a href="#tab-timeline" onClick={() => setTab("timeline")} className="run-seal__cta">View the timeline →</a>
           </div>
         </div>
@@ -829,7 +839,7 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
                 {verification == null && <span className="soft">Click check to confirm the record is complete.</span>}
                 {verification?.ok && (
                   <span style={{ color: "var(--ok)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <Glyph kind="check" size={14} color="var(--ok)" /> Complete — {verification.signedEvents}/{verification.runEvents} steps recorded, {verification.ledgerEvents} events in order end to end.
+                    <Glyph kind="check" size={14} color="var(--ok)" /> Complete — {verification.signedEvents}/{verification.runEvents} run events signed; {verification.ledgerEvents} workspace ledger events checked end to end.
                   </span>
                 )}
                 {verification && !verification.ok && (
@@ -936,14 +946,10 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
           loading={explaining}
           error={explainError}
           onGenerate={async () => {
-            if (!modelReady) {
-              setExplainError(NO_MODEL_MESSAGE);
-              return;
-            }
             setExplaining(true);
             setExplainError(null);
             try {
-              const result = await explainRun(id);
+              const result = await explainRun(id, true);
               setExplanation(result);
             } catch (err) {
               setExplainError((err as Error).message);
@@ -1346,6 +1352,11 @@ function ExplainPanel({ runId, status, explanation, loading, error, onGenerate }
           <div className="md-body" style={{ fontSize: 14, lineHeight: 1.7, color: "var(--ink)", wordBreak: "break-word" }}>
             {renderMarkdown(cleanExplanation(explanation.explanation))}
           </div>
+          {explanation.warning && (
+            <div className="small" role="status" style={{ marginTop: "var(--s4)", color: "var(--ink-muted)", paddingTop: "var(--s3)", borderTop: "1px solid var(--line)" }}>
+              {explanation.warning}
+            </div>
+          )}
         </div>
       ) : (
         <div className="state-empty">

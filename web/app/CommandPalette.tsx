@@ -29,7 +29,7 @@ const COMMANDS: Command[] = [
   { id: "go-marketplace", label: "Marketplace", hint: "Page", group: "Go to", keywords: "capabilities tools discover install connectors agents", run: r => r.push("/capabilities") },
   { id: "go-connectors", label: "Connectors", hint: "Page", group: "Go to", keywords: "mcp servers github slack tool host", run: r => r.push("/capabilities#connectors") },
   { id: "go-schedules", label: "Schedules", hint: "Page", group: "Go to", keywords: "cron interval automation recurring", run: r => r.push("/schedules") },
-  { id: "go-secrets", label: "Secrets", hint: "Page", group: "Go to", keywords: "keys deploy hooks api tokens", run: r => r.push("/secrets") },
+  { id: "go-secrets", label: "Model & secrets", hint: "Settings", group: "Go to", keywords: "model provider openai anthropic keys deploy hooks api tokens settings", run: r => r.push("/secrets#model") },
   { id: "go-approvals", label: "Approvals", hint: "Page", group: "Go to", keywords: "human in the loop pause review pending", run: r => r.push("/approvals") },
 ];
 

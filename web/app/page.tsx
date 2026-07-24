@@ -12,6 +12,7 @@ import {
 import { loadRegistry, type CatalogEntry } from "../lib/registry";
 import { glyphFor, UI } from "../lib/glyphs";
 import { MARKETING_ONLY } from "../lib/deployment";
+import { NPM_COMMAND } from "../lib/release";
 
 // ── Krelvan landing — product-first debut ──────────────────────────────────────
 // The homepage IS the working product. On first paint a visitor lands on a dark
@@ -211,7 +212,7 @@ function ExampleGallery() {
 }
 
 // ── Copyable one-command install (final CTA) ─────────────────────────────────
-const INSTALL_CMD = "git clone https://github.com/sreenathmmenon/krelvan && cd krelvan && npx krelvan";
+const INSTALL_CMD = NPM_COMMAND;
 
 function InstallCommand() {
   const [copied, setCopied] = useState(false);
@@ -517,7 +518,7 @@ export default function Landing() {
                     The public website is read-only and has no shared customer accounts. Download Krelvan,
                     connect your model, and build this goal with your data staying in your installation.
                   </p>
-                  <a href="https://github.com/sreenathmmenon/krelvan#run-it" className="btn btn-primary btn-sm">Download and run →</a>
+                  <Link href="/download" className="btn btn-primary btn-sm">Download and run →</Link>
                 </div>
               ) : buildError === "SIGN_IN_REQUIRED" ? (
                 <div role="alert" className="build-needs-model" style={{ margin: "var(--s4) 0 0", textAlign: "left" }}>
@@ -772,9 +773,10 @@ export default function Landing() {
           <div className="cta-lanes">
             <div className="cta-lane">
               <div className="cta-lane__time mono">First run</div>
-              <div className="cta-lane__title">Clone &amp; run</div>
-              <p className="cta-lane__desc">One command boots the API + web UI on <span className="mono">localhost:3100</span>, or <span className="mono">docker compose up</span>. Describe a goal and get a real agent.</p>
+              <div className="cta-lane__title">Install &amp; run</div>
+              <p className="cta-lane__desc">One version-pinned command boots the API + web UI on <span className="mono">localhost:3100</span>. Docker and an inspectable tarball are also available.</p>
               <InstallCommand />
+              <Link href="/download" className="small dark-teal">Compare install options →</Link>
             </div>
             <div className="cta-lane">
               <div className="cta-lane__time mono">Source</div>

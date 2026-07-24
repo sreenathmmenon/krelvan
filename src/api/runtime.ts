@@ -65,7 +65,7 @@ import type { SecretBrokerPort, OwnerId, PluginInstallResult, PluginEnableResult
 import { parseOwnerId } from "../core/plugins/ports.js";
 import { join, resolve as resolvePath } from "node:path";
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, copyFileSync, unlinkSync, chmodSync } from "node:fs";
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createPublicKey, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NewEvent } from "../core/ledger/event.js";
 
 const log = getLogger("runtime");
@@ -379,6 +379,13 @@ export interface RunRecord {
   sharedExplanation?: string;
   /** when the one-pager was generated (ms). */
   sharedAt?: number;
+  /** Cached private Explain result. It is valid only for explanationEventId, so a running
+   *  run cannot serve a stale explanation after more signed events arrive. */
+  explanation?: string;
+  explanationGeneratedAt?: number;
+  explanationEventId?: string;
+  explanationSource?: "model" | "signed-record";
+  explanationWarning?: string;
   /** true when this run is a REHEARSAL: it ran the real engine against a synthetic world (no real
    *  side effects). Rehearsal runs never enter the Inbox or the public feed and are never
    *  delivered — they exist to be inspected, not shipped. */
@@ -789,6 +796,7 @@ export class KrelvanRuntime {
   private readonly llmProviderDefault: string;
   private readonly llmApiKeyDefault: string | null;
   private readonly llmBaseUrlDefault: string | undefined;
+  private readonly llmModelDefault: string | undefined;
   private readonly pluginLifecycle: PluginLifecycleService;
   private readonly pluginRepository: SqlitePluginRepository;
   private readonly capsDir: string;
@@ -916,8 +924,17 @@ export class KrelvanRuntime {
     // Compiler — built lazily per compile so knownAgents is always current.
     this.anthropicApiKey = config.anthropicApiKey ?? null;
     this.llmProviderDefault = config.llmProvider ?? process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic";
-    this.llmApiKeyDefault = config.llmApiKey ?? config.anthropicApiKey ?? process.env["KRELVAN_LLM_API_KEY"] ?? process.env["KRELVAN_ANTHROPIC_KEY"] ?? null;
+    this.llmApiKeyDefault = config.llmApiKey ?? config.anthropicApiKey ??
+      process.env["KRELVAN_LLM_API_KEY"] ??
+      (this.llmProviderDefault === "openai" ? process.env["OPENAI_API_KEY"] : undefined) ??
+      (this.llmProviderDefault === "anthropic" ? process.env["KRELVAN_ANTHROPIC_KEY"] : undefined) ??
+      null;
     this.llmBaseUrlDefault = config.llmBaseUrl ?? process.env["KRELVAN_LLM_BASE_URL"];
+    this.llmModelDefault = config.llmModel ?? process.env["KRELVAN_LLM_MODEL"];
+    // SecretStore loads synchronously above. Mirror its effective model connection into
+    // the process environment before any built-in capability can create the shared client.
+    // This also makes an in-app connection survive a process restart.
+    this.syncEffectiveModelConfigToEnv();
     this.compiler = this.buildCompiler();
   }
 
@@ -987,17 +1004,29 @@ export class KrelvanRuntime {
    * any secret. In HMAC mode there is no publishable key (the verify key is the secret),
    * so only the algorithm is reported.
    */
-  getLedgerSigningInfo(): { algorithm: "ed25519" | "hmac-sha256"; nonRepudiable: boolean; keys: { keyId: string; epoch: number; publicKeyPem: string }[] } {
+  getLedgerSigningInfo(): {
+    krelvanIssuerKeyring: 1;
+    issuerId: string | null;
+    algorithm: "ed25519" | "hmac-sha256";
+    nonRepudiable: boolean;
+    keys: { keyId: string; epoch: number; publicKeyPem: string; fingerprint: string }[];
+  } {
     if (this.ring instanceof Ed25519Keyring) {
       const ring = this.ring;
       const keys = (["owner", "supervisor"] as const).map((keyId) => ({
         keyId,
         epoch: 1,
         publicKeyPem: ring.exportPublicKey(keyId, 1),
+        fingerprint: `sha256:${createHash("sha256")
+          .update(createPublicKey(ring.exportPublicKey(keyId, 1)).export({ type: "spki", format: "der" }))
+          .digest("hex")}`,
       }));
-      return { algorithm: "ed25519", nonRepudiable: true, keys };
+      const issuerId = `sha256:${createHash("sha256")
+        .update(keys.map((key) => `${key.keyId}#${key.epoch}:${key.fingerprint}`).sort().join("\n"), "utf8")
+        .digest("hex")}`;
+      return { krelvanIssuerKeyring: 1, issuerId, algorithm: "ed25519", nonRepudiable: true, keys };
     }
-    return { algorithm: "hmac-sha256", nonRepudiable: false, keys: [] };
+    return { krelvanIssuerKeyring: 1, issuerId: null, algorithm: "hmac-sha256", nonRepudiable: false, keys: [] };
   }
 
   /**
@@ -1006,7 +1035,7 @@ export class KrelvanRuntime {
    * (HMAC or Ed25519): checks hash-chaining, contiguous offsets, content-addresses, and
    * every signature. Returns ok + a per-event signed count, or the first corruption found.
    */
-  async verifyRun(runId: string): Promise<{ ok: true; runEvents: number; signedEvents: number; ledgerEvents: number; algorithm: string; nonRepudiable: boolean } | { ok: false; error: string; detail: string }> {
+  async verifyRun(runId: string): Promise<{ ok: true; runEvents: number; signedEvents: number; ledgerEvents: number; algorithm: string; nonRepudiable: boolean; issuerId: string | null } | { ok: false; error: string; detail: string }> {
     // The ledger is ONE hash-chained log per tenant (offsets are global, not per-run).
     // Verifying the run therefore means verifying the whole chain it lives in — a stronger
     // guarantee than a per-run slice: it proves the run's events sit in an intact,
@@ -1023,6 +1052,7 @@ export class KrelvanRuntime {
       signedEvents: runEvents.filter((e) => e.sig).length,
       ledgerEvents: all.length,
       algorithm,
+      issuerId: this.getLedgerSigningInfo().issuerId,
       // Ed25519 = non-repudiable (a public key proves it; the signer can't deny it). HMAC =
       // tamper-EVIDENT but repudiable (the same per-install secret signs and verifies). The UI
       // must not call the HMAC default "tamper-proof".
@@ -1075,6 +1105,17 @@ export class KrelvanRuntime {
       exportedAt: this.now(),
       algorithm: signing.algorithm,
       nonRepudiable: signing.nonRepudiable,
+      issuer: {
+        issuerId: signing.issuerId,
+        keyFingerprints: signing.keys.map((key) => ({
+          keyId: key.keyId,
+          epoch: key.epoch,
+          fingerprint: key.fingerprint,
+        })),
+        // A discovery hint is convenient, but never a trust anchor: authenticity still requires
+        // the auditor to obtain/pin the keyring separately from the proof bundle.
+        keyDiscoveryPath: "/api/ledger/keys",
+      },
       // Public keys an auditor verifies against. Empty for HMAC (signatures are instance-local).
       publicKeys: signing.keys,
       verification: verification.ok
@@ -1083,7 +1124,7 @@ export class KrelvanRuntime {
       hashAlgorithm: "sha256",
       events,
       howToVerify: signing.algorithm === "ed25519"
-        ? "Run `npx krelvan verify <this-file>` (or `node bin/krelvan-verify.mjs <this-file>`). It recomputes every event's SHA-256 content address and checks each Ed25519 signature against the included public keys — no Krelvan install or trust required."
+        ? "First obtain the issuer keyring independently from GET /api/ledger/keys and save it. Run `npx krelvan verify <this-file> --keyring <issuer-keyring.json>` for origin-authenticated verification. Running without --keyring checks internal consistency only and must not be treated as proof of origin."
         : "This instance signs with HMAC-SHA256, which is tamper-EVIDENT but instance-local: the verify key is the sign key, so an outside party cannot independently verify it. For non-repudiable proof a third party can check, run this instance with Ed25519 signing (KRELVAN_LEDGER_SIGNING=ed25519).",
     };
     return { ok: true, bundle };
@@ -1871,16 +1912,49 @@ export class KrelvanRuntime {
    * SSHing in to edit env vars or restarting. buildCompiler() reads these fresh per build.
    */
   private get llmProvider(): string {
-    return this.secretStore.resolve(MODEL_PROVIDER_SECRET) ?? this.llmProviderDefault;
+    return this.secretStore.isStored(MODEL_PROVIDER_SECRET)
+      ? (this.secretStore.resolve(MODEL_PROVIDER_SECRET) ?? this.llmProviderDefault)
+      : this.llmProviderDefault;
   }
   private get llmApiKey(): string | null {
-    return this.secretStore.resolve(MODEL_API_KEY_SECRET) ?? this.llmApiKeyDefault;
+    if (this.secretStore.isStored(MODEL_API_KEY_SECRET)) {
+      return this.secretStore.resolve(MODEL_API_KEY_SECRET) ?? null;
+    }
+    // A key supplied for one provider must never be silently sent to another after
+    // the operator changes only the provider in the UI.
+    if (this.llmProvider === this.llmProviderDefault) return this.llmApiKeyDefault;
+    if (this.llmProvider === "openai") return process.env["OPENAI_API_KEY"] ?? null;
+    if (this.llmProvider === "anthropic") return process.env["KRELVAN_ANTHROPIC_KEY"] ?? null;
+    return null;
   }
   private get llmBaseUrl(): string | undefined {
-    return this.secretStore.resolve(MODEL_BASE_URL_SECRET) ?? this.llmBaseUrlDefault;
+    if (this.secretStore.isStored(MODEL_BASE_URL_SECRET)) {
+      return this.secretStore.resolve(MODEL_BASE_URL_SECRET);
+    }
+    return this.llmProvider === this.llmProviderDefault ? this.llmBaseUrlDefault : undefined;
   }
   private get llmModel(): string | undefined {
-    return this.secretStore.resolve(MODEL_NAME_SECRET) ?? process.env["KRELVAN_LLM_MODEL"];
+    if (this.secretStore.isStored(MODEL_NAME_SECRET)) {
+      return this.secretStore.resolve(MODEL_NAME_SECRET);
+    }
+    return this.llmProvider === this.llmProviderDefault ? this.llmModelDefault : undefined;
+  }
+
+  /**
+   * Built-in capabilities use the process-wide shared LLM client. Keep it aligned with
+   * this runtime's durable/effective model config. The constructor calls this after the
+   * encrypted store is loaded; setModelConfig calls it after every update.
+   */
+  private syncEffectiveModelConfigToEnv(): void {
+    const assign = (name: string, value: string | null | undefined) => {
+      if (value) process.env[name] = value;
+      else delete process.env[name];
+    };
+    assign("KRELVAN_LLM_PROVIDER", this.llmProvider);
+    assign("KRELVAN_LLM_API_KEY", this.llmApiKey);
+    assign("KRELVAN_LLM_MODEL", this.llmModel);
+    assign("KRELVAN_LLM_BASE_URL", this.llmBaseUrl);
+    resetLLMClient();
   }
 
   get hasLlm(): boolean {
@@ -1917,19 +1991,9 @@ export class KrelvanRuntime {
     if (cfg.apiKey !== undefined) apply(MODEL_API_KEY_SECRET, cfg.apiKey);
     if (cfg.model !== undefined) apply(MODEL_NAME_SECRET, cfg.model);
     if (cfg.baseUrl !== undefined) apply(MODEL_BASE_URL_SECRET, cfg.baseUrl);
-    // Runtime plugins (think/compose/web_search/…) read process.env and the shared LLM client
-    // caches on first use. Sync the resolved config into process.env and reset the cached client
-    // so a model change made in the UI actually takes effect on the NEXT run — not just the next
-    // process restart. (The secret-store values above are the durable source of truth.)
-    const sync = (envName: string, secretName: string) => {
-      const v = this.secretStore.resolve(secretName);
-      if (v) process.env[envName] = v; else delete process.env[envName];
-    };
-    sync("KRELVAN_LLM_PROVIDER", MODEL_PROVIDER_SECRET);
-    sync("KRELVAN_LLM_API_KEY", MODEL_API_KEY_SECRET);
-    sync("KRELVAN_LLM_MODEL", MODEL_NAME_SECRET);
-    sync("KRELVAN_LLM_BASE_URL", MODEL_BASE_URL_SECRET);
-    resetLLMClient();
+    // Built-ins use the process-wide shared client. Apply the effective values (including
+    // constructor/env fallbacks after a field is cleared), then invalidate its cache.
+    this.syncEffectiveModelConfigToEnv();
     // anthropic/openai with no key set at all → not actually ready; report honestly via status
     return { ok: true, status: this.modelStatus };
   }
@@ -2598,7 +2662,9 @@ export class KrelvanRuntime {
         spentCents: result.projection.budget.runSpentCents,
         reason: result.reason,
       });
-      log.info({ runId, status: result.status, spentCents: result.projection.budget.runSpentCents }, "run finished");
+      // Reservation/accounting fields remain internal safety controls. Customer-facing logs
+      // report the outcome only; the internal estimate must never be presented as a price.
+      log.info({ runId, status: result.status }, "run finished");
 
       // If this run was fired by a schedule, record the outcome so the failure-streak logic
       // (C1) can warn after repeated failures. A completed run resets the streak.
@@ -2692,6 +2758,6 @@ class StubModelPort {
     // real build — that's the worst first-run outcome (a confident junk result). Fail loudly.
     // The API build route gates on hasLlm before reaching here, so this is a belt-and-braces guard.
     void _intent;
-    throw new Error("no LLM provider configured — cannot build an agent. Set KRELVAN_LLM_PROVIDER + KRELVAN_LLM_API_KEY (or KRELVAN_ANTHROPIC_KEY, or run Ollama locally).");
+    throw new Error("no LLM provider configured — cannot build an agent. Set KRELVAN_LLM_PROVIDER + a provider API key (OPENAI_API_KEY is accepted for OpenAI), or run Ollama locally.");
   }
 }

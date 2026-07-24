@@ -21,7 +21,7 @@
 
 import type { Episode, SemanticFact, Provenance } from "../core/memory/memory.js";
 import { distilledProvenance } from "../core/memory/memory.js";
-import { makeLLMClient, type LLMClientConfig } from "./llm-client.js";
+import { defaultModelForProvider, makeLLMClient, type LLMClientConfig } from "./llm-client.js";
 import { fetchWithRetry, type RetryOptions } from "./http-retry.js";
 
 export interface DistillerConfig {
@@ -65,13 +65,11 @@ export class AnthropicDistiller {
   private readonly fetchImpl: typeof fetch;
 
   constructor(private readonly cfg: DistillerConfig) {
-    const providerDefault = (() => {
-      const p = cfg.llmConfig?.provider ?? process.env["GENESIS_LLM_PROVIDER"] ?? "anthropic";
-      if (p === "openai") return "gpt-4o-mini";
-      if (p === "ollama") return "llama3.2";
-      return "claude-haiku-4-5-20251001";
-    })();
-    this.model = cfg.model ?? process.env["GENESIS_LLM_MODEL"] ?? providerDefault;
+    const provider = cfg.llmConfig?.provider ??
+      (process.env["KRELVAN_LLM_PROVIDER"] as LLMClientConfig["provider"] | undefined) ??
+      "anthropic";
+    this.model = cfg.model ?? process.env["KRELVAN_LLM_MODEL"] ??
+      (provider === "anthropic" ? "claude-haiku-4-5-20251001" : defaultModelForProvider(provider, "cheap"));
     this.maxFacts = cfg.maxFacts ?? 10;
     this.fetchImpl = cfg.fetchImpl ?? fetch;
   }
