@@ -1,6 +1,6 @@
 {
   "name": "krelvan",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Krelvan — own, run, and trust your own AI agents. The ledger is the runtime.",
   "type": "module",
   "license": "Apache-2.0",

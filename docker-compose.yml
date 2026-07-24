@@ -19,7 +19,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/sreenathmmenon/krelvan:0.1.0
+    image: ghcr.io/sreenathmmenon/krelvan:0.1.1
     # Publish ONLY the web UI, and bind it to LOOPBACK by default so it is not exposed on the
     # network by accident. To expose it (behind an HTTPS reverse proxy), change this to
     # "3100:3100" and set KRELVAN_SECURE_COOKIES=1. The API port is internal-only by design.
