@@ -6,7 +6,7 @@
 #                        and the launcher. SQLite lives on a mounted volume.
 
 # ── Stage 1: build the core ──────────────────────────────────────────────────
-FROM node:22.23.1-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS core-build
+FROM node:26.5.0-slim@sha256:715e55e4b84e4bb0ff48e49b398a848f08e55daed8eb6a0ea1839ae53bc57583 AS core-build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -17,7 +17,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ── Stage 2: build the web UI ────────────────────────────────────────────────
-FROM node:22.23.1-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS web-build
+FROM node:26.5.0-slim@sha256:715e55e4b84e4bb0ff48e49b398a848f08e55daed8eb6a0ea1839ae53bc57583 AS web-build
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -32,7 +32,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ── Stage 3: minimal runner ──────────────────────────────────────────────────
-FROM node:22.23.1-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS runner
+FROM node:26.5.0-slim@sha256:715e55e4b84e4bb0ff48e49b398a848f08e55daed8eb6a0ea1839ae53bc57583 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ARG KRELVAN_VERSION=0.1.2
