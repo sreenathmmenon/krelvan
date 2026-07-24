@@ -182,6 +182,14 @@ function indexOf(haystack: Buffer, needle: Buffer, start = 0): number {
   return -1;
 }
 
+function applySecurityHeaders(res: ServerResponse): void {
+  res.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+}
+
 function json(res: ServerResponse, status: number, body: unknown): void {
   const data = JSON.stringify(body, null, 2);
   res.writeHead(status, {
@@ -308,6 +316,8 @@ export function createApiServer(runtime: KrelvanRuntime, auth: AuthState) {
   ];
 
   const server = createServer(async (req, res) => {
+    applySecurityHeaders(res);
+
     // CORS preflight. The admin API is same-origin only (KRELVAN_WEB_ORIGIN). The PUBLIC
     // front door (/api/public/*) is DELIBERATELY `*`: those routes carry no session/cookie —
     // they are authenticated by a per-agent site key (the /ask path) or are public reads, so

@@ -10,6 +10,10 @@ on your machine, yours to keep.**
 
 `The canvas is the runtime` · Self-hostable · Apache-2.0 · Zero runtime deps in core
 
+<a href="https://www.producthunt.com/products/krelvan-own-your-agents?utm_source=github&utm_medium=readme">
+  <img src="https://img.shields.io/badge/Product_Hunt-Live-0E7C75?logo=producthunt&logoColor=white" alt="Krelvan is live on Product Hunt">
+</a>
+
 </div>
 
 ---

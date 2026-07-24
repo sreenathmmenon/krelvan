@@ -41,6 +41,16 @@ LABEL org.opencontainers.image.title="Krelvan" \
       org.opencontainers.image.source="https://github.com/sreenathmmenon/krelvan" \
       org.opencontainers.image.licenses="Apache-2.0"
 
+# The image remains non-root by default. Platforms that mount persistent volumes as root
+# may start the entrypoint as root so it can repair only the configured data directory;
+# gosu immediately drops to the node user before Krelvan starts.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && gosu nobody true
+COPY scripts/docker-entrypoint.sh /usr/local/bin/krelvan-entrypoint
+RUN chmod 0755 /usr/local/bin/krelvan-entrypoint
+
 # Core: compiled output + its package manifest + launcher + capabilities.
 COPY package.json ./
 COPY bin ./bin
@@ -73,4 +83,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3100').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
 USER node
+ENTRYPOINT ["/usr/local/bin/krelvan-entrypoint"]
 CMD ["node", "bin/krelvan.mjs", "up"]

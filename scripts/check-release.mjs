@@ -16,6 +16,7 @@ const webLock = readJson("web/package-lock.json");
 const versionSource = readFileSync(join(ROOT, "src/version.ts"), "utf8");
 const webReleaseSource = readFileSync(join(ROOT, "web/lib/release.ts"), "utf8");
 const dockerfile = readFileSync(join(ROOT, "Dockerfile"), "utf8");
+const dockerEntrypoint = readFileSync(join(ROOT, "scripts/docker-entrypoint.sh"), "utf8");
 const compose = readFileSync(join(ROOT, "docker-compose.yml"), "utf8");
 const releaseCompose = readFileSync(join(ROOT, "docker-compose.release.yml"), "utf8");
 const failures = [];
@@ -51,6 +52,22 @@ requireEqual(
   "Docker base digest count",
   new Set(dockerBases.map((match) => match[2])).size,
   1,
+);
+requireCondition(
+  dockerfile.includes('USER node\nENTRYPOINT ["/usr/local/bin/krelvan-entrypoint"]'),
+  "Docker runtime must remain non-root by default and use the guarded entrypoint",
+);
+requireCondition(
+  dockerfile.includes("apt-get install -y --no-install-recommends gosu"),
+  "Docker runtime must include the reviewed privilege-drop helper",
+);
+requireCondition(
+  dockerEntrypoint.includes('exec gosu node "$@"'),
+  "Docker entrypoint must drop privileges before Krelvan starts",
+);
+requireCondition(
+  dockerEntrypoint.includes('chown -R --no-dereference node:node -- "$data_dir"'),
+  "Docker entrypoint must repair mounted-volume ownership without following symlinks",
 );
 requireEqual("Compose image version", compose.match(/image:\s+\S+:([^\s]+)/)?.[1], version);
 requireEqual(

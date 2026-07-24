@@ -397,6 +397,22 @@ export default function Landing() {
                   Star on GitHub
                 </a>
               </div>
+              <div className="product-hunt-launch">
+                <a
+                  href="https://www.producthunt.com/products/krelvan-own-your-agents?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-krelvan-own-your-agents"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="View Krelvan on Product Hunt"
+                  className="product-hunt-launch__link"
+                >
+                  <span className="product-hunt-launch__mark" aria-hidden="true">P</span>
+                  <span className="product-hunt-launch__copy">
+                    <span>LIVE ON</span>
+                    <strong>Product Hunt</strong>
+                  </span>
+                  <span className="product-hunt-launch__arrow" aria-hidden="true">→</span>
+                </a>
+              </div>
               <HeroStatStrip />
             </div>
 

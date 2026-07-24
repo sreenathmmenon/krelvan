@@ -74,7 +74,13 @@ test("auth allowlist: admin routes 401 without a session; public routes do not r
     // The allowlisted routes are reachable WITHOUT a session (they gate themselves downstream):
     // health is public, and a public front-door route resolves to a 404 (deny-by-default),
     // NOT a 401 — proving it passed the session gate and hit its own handler.
-    assert.equal((await fetch(`${h.base}/api/health`)).status, 200, "health is public");
+    const health = await fetch(`${h.base}/api/health`);
+    assert.equal(health.status, 200, "health is public");
+    assert.equal(health.headers.get("strict-transport-security"), "max-age=63072000; includeSubDomains");
+    assert.equal(health.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(health.headers.get("x-frame-options"), "DENY");
+    assert.equal(health.headers.get("referrer-policy"), "strict-origin-when-cross-origin");
+    assert.equal(health.headers.get("permissions-policy"), "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
     assert.equal((await fetch(`${h.base}/api/public/agents/nope`)).status, 404, "public route passes the gate, then 404s (not 401)");
   } finally { await h.close(); }
 });
