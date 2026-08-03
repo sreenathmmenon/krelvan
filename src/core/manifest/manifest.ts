@@ -116,6 +116,14 @@ export interface Manifest {
    */
   seed?: Record<string, string | number | boolean | null>;
   /**
+   * Customer-supplied values for EACH run. Unlike `customize` (installation-time settings),
+   * these fields are rendered on the Agent page every time the agent runs and are merged into
+   * the run's initial state. This lets a support agent ask for sender/subject/body and an
+   * incident agent ask for an alert payload instead of collapsing every workflow into one
+   * ambiguous chat box.
+   */
+  inputs?: Record<string, RunInputField>;
+  /**
    * Optional schedule — if present, installing this agent auto-arms it to run itself on a
    * cron expression or fixed interval. Makes "set it and forget it" agents (a price monitor,
    * a daily digest) genuinely self-running instead of needing a schedule wired up by hand.
@@ -132,6 +140,17 @@ export interface Manifest {
    * signed agent. Deny-by-default: only keys declared here are customizable.
    */
   customize?: Record<string, CustomizeField>;
+}
+
+/** One typed field on the per-run customer input form. The record key is the state key. */
+export interface RunInputField {
+  label: string;
+  type: "text" | "textarea" | "email" | "url" | "choice";
+  description?: string;
+  placeholder?: string;
+  required?: boolean;
+  options?: string[];
+  default?: string;
 }
 
 /**
@@ -220,6 +239,32 @@ export function validateManifest(m: Manifest): ValidationIssue[] {
 
   if (m.runBudgetCents < 0) issues.push({ code: "BAD_BUDGET", message: "runBudgetCents must be >= 0" });
   if (m.maxNodeVisits < 1) issues.push({ code: "BAD_MAX_VISITS", message: "maxNodeVisits must be >= 1" });
+
+  // Optional per-run input form. It is DATA only: values are copied into initial state and are
+  // never interpreted as code. Bound the surface so an untrusted registry entry cannot create an
+  // unusably large form.
+  if (m.inputs !== undefined) {
+    if (!m.inputs || typeof m.inputs !== "object" || Array.isArray(m.inputs)) {
+      issues.push({ code: "BAD_INPUTS", message: "inputs must be an object" });
+    } else {
+      const fields = Object.entries(m.inputs);
+      if (fields.length > 20) issues.push({ code: "BAD_INPUTS", message: "inputs may declare at most 20 fields" });
+      for (const [key, field] of fields) {
+        if (!/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(key)) {
+          issues.push({ code: "BAD_INPUT", message: `input key '${key}' is invalid` });
+        }
+        if (!field || typeof field !== "object" || !String(field.label ?? "").trim()) {
+          issues.push({ code: "BAD_INPUT", message: `input '${key}' needs a label` });
+          continue;
+        }
+        const allowed = new Set(["text", "textarea", "email", "url", "choice"]);
+        if (!allowed.has(field.type)) issues.push({ code: "BAD_INPUT", message: `input '${key}' has unsupported type '${String(field.type)}'` });
+        if (field.type === "choice" && (!Array.isArray(field.options) || field.options.length < 1 || field.options.some((o) => typeof o !== "string" || !o.trim()))) {
+          issues.push({ code: "BAD_INPUT", message: `choice input '${key}' needs non-empty string options` });
+        }
+      }
+    }
+  }
 
   // optional schedule — a cron expr (5 fields) or a positive interval
   if (m.schedule) {

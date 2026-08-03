@@ -48,12 +48,12 @@ import { composeCapability } from "../core/plugins/compose.js";
 import { syntheticUsersCapability } from "../core/plugins/synthetic-users.js";
 import { DelegatePlugin } from "../core/plugins/delegate-plugin.js";
 import { buildTesterManifest } from "./tester-agent.js";
-import { emailSendCapability, setEmailSecretResolver } from "../core/plugins/email-send.js";
-import { telegramSendCapability, setTelegramSecretResolver } from "../core/plugins/telegram-send.js";
-import { slackSendCapability } from "../core/plugins/slack-send.js";
+import { emailSendCapability, resolveEmailInput, setEmailSecretResolver } from "../core/plugins/email-send.js";
+import { telegramSendCapability, resolveTelegramInput, setTelegramSecretResolver } from "../core/plugins/telegram-send.js";
+import { resolveSlackInput, slackSendCapability } from "../core/plugins/slack-send.js";
 import { httpGetCapability } from "../core/plugins/http-get.js";
 import { httpPostCapability } from "../core/plugins/http-post.js";
-import { notifyWebhookCapability } from "../core/plugins/notify-webhook.js";
+import { notifyWebhookCapability, resolveWebhookInput } from "../core/plugins/notify-webhook.js";
 import { PluginLifecycleService } from "../core/plugins/lifecycle-service.js";
 import { PluginActivator } from "../core/plugins/plugin-activator.js";
 import { PluginFactory } from "../core/plugins/plugin-factory.js";
@@ -431,7 +431,22 @@ export class RunRegistry {
     if (!existsSync(this.path)) return;
     try {
       const raw = JSON.parse(readFileSync(this.path, "utf8")) as RunRecord[];
-      for (const r of raw) this.runs.set(r.runId, r);
+      let reconciled = false;
+      const restartedAt = Date.now();
+      for (const r of raw) {
+        // An engine invocation lives in one process. If that process stopped, a persisted
+        // pending/running label is no longer truthful and can otherwise remain "running"
+        // forever. Preserve the signed partial record but mark the registry row failed so the
+        // owner can inspect or retry it. Halted approval waits remain resumable and are kept.
+        if (r.status === "pending" || r.status === "running") {
+          r.status = "failed";
+          r.finishedAt = restartedAt;
+          r.reason = "Run was interrupted by a process restart before completion. Inspect the signed partial record, then retry if appropriate.";
+          reconciled = true;
+        }
+        this.runs.set(r.runId, r);
+      }
+      if (reconciled) this.persist();
     } catch (err) {
       log.warn({ err }, "failed to load runs.json — starting fresh");
     }
@@ -1783,7 +1798,7 @@ export class KrelvanRuntime {
               capability: cap ?? "unknown",
               requestedAt: e.ts,
               nodeRole: nodeRole ? nodeRole.split(".")[0]?.slice(0, 160) : undefined,
-              preview: this.buildApprovalPreview(cap ?? "", state),
+              preview: this.buildApprovalPreview(cap ?? "", state, nodeId),
             });
           }
         }
@@ -1802,7 +1817,7 @@ export class KrelvanRuntime {
    * approving (the email body, the message, the URL) — not just "Send an email". Pulls the
    * relevant fields from the run's projected state by capability, with a generic fallback.
    */
-  private buildApprovalPreview(capability: string, state: Record<string, unknown>): { label: string; value: string }[] {
+  private buildApprovalPreview(capability: string, state: Record<string, unknown>, nodeId = ""): { label: string; value: string }[] {
     const pick = (...keys: string[]): string | undefined => {
       for (const k of keys) {
         // exact, then any "<node>.<key>" match
@@ -1814,7 +1829,14 @@ export class KrelvanRuntime {
       return undefined;
     };
     const out: { label: string; value: string }[] = [];
-    const add = (label: string, v?: string) => { if (v) out.push({ label, value: v.slice(0, 600) }); };
+    const add = (label: string, v?: string) => {
+      if (!v) return;
+      const max = 32_768;
+      out.push({
+        label,
+        value: v.length <= max ? v : `${v.slice(0, max)}\n\n[Preview truncated: ${v.length - max} additional characters remain in the recorded run state.]`,
+      });
+    };
 
     if (capability === "remember") {
       // A remember node is normally bound to an exact upstream deliverable through
@@ -1847,15 +1869,36 @@ export class KrelvanRuntime {
         add("Memory", typeof fallback?.[1] === "string" ? fallback[1] : undefined);
       }
     } else if (capability === "email_send") {
-      add("To", pick("to", "recipient", "creator_handle"));
-      add("Subject", pick("subject"));
-      add("Message", pick("message", "body", "reply"));
+      const request = resolveEmailInput(nodeId, state);
+      add("To", request.to || "Agent Inbox only");
+      add("Subject", request.subject);
+      add("Message", request.body);
     } else if (capability === "slack_send" || capability === "slack.post") {
-      add("Channel", pick("channel"));
-      add("Message", pick("message", "text", "result"));
+      if (capability === "slack_send") {
+        const request = resolveSlackInput(nodeId, state);
+        add("Channel", request.channel ?? (request.webhookUrl
+          ? "Configured Slack destination"
+          : "Slack is not configured; the output remains in Agent Inbox"));
+        add("Message", request.text);
+      } else {
+        add("Channel", pick("channel"));
+        add("Message", pick("message", "text", "result"));
+      }
     } else if (capability === "telegram_send") {
-      add("Message", pick("message", "text", "result"));
-    } else if (capability === "notify_webhook" || capability === "http_post" || capability === "webhook.post") {
+      const request = resolveTelegramInput(nodeId, state);
+      const hasTelegramToken = this.secretStore.has("KRELVAN_TELEGRAM_TOKEN");
+      const hasTelegramChat = request.chatId != null || this.secretStore.has("KRELVAN_TELEGRAM_CHAT_ID");
+      add("Chat", hasTelegramToken && hasTelegramChat
+        ? (request.chatId == null ? "Configured Telegram chat" : String(request.chatId))
+        : "Telegram is not configured; approval will not send a page");
+      add("Message", request.text);
+    } else if (capability === "notify_webhook") {
+      const request = resolveWebhookInput(nodeId, state);
+      add("Destination", request.url || "Agent Inbox only");
+      const payload = typeof request.payload === "string" ? request.payload : JSON.stringify(request.payload, null, 2);
+      add("Payload", payload);
+      add("Event", request.event);
+    } else if (capability === "http_post" || capability === "webhook.post") {
       add("URL", pick("url", "target_url"));
       add("Payload", pick("payload", "body", "message", "result"));
     } else {

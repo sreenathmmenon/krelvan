@@ -68,7 +68,49 @@ export function cleanComposedText(raw: string): string {
   return text;
 }
 
+/** Assemble a report from exact prior outputs without asking a model to rewrite them.
+ * Mapping format: "Section title=state.key,Another section=other.key". This is useful for final
+ * dossiers where model recomposition would be slower, lossy, and capable of changing facts. */
+export function assembleComposedReport(
+  title: string,
+  sectionMap: string,
+  input: Record<string, unknown>,
+): string {
+  const sections: string[] = [];
+  for (const rawPair of sectionMap.split(",")) {
+    const eq = rawPair.indexOf("=");
+    if (eq <= 0) continue;
+    const label = rawPair.slice(0, eq).trim();
+    const key = rawPair.slice(eq + 1).trim();
+    if (!label || !key) continue;
+    const value = input[key];
+    const body = typeof value === "string" ? value.trim() : "";
+    sections.push(`## ${label}\n\n${body || "Not available in this run."}`);
+  }
+  if (sections.length === 0) return "";
+  return [`# ${title.trim() || "Report"}`, ...sections].join("\n\n");
+}
+
 type CompositionStyle = "brief" | "detailed" | "bullet";
+
+/** Reasoning-model output budgets include hidden reasoning tokens. A substantial article can
+ * exhaust a nominal 2K ceiling before enough visible prose is emitted, so hosted reasoning
+ * models get explicit headroom while local models retain conservative memory use. */
+export function resolveComposeMaxTokens(
+  provider: string,
+  style: CompositionStyle,
+  configured?: string,
+): number {
+  const fallback = provider === "openai"
+    ? (style === "detailed" ? 8192 : 4096)
+    : provider === "ollama"
+      ? (style === "detailed" ? 2048 : 1024)
+      : (style === "detailed" ? 4096 : 2048);
+  if (!configured?.trim()) return fallback;
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(512, Math.min(32768, Math.floor(parsed)));
+}
 
 function styleInstruction(style: CompositionStyle): string {
   switch (style) {
@@ -101,6 +143,8 @@ export function buildCompositionContext(
   maxChars = 12000,
 ): string[] {
   const MAX_CHARS = Math.max(1000, Math.min(32768, Math.floor(maxChars)));
+  const deliveryEvidence: string[] = [];
+  const decisionEvidence: string[] = [];
   const priority: string[] = [];
   const rest: string[] = [];
 
@@ -111,7 +155,7 @@ export function buildCompositionContext(
     // Keep it as grounding. Only the current role is redundant because it is sent separately as
     // "Your instruction for this step".
     if ((currentNodeId && k === `${currentNodeId}.role`) ||
-        k.endsWith(".ok") || k.endsWith(".status") ||
+        k.endsWith(".ok") ||
         k.endsWith(".contentType") || k.endsWith(".truncated") || k.endsWith(".headers") ||
         k.endsWith(".next") || k.endsWith(".thought")) continue;
 
@@ -128,11 +172,47 @@ export function buildCompositionContext(
     const item = k.endsWith(".result") || k.endsWith(".body") || k.endsWith(".snippet")
       ? `[${k}]\n${truncated}`
       : `[${k}]: ${truncated}`;
-    if (k.endsWith(".result") || k.endsWith(".body") || k.endsWith(".snippet")) priority.push(item);
+    // Delivery claims are high-risk: a final report must see mechanically observed connector
+    // results before long model-generated prose. Keep these facts at the front of the context so
+    // the model can distinguish "prepared" from "actually sent/posted" even in a large run.
+    if (k.endsWith(".notified") || k.endsWith(".sent") || k.endsWith(".delivered") ||
+        k.endsWith(".status") || k.endsWith(".messageId") || k.endsWith(".destination") ||
+        k.endsWith(".via") || k.endsWith(".error")) {
+      deliveryEvidence.push(item);
+    } else if (k.includes(".qa_") || k.endsWith(".score") || k.endsWith(".verdict") ||
+        k.endsWith(".confidence") || k.endsWith(".chosen_node") || k.endsWith(".route")) {
+      // Compact decision/quality scalars are often load-bearing for the final report. Keep them
+      // ahead of long prose so an eight-item context window cannot turn a real score into
+      // "not provided" or hide the route that actually ran.
+      decisionEvidence.push(item);
+    } else if (k.endsWith(".result") || k.endsWith(".body") || k.endsWith(".snippet")) priority.push(item);
     else rest.push(item);
   }
 
-  return [...priority, ...rest];
+  return [...deliveryEvidence, ...decisionEvidence, ...priority, ...rest];
+}
+
+/** Pack context under a provider-appropriate total size instead of blindly taking eight values.
+ * Hosted models can safely receive the complete evidence needed by complex finalizers; local
+ * models keep a conservative ceiling. Ordering comes from buildCompositionContext, so delivery
+ * and decision facts are retained first. */
+export function selectCompositionContext(parts: string[], provider: string): string[] {
+  const maxItems = provider === "ollama" ? 8 : 24;
+  const maxChars = provider === "ollama" ? 24_000 : 96_000;
+  const selected: string[] = [];
+  let used = 0;
+  for (const part of parts) {
+    if (selected.length >= maxItems || used >= maxChars) break;
+    const remaining = maxChars - used;
+    if (part.length <= remaining) {
+      selected.push(part);
+      used += part.length;
+    } else if (remaining >= 1000) {
+      selected.push(`${part.slice(0, remaining)}… [context truncated]`);
+      used = maxChars;
+    }
+  }
+  return selected;
 }
 
 export const composeCapability: CapabilityPlugin = {
@@ -150,6 +230,22 @@ export const composeCapability: CapabilityPlugin = {
     // list"). The engine injects it into state as `<nodeId>.role`/`role`. Use it as the task so
     // compose actually respects "2 sentences" instead of writing a generic multi-paragraph block.
     const role = String(input[`${call.nodeId}.role`] ?? input["role"] ?? "").trim();
+
+    const sectionMap = String(input[`${call.nodeId}.section_map`] ?? "").trim();
+    if (sectionMap) {
+      const report = assembleComposedReport(
+        String(input[`${call.nodeId}.title`] ?? "Report"),
+        sectionMap,
+        input,
+      );
+      if (!report) throw new Error(`compose: ${call.nodeId}.section_map contains no valid sections`);
+      const words = report.split(/\s+/).filter(Boolean).length;
+      const firstLine = report.split("\n")[0]!.replace(/^#\s*/, "").trim();
+      return {
+        output: { result: report, text: report, body: report, title: firstLine, words, model: "deterministic-assembly" },
+        claimedCostCents: 0,
+      };
+    }
 
     const rawStyle = String(input["style"] ?? "brief");
     const style: CompositionStyle =
@@ -174,7 +270,7 @@ export const composeCapability: CapabilityPlugin = {
     const userParts: string[] = [];
     if (contextParts.length > 0) {
       userParts.push("=== CONTEXT FROM PRIOR STEPS ===");
-      userParts.push(contextParts.slice(0, 8).join("\n\n"));
+      userParts.push(selectCompositionContext(contextParts, provider).join("\n\n"));
       userParts.push("=== YOUR TASK ===");
     }
     // The step's instruction (its role) is the customer's actual ask, including any length/format
@@ -196,12 +292,13 @@ export const composeCapability: CapabilityPlugin = {
         "FOLLOW THE REQUESTED FORMAT EXACTLY. If the instruction specifies a length (e.g. \"2 sentences\", \"3 bullets\") or shape, match it precisely. Do not add a title, heading, or extra sections unless asked.",
         "NEVER prefix lines with field labels like \"title:\" or \"body:\" — write the actual prose directly. Those are internal field names, not something the reader should ever see.",
         "Use plain customer-facing text. For equations, use Unicode operators such as × and ÷; never emit LaTeX delimiters or commands.",
+        "Do not mention prices, costs, money, or budgets in the customer-facing output.",
         styleInstruction(style),
         "Output only the composed text — no preamble, no meta-commentary, no JSON wrapper.",
       ].join("\n"),
       messages: [{ role: "user", content: userParts.join("\n\n") }],
       model,
-      maxTokens: style === "detailed" ? 2048 : 1024,
+      maxTokens: resolveComposeMaxTokens(provider, style, process.env["KRELVAN_COMPOSE_MAX_TOKENS"]),
       temperature: 0.4,
       plainText: true,
     });

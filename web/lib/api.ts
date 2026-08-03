@@ -40,11 +40,23 @@ export interface AgentRecord {
       entry: string;
       nodes: ManifestNode[];
       edges: ManifestEdge[];
+      seed?: Record<string, string | number | boolean | null>;
+      inputs?: Record<string, RunInputField>;
     };
     provenance: { intent: string; compiledAt: number };
   };
   createdAt: number;
   lastRunId?: string;
+}
+
+export interface RunInputField {
+  label: string;
+  type: "text" | "textarea" | "email" | "url" | "choice";
+  description?: string;
+  placeholder?: string;
+  required?: boolean;
+  options?: string[];
+  default?: string;
 }
 
 /** A schedule the builder detected from the intent — shown for confirmation, never auto-applied. */
@@ -346,10 +358,17 @@ export async function listRuns(): Promise<RunRecord[]> {
 
 /** Start a run. `input` is an optional free-text message the agent receives (the text to process,
  *  the question to answer) — seeded so agents that need input actually get it. */
-export async function startRun(agentId: string, input?: string): Promise<RunRecord> {
+export async function startRun(
+  agentId: string,
+  input?: string,
+  initialState?: Record<string, string | number | boolean | null>,
+): Promise<RunRecord> {
+  const body: Record<string, unknown> = { agentId };
+  if (input?.trim()) body["message"] = input.trim();
+  if (initialState && Object.keys(initialState).length > 0) body["initialState"] = initialState;
   const data = await apiFetch<{ run: RunRecord }>("/api/runs", {
     method: "POST",
-    body: JSON.stringify(input && input.trim() ? { agentId, message: input } : { agentId }),
+    body: JSON.stringify(body),
   });
   return data.run;
 }

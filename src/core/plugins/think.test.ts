@@ -96,6 +96,22 @@ test("think: 'false'/'true' strings coerce; arbitrary prose stays a string", () 
   assert.equal(out["note"], "true story", "non-exact match stays a string");
 });
 
+test("think: recovers provider-wrapped boolean and integer scalars", () => {
+  const parsed = { outputs: {
+    relevant: ":true,",
+    safe: "=false",
+    score: ":68,",
+    absent: ":null,",
+    note: "Result: true, but needs review",
+  } };
+  const out = normalizeThinkOutputs(parsed, []);
+  assert.equal(out["relevant"], true);
+  assert.equal(out["safe"], false);
+  assert.equal(out["score"], 68);
+  assert.equal(out["absent"], null);
+  assert.equal(out["note"], "Result: true, but needs review");
+});
+
 test("think: leading-zero identifiers are NOT coerced to numbers (zip/code/order id)", () => {
   const parsed = { outputs: { zip: "02134", code: "007", order_id: "0042", qty: "42" } };
   const out = normalizeThinkOutputs(parsed, []);

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { glyphFor } from "../../lib/glyphs";
 import { loadRegistry, type CatalogEntry } from "../../lib/registry";
+import { MARKETING_ONLY } from "../../lib/deployment";
 
 const REPOSITORY = "https://github.com/sreenathmmenon/krelvan";
 const REGISTRY = "https://github.com/sreenathmmenon/krelvan-registry";
@@ -76,7 +77,13 @@ function MarketplaceContent() {
                 <p className="soft" style={{ maxWidth: "66ch", marginBottom: "var(--s4)" }}>{selected.oneLiner}</p>
                 <div style={{ display: "flex", gap: "var(--s2)", flexWrap: "wrap" }}>
                   {selected.sourceUrl && <a className="btn btn-secondary btn-sm" href={selected.sourceUrl}>Inspect source →</a>}
-                  <a className="btn btn-primary btn-sm" href={`${REPOSITORY}#run-it`}>Run on your machine →</a>
+                  {MARKETING_ONLY ? (
+                    <a className="btn btn-primary btn-sm" href={`${REPOSITORY}#run-it`}>Run on your machine →</a>
+                  ) : (
+                    <Link className="btn btn-primary btn-sm" href={`/capabilities?install=${encodeURIComponent(selected.name)}`}>
+                      Customize &amp; install →
+                    </Link>
+                  )}
                 </div>
               </div>
             </div>

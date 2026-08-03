@@ -98,3 +98,25 @@ test("the share link survives a reload from disk", () => {
     assert.equal(resolved!.sharedExplanation, "persisted one-pager");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("a restart fails orphaned active runs instead of showing them as running forever", () => {
+  const dir = mkdtempSync(join(tmpdir(), "krelvan-run-restart-"));
+  try {
+    const dd = dataDir(dir);
+    const first = new RunRegistry(dd);
+    first.create({ agentId: "a1", runId: "run-pending", manifestName: "Analyst" });
+    first.create({ agentId: "a1", runId: "run-running", manifestName: "Analyst" });
+    first.update("run-running", { status: "running" });
+    first.create({ agentId: "a1", runId: "run-halted", manifestName: "Analyst" });
+    first.update("run-halted", { status: "halted" });
+
+    const restarted = new RunRegistry(dd);
+    for (const id of ["run-pending", "run-running"]) {
+      const run = restarted.get(id)!;
+      assert.equal(run.status, "failed");
+      assert.match(run.reason ?? "", /interrupted by a process restart/i);
+      assert.ok(run.finishedAt);
+    }
+    assert.equal(restarted.get("run-halted")!.status, "halted", "approval waits remain resumable");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

@@ -261,6 +261,51 @@ async function sendViaSMTP(
   });
 }
 
+export interface ResolvedEmailInput {
+  to: string;
+  subject: string;
+  body: string;
+  from?: string;
+}
+
+function mappedString(input: Record<string, unknown>, mappingKey: string): string | undefined {
+  const key = typeof input[mappingKey] === "string" ? input[mappingKey].trim() : "";
+  const value = key ? input[key] : undefined;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function firstMappedString(input: Record<string, unknown>, mappingKey: string): string | undefined {
+  const keys = typeof input[mappingKey] === "string"
+    ? input[mappingKey].split(",").map((key) => key.trim()).filter(Boolean)
+    : [];
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+/** Resolve explicit state bindings before generic fields. This prevents a support workflow from
+ * sending the customer's original `body` back to them when the intended value is answer.reply. */
+export function resolveEmailInput(nodeId: string, input: Record<string, unknown>): ResolvedEmailInput {
+  const node = (key: string) => {
+    const value = input[`${nodeId}.${key}`];
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  };
+  const plain = (key: string) => {
+    const value = input[key];
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  };
+  return {
+    to: node("to") ?? mappedString(input, "email_to_key") ?? plain("email_to") ?? plain("to") ?? "",
+    subject: node("subject") ?? mappedString(input, "email_subject_key") ?? plain("email_subject") ?? plain("subject") ?? "Message from Krelvan agent",
+    body: node("body") ?? firstMappedString(input, "email_body_keys") ?? mappedString(input, "email_body_key") ?? plain("email_body") ?? plain("body") ?? "",
+    ...(node("from") ?? mappedString(input, "email_from_key") ?? plain("email_from") ?? plain("from")
+      ? { from: node("from") ?? mappedString(input, "email_from_key") ?? plain("email_from") ?? plain("from")! }
+      : {}),
+  };
+}
+
 // ── capability export ─────────────────────────────────────────────────────────
 
 export const emailSendCapability: CapabilityPlugin = {
@@ -271,8 +316,9 @@ export const emailSendCapability: CapabilityPlugin = {
 
   async invoke(call: EffectCall) {
     const input = call.input as Record<string, unknown>;
+    const resolved = resolveEmailInput(call.nodeId, input);
 
-    const to = input["to"] != null ? String(input["to"]) : "";
+    const to = resolved.to;
     if (!to) {
       // Delivery floor: no recipient configured → the drafted message still reaches the human
       // via the Agent Inbox (it is captured in run state). Succeed as an inbox delivery rather
@@ -285,7 +331,7 @@ export const emailSendCapability: CapabilityPlugin = {
       };
     }
 
-    const body = input["body"] != null ? String(input["body"]) : "";
+    const body = resolved.body;
     if (!body) {
       log.warn({ nodeId: call.nodeId }, "email-send: missing required input 'body'");
       return {
@@ -294,12 +340,12 @@ export const emailSendCapability: CapabilityPlugin = {
       };
     }
 
-    const subject = input["subject"] != null ? String(input["subject"]) : "Message from Krelvan agent";
+    const subject = resolved.subject;
     // Sender precedence: explicit input.from → the install's configured KRELVAN_EMAIL_FROM →
     // a safe placeholder. Reading the env default means email works out-of-the-box once a
     // provider is configured, without every agent having to carry a valid 'from' itself
     // (the delivery layer, for instance, doesn't set one).
-    const from = input["from"] != null ? String(input["from"]) : (secretResolver("KRELVAN_EMAIL_FROM") ?? "krelvan@agents.local");
+    const from = resolved.from ?? (secretResolver("KRELVAN_EMAIL_FROM") ?? "krelvan@agents.local");
 
     // Path 1: Resend
     const resendKey = secretResolver("KRELVAN_RESEND_KEY");

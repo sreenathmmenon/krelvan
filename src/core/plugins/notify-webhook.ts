@@ -11,7 +11,7 @@
  *             X-Krelvan-Signature header.
  *
  * Output:
- *   { notified, status, via, error? }
+ *   { notified, status, via, destination?, error? }
  *
  * Delivery floor: this is a "notify the human" step. When no webhook `url` is configured,
  * it does NOT fail — the message is already captured in the run state and surfaces in the
@@ -44,6 +44,61 @@ function buildBody(payload: unknown): string {
   }
 }
 
+export interface ResolvedWebhookInput {
+  url: string;
+  payload: unknown;
+  event?: string;
+  secret?: string;
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/**
+ * Resolve an explicit state-to-webhook binding. The engine passes the complete run state to a
+ * capability, so selecting the first value named `body` is unsafe: it might be fetched HTML from
+ * an earlier research step rather than the intended deliverable. Templates may therefore set:
+ *
+ *   webhook_url_key      = state key containing the destination URL
+ *   webhook_payload_keys = comma-separated state keys to include in the JSON payload
+ *
+ * Direct node-scoped `url` / `payload` values still win. The resolver is pure and is shared by
+ * execution and the human approval preview, ensuring the customer approves the exact request.
+ */
+export function resolveWebhookInput(nodeId: string, input: Record<string, unknown>): ResolvedWebhookInput {
+  const mappedUrlKey = nonEmptyString(input["webhook_url_key"]);
+  const mappedUrl = mappedUrlKey ? nonEmptyString(input[mappedUrlKey]) : undefined;
+  const url = nonEmptyString(input[`${nodeId}.url`])
+    ?? nonEmptyString(input[`${nodeId}.webhook_url`])
+    ?? mappedUrl
+    ?? nonEmptyString(input["url"])
+    ?? nonEmptyString(input["webhook_url"])
+    ?? nonEmptyString(input["publish_webhook"])
+    ?? nonEmptyString(input["status_channel"])
+    ?? "";
+
+  const nodePayload = input[`${nodeId}.payload`];
+  const genericPayload = input["payload"];
+  const payloadKeys = nonEmptyString(input["webhook_payload_keys"])
+    ?.split(",").map((key) => key.trim()).filter(Boolean) ?? [];
+  const mappedPayload: Record<string, unknown> = {};
+  for (const key of payloadKeys) {
+    if (input[key] !== undefined) mappedPayload[key] = input[key];
+  }
+  const payload = nodePayload !== undefined
+    ? nodePayload
+    : Object.keys(mappedPayload).length > 0 ? mappedPayload
+      : genericPayload !== undefined ? genericPayload : {};
+
+  return {
+    url,
+    payload,
+    ...(nonEmptyString(input[`${nodeId}.event`] ?? input["webhook_event"] ?? input["event"]) ? { event: nonEmptyString(input[`${nodeId}.event`] ?? input["webhook_event"] ?? input["event"])! } : {}),
+    ...(nonEmptyString(input[`${nodeId}.secret`] ?? input["webhook_secret"] ?? input["secret"]) ? { secret: nonEmptyString(input[`${nodeId}.secret`] ?? input["webhook_secret"] ?? input["secret"])! } : {}),
+  };
+}
+
 export const notifyWebhookCapability: CapabilityPlugin = {
   name: "notify_webhook",
   sideEffect: "write-reversible",
@@ -52,14 +107,15 @@ export const notifyWebhookCapability: CapabilityPlugin = {
 
   async invoke(call: EffectCall): Promise<{ output: unknown; claimedCostCents: number }> {
     const input = call.input as Record<string, unknown>;
+    const resolved = resolveWebhookInput(call.nodeId, input);
 
     // ── Input validation ──────────────────────────────────────────────────────
 
     // Delivery floor: no webhook url configured → the message still reaches the human via the
     // Agent Inbox (it is captured in run state). Succeed as an inbox notification rather than
     // failing the agent's final "notify the human" step.
-    const rawUrl = input["url"];
-    if (!rawUrl || typeof rawUrl !== "string" || rawUrl.trim() === "") {
+    const rawUrl = resolved.url;
+    if (!rawUrl) {
       return {
         output: { notified: true, status: 0, via: "inbox" },
         claimedCostCents: 0,
@@ -84,26 +140,26 @@ export const notifyWebhookCapability: CapabilityPlugin = {
     } catch (e) {
       log.warn({ nodeId: call.nodeId, hostname: parsed.hostname, err: (e as Error).message }, "notify_webhook: SSRF guard blocked request");
       return {
-        output: { notified: false, status: 0, error: (e as Error).message },
+        output: { notified: false, status: 0, via: "blocked", error: (e as Error).message },
         claimedCostCents: 0,
       };
     }
 
     // ── Build request body ────────────────────────────────────────────────────
-    const body = buildBody(input["payload"] ?? {});
+    const body = buildBody(resolved.payload);
 
     // ── Build headers ─────────────────────────────────────────────────────────
     const headers: Record<string, string> = {
       "content-type": "application/json",
     };
 
-    const event = input["event"];
-    if (typeof event === "string" && event.trim() !== "") {
-      headers["x-krelvan-event"] = event.trim();
+    const event = resolved.event;
+    if (event) {
+      headers["x-krelvan-event"] = event;
     }
 
-    const secret = input["secret"];
-    if (typeof secret === "string" && secret !== "") {
+    const secret = resolved.secret;
+    if (secret) {
       const sig = createHmac("sha256", secret).update(body).digest("hex");
       headers["x-krelvan-signature"] = sig;
     }
@@ -130,7 +186,7 @@ export const notifyWebhookCapability: CapabilityPlugin = {
       const msg = (e as Error).message ?? String(e);
       log.warn({ nodeId: call.nodeId, url: rawUrl.trim(), err: msg }, "notify_webhook: network error");
       return {
-        output: { notified: false, status: 0, error: msg },
+        output: { notified: false, status: 0, via: "webhook", destination: parsed.origin, error: msg },
         claimedCostCents: 1,
       };
     } finally {
@@ -145,7 +201,10 @@ export const notifyWebhookCapability: CapabilityPlugin = {
     );
 
     return {
-      output: { notified, status: resp.status },
+      // Report only the origin, never the path/query: webhook URLs commonly embed credentials.
+      // This is enough for later agent steps to make an evidence-backed delivery claim without
+      // leaking the secret-bearing endpoint into an Inbox artifact or model prompt.
+      output: { notified, status: resp.status, via: "webhook", destination: parsed.origin },
       claimedCostCents: notified ? 2 : 1,
     };
   },

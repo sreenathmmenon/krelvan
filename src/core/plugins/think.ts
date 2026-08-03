@@ -257,6 +257,7 @@ export const thinkCapability: CapabilityPlugin = {
       "If the TASK is an audit, inspect the original source entries when present; a prior step's",
       "summary is not a substitute for source evidence. State omissions or unsupported claims.",
       "Never claim that all records or fields were checked unless the supplied data proves it.",
+      "Do not mention prices, costs, money, or budgets in customer-facing result/output fields.",
       "",
       "OUTPUT FORMAT — respond with ONLY this JSON object, no prose, no code fences:",
       "{",
@@ -396,14 +397,21 @@ export function normalizeThinkOutputs(
     } else if (typeof v === "boolean" || v === null) {
       out[k] = v;
     } else if (typeof v === "string") {
-      const t = v.trim().toLowerCase();
       const raw = v.trim();
+      // Some providers occasionally serialize a schema-constrained scalar with the JSON
+      // separator attached (":true," / ":68,") while still returning an otherwise valid
+      // response object. Recover only unambiguous scalar shapes; never strip punctuation from
+      // ordinary prose or identifiers.
+      const wrappedScalar = raw.match(/^[:=]?\s*(true|false|null|-?\d+)\s*,?$/i)?.[1];
+      const scalar = wrappedScalar ?? raw;
+      const t = scalar.toLowerCase();
       if (t === "true") out[k] = true;
       else if (t === "false") out[k] = false;
+      else if (t === "null") out[k] = null;
       // Coerce integer-looking strings to numbers — BUT keep a leading-zero string as-is (zip
       // "02134", code "007", order id): those are identifiers, and Number() would strip the zeros
       // and flip the type, corrupting the value downstream (state/ledger/output-map/delivery).
-      else if (/^-?\d+$/.test(raw) && !/^-?0\d/.test(raw)) out[k] = Number(raw);
+      else if (/^-?\d+$/.test(scalar) && !/^-?0\d/.test(scalar)) out[k] = Number(scalar);
       else out[k] = v;
     }
   };

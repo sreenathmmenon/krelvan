@@ -1,7 +1,24 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildCompositionContext, cleanComposedText } from "./compose.js";
+import { assembleComposedReport, buildCompositionContext, cleanComposedText, resolveComposeMaxTokens, selectCompositionContext } from "./compose.js";
+
+test("compose: hosted reasoning models get enough output headroom for substantial writing", () => {
+  assert.equal(resolveComposeMaxTokens("openai", "detailed"), 8192);
+  assert.equal(resolveComposeMaxTokens("openai", "brief"), 4096);
+  assert.equal(resolveComposeMaxTokens("anthropic", "detailed"), 4096);
+  assert.equal(resolveComposeMaxTokens("ollama", "detailed"), 2048);
+  assert.equal(resolveComposeMaxTokens("openai", "detailed", "12000"), 12000);
+  assert.equal(resolveComposeMaxTokens("openai", "detailed", "100"), 512);
+});
+
+test("compose: deterministically assembles exact prior outputs into a report", () => {
+  const report = assembleComposedReport("Launch dossier", "Evidence=research.result,Assets=draft.result", {
+    "research.result": "Source-backed findings.",
+    "draft.result": "# Complete article\n\nExact draft.",
+  });
+  assert.equal(report, "# Launch dossier\n\n## Evidence\n\nSource-backed findings.\n\n## Assets\n\n# Complete article\n\nExact draft.");
+});
 
 test("compose: strips a leading title:/body: label pair", () => {
   const out = cleanComposedText("title: My Headline\nbody: The actual prose here.");
@@ -79,4 +96,52 @@ test("compose: hosted context keeps a multi-record result beyond the former 3000
   const longResult = "record;".repeat(700);
   const context = buildCompositionContext({ "audit.result": longResult }, "report");
   assert.equal(context[0], `[audit.result]\n${longResult}`);
+});
+
+test("compose: puts observed connector delivery evidence before long prose", () => {
+  const context = buildCompositionContext({
+    "analysis.result": "A".repeat(5000),
+    "draft.result": "B".repeat(5000),
+    "update_status.notified": true,
+    "update_status.status": 200,
+    "update_status.error": null,
+  }, "final_report");
+
+  assert.deepEqual(context.slice(0, 2), [
+    "[update_status.notified]: true",
+    "[update_status.status]: 200",
+  ]);
+});
+
+test("compose: keeps QA decisions ahead of long narrative context", () => {
+  const context = buildCompositionContext({
+    "analysis.result": "A".repeat(5000),
+    "draft.result": "B".repeat(5000),
+    "qa.qa_relevant": true,
+    "qa.qa_accurate": true,
+    "qa.qa_safe": true,
+    "qa.qa_resolved": false,
+    "qa.qa_score": 68,
+    "qa.qa_note": "Safe handoff, but delivery failed.",
+  }, "finalize");
+
+  assert.deepEqual(context.slice(0, 6), [
+    "[qa.qa_relevant]: true",
+    "[qa.qa_accurate]: true",
+    "[qa.qa_safe]: true",
+    "[qa.qa_resolved]: false",
+    "[qa.qa_score]: 68",
+    "[qa.qa_note]: Safe handoff, but delivery failed.",
+  ]);
+  assert.ok(selectCompositionContext(context, "openai").some(part => part === "[qa.qa_score]: 68"));
+});
+
+test("compose: packs hosted context beyond eight entries but bounds total size", () => {
+  const parts = Array.from({ length: 30 }, (_, index) => `[k${index}]: ${"x".repeat(5000)}`);
+  const hosted = selectCompositionContext(parts, "openai");
+  const local = selectCompositionContext(parts, "ollama");
+  assert.ok(hosted.length > 8);
+  assert.ok(hosted.join("").length <= 96_100);
+  assert.ok(local.length <= 8);
+  assert.ok(local.join("").length <= 24_100);
 });

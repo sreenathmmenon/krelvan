@@ -56,6 +56,26 @@ interface TelegramApiResult {
   description?: string;
 }
 
+export interface ResolvedTelegramInput {
+  text: string;
+  chatId?: string | number;
+  parseMode?: "HTML" | "Markdown";
+}
+
+/** Resolve an explicit state binding so a page sends the prepared page text, not an arbitrary
+ * earlier `message`. Node-scoped values win; `telegram_text_key` may point at any state key. */
+export function resolveTelegramInput(nodeId: string, input: Record<string, unknown>): ResolvedTelegramInput {
+  const mappedTextKey = typeof input["telegram_text_key"] === "string" ? input["telegram_text_key"].trim() : "";
+  const textValue = input[`${nodeId}.text`] ?? (mappedTextKey ? input[mappedTextKey] : undefined) ?? input["text"];
+  const chatIdValue = input[`${nodeId}.chat_id`] ?? input["chat_id"];
+  const rawParseMode = input[`${nodeId}.parse_mode`] ?? input["parse_mode"];
+  return {
+    text: typeof textValue === "string" ? textValue : "",
+    ...(typeof chatIdValue === "number" || typeof chatIdValue === "string" ? { chatId: chatIdValue } : {}),
+    ...(rawParseMode === "HTML" || rawParseMode === "Markdown" ? { parseMode: rawParseMode } : {}),
+  };
+}
+
 // ── capability export ─────────────────────────────────────────────────────────
 
 export const telegramSendCapability: CapabilityPlugin = {
@@ -75,8 +95,8 @@ export const telegramSendCapability: CapabilityPlugin = {
     }
 
     const input = call.input as Record<string, unknown>;
-
-    const text = input["text"] != null ? String(input["text"]) : "";
+    const resolved = resolveTelegramInput(call.nodeId, input);
+    const text = resolved.text;
     if (!text) {
       log.warn({ nodeId: call.nodeId }, "telegram-send: missing required input 'text'");
       return {
@@ -85,7 +105,7 @@ export const telegramSendCapability: CapabilityPlugin = {
       };
     }
 
-    const chatIdInput = input["chat_id"];
+    const chatIdInput = resolved.chatId;
     const defaultChatId = secretResolver("KRELVAN_TELEGRAM_CHAT_ID");
     const chatId: string | number | undefined =
       chatIdInput != null
@@ -105,7 +125,7 @@ export const telegramSendCapability: CapabilityPlugin = {
     // markup with a 400, so the send silently fails. Default to PLAIN TEXT (no parse_mode) so
     // any composed message always delivers. A caller can opt into HTML/Markdown explicitly, and
     // when they do we HTML-escape the body so it can't 400 on stray angle brackets/ampersands.
-    const rawParseMode = input["parse_mode"] != null ? String(input["parse_mode"]) : "";
+    const rawParseMode = resolved.parseMode ?? "";
     const parseMode: "HTML" | "Markdown" | null =
       rawParseMode === "HTML" ? "HTML" : rawParseMode === "Markdown" ? "Markdown" : null;
     const safeText =

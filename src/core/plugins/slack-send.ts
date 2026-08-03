@@ -26,6 +26,33 @@ import { getLogger } from "../observability/logger.js";
 
 const log = getLogger("slack-send");
 
+export interface ResolvedSlackInput {
+  webhookUrl: string;
+  text: string;
+  channel?: string;
+  blocks?: string;
+}
+
+/** Resolve explicit state bindings for a Slack action. An escalation may bind
+ * `slack_text_key=escalate.brief`; this must win over unrelated generic results. */
+export function resolveSlackInput(nodeId: string, input: Record<string, unknown>): ResolvedSlackInput {
+  const mapped = (mappingKey: string): string | undefined => {
+    const key = typeof input[mappingKey] === "string" ? input[mappingKey].trim() : "";
+    const value = key ? input[key] : undefined;
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  };
+  const str = (key: string): string | undefined => {
+    const value = input[key];
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  };
+  return {
+    webhookUrl: str(`${nodeId}.webhook_url`) ?? mapped("slack_webhook_url_key") ?? str("slack_webhook_url") ?? str("webhook_url") ?? process.env["KRELVAN_SLACK_WEBHOOK_URL"] ?? "",
+    text: str(`${nodeId}.text`) ?? mapped("slack_text_key") ?? str("slack_text") ?? str("text") ?? "",
+    ...(str(`${nodeId}.channel`) ?? str("channel") ? { channel: str(`${nodeId}.channel`) ?? str("channel")! } : {}),
+    ...(str(`${nodeId}.blocks`) ?? str("blocks") ? { blocks: str(`${nodeId}.blocks`) ?? str("blocks")! } : {}),
+  };
+}
+
 // ── types ─────────────────────────────────────────────────────────────────────
 
 interface SlackSendOutput {
@@ -43,12 +70,10 @@ export const slackSendCapability: CapabilityPlugin = {
 
   async invoke(call: EffectCall) {
     const input = call.input as Record<string, unknown>;
+    const resolved = resolveSlackInput(call.nodeId, input);
 
     // Resolve webhook URL: per-call override takes precedence over env var.
-    const webhookUrl =
-      input["webhook_url"] != null
-        ? String(input["webhook_url"])
-        : (process.env["KRELVAN_SLACK_WEBHOOK_URL"] ?? "");
+    const webhookUrl = resolved.webhookUrl;
 
     if (!webhookUrl) {
       log.warn({ nodeId: call.nodeId }, "slack-send: KRELVAN_SLACK_WEBHOOK_URL not set");
@@ -58,7 +83,7 @@ export const slackSendCapability: CapabilityPlugin = {
       };
     }
 
-    const text = input["text"] != null ? String(input["text"]) : "";
+    const text = resolved.text;
     if (!text) {
       log.warn({ nodeId: call.nodeId }, "slack-send: missing required input 'text'");
       return {
@@ -70,10 +95,10 @@ export const slackSendCapability: CapabilityPlugin = {
     // Build the payload
     const payload: Record<string, unknown> = { text };
 
-    const channel = input["channel"] != null ? String(input["channel"]) : "";
+    const channel = resolved.channel ?? "";
     if (channel) payload["channel"] = channel;
 
-    const blocksRaw = input["blocks"] != null ? String(input["blocks"]) : "";
+    const blocksRaw = resolved.blocks ?? "";
     if (blocksRaw) {
       try {
         const parsed: unknown = JSON.parse(blocksRaw);

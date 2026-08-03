@@ -743,6 +743,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
   const [tab, setTab] = useState<"graph" | "chat" | "runs" | "schedules" | "trigger" | "delivery" | "public" | "memory">("graph");
   const [running, setRunning] = useState(false);
   const [runInput, setRunInput] = useState("");
+  const [runFields, setRunFields] = useState<Record<string, string>>({});
   const [showInput, setShowInput] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -801,13 +802,38 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
     return () => clearInterval(t);
   }, [id, load]);
 
+  // A serious workflow declares the business fields it needs for each run. Prefill only the
+  // manifest-declared defaults and open the form immediately; hiding a support ticket or alert
+  // payload behind a generic "Add input" control makes a structured agent look like a chat toy.
+  useEffect(() => {
+    if (!agent) return;
+    const fields = agent.signed.manifest.inputs ?? {};
+    if (Object.keys(fields).length === 0) return;
+    setRunFields(Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.default ?? ""])));
+    setShowInput(true);
+  }, [agent?.id]);
+
   async function handleRunNow() {
     if (!agent || running) return;
+    const schema = agent.signed.manifest.inputs ?? {};
+    const missing = Object.entries(schema)
+      .filter(([key, field]) => field.required && !(runFields[key] ?? "").trim())
+      .map(([, field]) => field.label);
+    if (missing.length > 0) {
+      flashErr(`Complete the required run details: ${missing.join(", ")}`);
+      setShowInput(true);
+      return;
+    }
+    const structured = Object.fromEntries(
+      Object.entries(runFields)
+        .map(([key, value]) => [key, value.trim()] as const)
+        .filter(([, value]) => value.length > 0),
+    );
     setRunning(true);
     try {
-      await startRun(agent.id, runInput);
+      await startRun(agent.id, Object.keys(schema).length > 0 ? undefined : runInput, structured);
       setRunInput("");
-      setShowInput(false);
+      if (Object.keys(schema).length === 0) setShowInput(false);
       await load();
     } catch (e) {
       flashErr(`Couldn't start the run — ${(e as Error).message}`);
@@ -875,6 +901,8 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
   const manifest = agent.signed.manifest;
   const nodes = manifest.nodes ?? [];
   const edges = manifest.edges ?? [];
+  const inputSchema = manifest.inputs ?? {};
+  const hasStructuredInputs = Object.keys(inputSchema).length > 0;
   const selectedNodeObj = selectedNode ? nodes.find(n => n.id === selectedNode) ?? null : null;
 
   const lastRun = runs[0];
@@ -1005,27 +1033,75 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               <button
                 className="btn btn-secondary"
                 onClick={() => setShowInput(s => !s)}
-                title="Give this agent some input for the run (text to process, a question, notes…)"
+                title={hasStructuredInputs ? "Enter the business details this workflow needs for this run" : "Give this agent some input for the run (text to process, a question, notes…)"}
               >
-                {showInput ? "Hide input" : "Add input"}
+                {showInput ? "Hide run details" : hasStructuredInputs ? "Enter run details" : "Add input"}
               </button>
               <button
                 className="btn btn-primary"
                 onClick={handleRunNow}
                 disabled={running}
               >
-                {running ? "Starting…" : runInput.trim() ? "Run with input" : "Run now"}
+                {running ? "Starting…" : hasStructuredInputs ? "Run workflow" : runInput.trim() ? "Run with input" : "Run now"}
               </button>
             </div>
             {showInput && (
-              <div style={{ marginTop: "var(--s3)" }}>
-                <textarea
-                  value={runInput}
-                  onChange={e => setRunInput(e.target.value)}
-                  rows={4}
-                  placeholder="Optional input for this run — e.g. paste the notes to process, the question to answer, or the text to summarise. Leave blank to run without input."
-                  style={{ width: "100%", boxSizing: "border-box", padding: "var(--s3)", borderRadius: "var(--r)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 14, resize: "vertical", fontFamily: "inherit" }}
-                />
+              <div className="card" style={{ marginTop: "var(--s4)", padding: "var(--s4)", background: "var(--canvas)" }}>
+                {hasStructuredInputs ? (
+                  <div style={{ display: "grid", gap: "var(--s4)" }}>
+                    <div>
+                      <p className="h3" style={{ margin: 0 }}>Run details</p>
+                      <p className="small soft" style={{ margin: "var(--s1) 0 0" }}>These values apply only to this run. Installation settings and saved secrets do not change.</p>
+                    </div>
+                    {Object.entries(inputSchema).map(([key, field]) => (
+                      <label key={key} style={{ display: "grid", gap: "var(--s2)" }}>
+                        <span className="small" style={{ fontWeight: 600 }}>
+                          {field.label}{field.required ? <span style={{ color: "var(--danger)" }}> *</span> : null}
+                        </span>
+                        {field.type === "textarea" ? (
+                          <textarea
+                            className="input"
+                            value={runFields[key] ?? ""}
+                            onChange={e => setRunFields(current => ({ ...current, [key]: e.target.value }))}
+                            rows={5}
+                            required={field.required}
+                            placeholder={field.placeholder}
+                            style={{ width: "100%", resize: "vertical", fontFamily: "inherit" }}
+                          />
+                        ) : field.type === "choice" ? (
+                          <select
+                            className="input"
+                            value={runFields[key] ?? ""}
+                            onChange={e => setRunFields(current => ({ ...current, [key]: e.target.value }))}
+                            required={field.required}
+                          >
+                            <option value="">Select…</option>
+                            {(field.options ?? []).map(option => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        ) : (
+                          <input
+                            className="input"
+                            type={field.type}
+                            value={runFields[key] ?? ""}
+                            onChange={e => setRunFields(current => ({ ...current, [key]: e.target.value }))}
+                            required={field.required}
+                            placeholder={field.placeholder}
+                            style={{ width: "100%" }}
+                          />
+                        )}
+                        {field.description && <span className="small muted">{field.description}</span>}
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <textarea
+                    value={runInput}
+                    onChange={e => setRunInput(e.target.value)}
+                    rows={4}
+                    placeholder="Optional input for this run — e.g. paste the notes to process, the question to answer, or the text to summarise. Leave blank to run without input."
+                    style={{ width: "100%", boxSizing: "border-box", padding: "var(--s3)", borderRadius: "var(--r)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 14, resize: "vertical", fontFamily: "inherit" }}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -1055,7 +1131,10 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
       {/* ── tabs ── */}
       <div style={{ borderBottom: "1px solid var(--line)", background: "var(--surface)", position: "sticky", top: 0, zIndex: 10, boxShadow: "var(--shadow-sm)" }}>
         <div className="container">
-          <div role="tablist" aria-label="Agent sections" style={{ display: "flex", gap: "var(--s5)" }}>
+          <div role="tablist" aria-label="Agent sections" style={{
+            display: "flex", gap: "var(--s5)", width: "100%", maxWidth: "100%",
+            overflowX: "auto", WebkitOverflowScrolling: "touch",
+          }}>
             {TABS.map((t, i) => {
               const active = tab === t;
               const label = t === "graph" ? "Graph" : t === "chat" ? "Chat" : t === "runs" ? `Runs (${runs.length})` : t === "schedules" ? `Schedules${scheduleCount > 0 ? ` (${scheduleCount})` : ""}` : t === "trigger" ? "Trigger" : t === "delivery" ? "Delivery" : t === "public" ? "Public" : "Memory";
@@ -1083,6 +1162,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                     color: active ? "var(--brand)" : "var(--ink-muted)",
                     borderBottom: active ? "2px solid var(--brand)" : "2px solid transparent",
                     marginBottom: -1,
+                    flexShrink: 0,
                     transition: "color var(--t-fast) var(--ease)",
                   }}
                 >

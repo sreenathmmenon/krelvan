@@ -38,6 +38,15 @@ export interface TemplateManifest {
  runBudgetCents: number;
  maxNodeVisits: number;
  seed?: Record<string, string | number | boolean | null>;
+ inputs?: Record<string, {
+  label: string;
+  type: "text" | "textarea" | "email" | "url" | "choice";
+  description?: string;
+  placeholder?: string;
+  required?: boolean;
+  options?: string[];
+  default?: string;
+ }>;
  schedule?: { kind: "cron"; expr: string } | { kind: "interval"; ms: number };
 }
 
@@ -85,10 +94,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   "tier": "official",
   "author": "Krelvan",
   "kind": "template",
-  "secretRefs": [
-   "slack-bot-token",
-   "resend-api-key"
-  ],
+  "secretRefs": [],
   "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
   "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
   "manifest": {
@@ -106,7 +112,34 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            "candidates": "resolve,escalate",
            "fallback": "escalate",
            "remember_map": "last_topic=triage.category",
-           "brand_tone": "warm"
+           "brand_tone": "warm",
+           "email_to_key": "from_address",
+           "email_subject_key": "subject",
+           "email_body_keys": "answer.result,clarify.result",
+           "slack_text_key": "escalate.result",
+           "output_map": "body=finalize.result,format=markdown"
+       },
+       "inputs": {
+           "from_address": {
+               "label": "Customer email",
+               "type": "email",
+               "required": true,
+               "placeholder": "customer@example.com",
+               "description": "Used to isolate customer memory and address an approved reply."
+           },
+           "subject": {
+               "label": "Ticket subject",
+               "type": "text",
+               "required": true,
+               "placeholder": "Refund eligibility for order NS-1048"
+           },
+           "body": {
+               "label": "Customer message",
+               "type": "textarea",
+               "required": true,
+               "placeholder": "Paste the complete customer request, including every question and relevant detail.",
+               "description": "Triage, retrieval, the safety judge and routing all operate on this exact message."
+           }
        },
        "nodes": [
            {
@@ -147,7 +180,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "clarify",
-               "role": "The knowledge base returned only weak matches for this question — not strong enough to answer confidently, but not empty. Rather than guess (which risks a wrong answer) or escalate immediately (which burdens a human), do what the best agents do on low confidence: ask the customer ONE focused clarifying question that would let you retrieve a confident answer next time. Be warm and specific. Output object keys: reply (the one clarifying question to send the customer), is_clarification (true).",
+               "role": "The knowledge base returned only weak matches for this question — not strong enough to answer confidently, but not empty. Rather than guess (which risks a wrong answer) or escalate immediately (which burdens a human), ask the customer ONE focused clarifying question that would let you retrieve a confident answer next time. Be warm and specific. Output result as the exact customer-ready question.",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -159,7 +192,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "answer",
-               "role": "You are a senior support agent drafting an answer. The retrieved knowledge-base context is in the CURRENT DATA TO ANALYZE section — each passage is tagged with its source like [1] (source: handbook). The MEMORY section holds what we know about this customer from previous interactions (background, not the current question). Answer EVERY ask in 'triage.asks' using ONLY the retrieved context. CITE-OR-ABSTAIN: every factual claim must trace to a retrieved passage; if the context does not cover an ask, say plainly you need to check with a human rather than guessing — NEVER invent a policy, price, date, refund, or promise. Write the reply in the customer's language ('triage.language'), in the configured 'brand_tone' voice, and match the empathy level to 'triage.sentiment' (be extra empathetic and de-escalating for frustrated/angry). If the judge returned a critique (judge.critique present), fix exactly what it flagged. Output object keys: reply (the full customer-ready reply), grounded (true if every claim came from the retrieved context), cited_source (the source tag(s) used, or 'none'), makes_promise (true if it commits to a refund, a specific date, a guarantee, or any consequential action).",
+               "role": "You are a senior support agent drafting an answer. The retrieved knowledge-base context is in the CURRENT DATA TO ANALYZE section — each passage is tagged with its source like [1] (source: handbook). The MEMORY section holds what we know about this customer from previous interactions (background, not the current question). Answer EVERY ask in 'triage.asks' using ONLY the retrieved context. CITE-OR-ABSTAIN: every factual claim must trace to a retrieved passage. Never infer a customer's plan, account type, eligibility, identity, or prior action from ambiguous wording; if a missing fact changes the applicable policy or outcome, name that uncertainty and ask for the fact or require human verification. If the context does not cover an ask, say plainly you need to check with a human rather than guessing. NEVER invent a policy, date, refund, or promise. Write in the customer's language ('triage.language'), in the configured 'brand_tone' voice, and match the empathy level to 'triage.sentiment'. Output result as the complete customer-ready draft.",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -171,7 +204,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "judge",
-               "role": "You are the QUALITY JUDGE — the evaluator that checks the drafted 'reply' (in the CURRENT DATA TO ANALYZE section) BEFORE it can reach the customer. Check, strictly: (a) grounded — every factual claim supported by the retrieved context, no invented policy/price/date; (b) complete — answers every ask in 'triage.asks'; (c) safe — no consequential promise (refund/guarantee/specific date) that has not been approved; (d) tone — appropriate for 'triage.sentiment', not dismissive; (e) language — written in 'triage.language'. Output object keys: verdict (exactly 'pass' if grounded, complete, safe, well-toned, and in the right language, or 'revise' otherwise), critique (one specific sentence on what to fix, or 'none'), score (INTEGER 0-100 confidence the reply is correct and safe).",
+               "role": "You are the QUALITY JUDGE — evaluate answer.result BEFORE it can reach the customer. Check strictly: (a) every factual claim is supported by retrieve.body; (b) it answers every ask in triage.asks; (c) it makes no unapproved consequential promise; (d) tone and language fit the ticket; and (e) it does not silently infer a plan, account type, eligibility, identity, or completed action that the customer and retrieved evidence did not establish. Missing facts that change the outcome must be stated as unknown. Output object keys: verdict (exactly 'pass' or 'revise'), critique (one specific correction or 'none'), score (INTEGER 0-100).",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -195,7 +228,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "send_reply",
-               "role": "Send the approved, grounded reply (answer.reply) to the customer at from_address. This node MESSAGES A HUMAN customer, so on a consequential or first-contact ticket the run pauses for a support operator to approve, edit, or reject the exact reply before anything is sent. Nothing reaches the customer without that go-ahead.",
+               "role": "Send the approved, grounded draft from answer.result to the customer at from_address. This node MESSAGES A HUMAN customer, so the run pauses for a support operator to approve or reject the exact reply before anything is sent. Nothing reaches the customer without that go-ahead.",
                "autonomy": "suggest",
                "capabilities": [
                    {
@@ -207,7 +240,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "escalate",
-               "role": "Escalate this ticket to a human support operator with a PRE-INVESTIGATED CASE FILE — never a cold transfer. Write a structured handoff brief so the human is faster, not slower: (1) the customer and their sentiment/language (triage), (2) the question(s) (triage.asks), (3) what the agent already did — what the knowledge base returned or why grounding was weak/absent, and any customer history from recall, (4) why this is being escalated (distress / out-of-scope / weak grounding / needs a consequential action / angry customer), (5) a recommended next step for the human. Also surface a KNOWLEDGE-GAP note: if the KB could not answer, state the exact question that was missing so it can be added to the KB. Output object keys: brief (the full structured case file), kb_gap (the unanswered question if grounding was weak/absent, else 'none').",
+               "role": "Escalate this ticket with a PRE-INVESTIGATED CASE FILE — never a cold transfer. Include: (1) customer, sentiment, and language; (2) every question; (3) what retrieval and prior memory established; (4) the exact escalation reason; (5) a recommended next step; and (6) the precise knowledge gap, if any. Preserve uncertainty: do not turn a missing plan, account type, eligibility fact, identity, or delivery result into a fact. Distinguish policy facts from facts established about this customer. Output result as the complete handoff brief.",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -219,7 +252,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "notify_human",
-               "role": "Notify the human support queue that a ticket needs attention, attaching the pre-investigated case file (escalate.brief). This MESSAGES A HUMAN operator; it pauses for confirmation so an escalation is never silently dropped.",
+               "role": "Notify the human support queue that a ticket needs attention, attaching the exact pre-investigated case file from escalate.result. This MESSAGES A HUMAN operator; it pauses for confirmation so an escalation is never silently dropped.",
                "autonomy": "suggest",
                "capabilities": [
                    {
@@ -250,6 +283,18 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                        "name": "remember",
                        "sideEffect": "write-reversible",
                        "budgetCents": 5
+                   }
+               ]
+           },
+           {
+               "id": "finalize",
+               "role": "Assemble the closed-case result for the support lead. State the route, customer asks, risk signals, exact draft or handoff, grounding, QA score, knowledge gap, and connector outcome. Treat qa.qa_accurate=false as a visible unresolved quality issue; do not repeat the disputed claim as fact. Preserve every uncertainty identified by the judge, escalation, or QA step. Do not claim email or Slack delivery unless the corresponding connector output says sent=true. Output result as a detailed markdown case report with clear headings.",
+               "autonomy": "full",
+               "capabilities": [
+                   {
+                       "name": "compose",
+                       "sideEffect": "read",
+                       "budgetCents": 60
                    }
                ]
            }
@@ -454,6 +499,10 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "from": "qa",
+               "to": "finalize"
+           },
+           {
+               "from": "finalize",
                "to": "record"
            }
        ],
@@ -910,16 +959,13 @@ export const REGISTRY_SEED: CatalogEntry[] = [
  {
   "name": "growth-team",
   "title": "Autonomous Growth Team",
-  "oneLiner": "Point it at your site and brand voice — a team of specialist agents researches, audits SEO, drafts content, prospects outreach, checks AI-answer visibility, and ships a prioritized growth plan, with your approval before anything publishes.",
+  "oneLiner": "A twelve-stage growth command team that reads and analyzes your live site, researches the market, audits discovery gaps, produces publish-ready assets, plans outreach, checks AI visibility, and pauses on the exact outbound payload.",
   "category": "Templates",
   "sideEffect": "message-human",
   "tier": "official",
   "author": "Krelvan",
   "kind": "template",
-  "secretRefs": [
-   "slack-bot-token",
-   "resend-api-key"
-  ],
+  "secretRefs": [],
   "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
   "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
   "manifest": {
@@ -927,18 +973,49 @@ export const REGISTRY_SEED: CatalogEntry[] = [
        "name": "Autonomous Growth Team",
        "intent": "Point it at a company's website and brand voice, and a team of specialist agents goes to work: it studies the site, researches the market and audience, audits SEO and finds keyword gaps, drafts channel-ready content in the brand's voice, prospects outreach targets, checks how the brand shows up in AI answers, and assembles a prioritized growth plan — pausing for your approval before anything is published or sent. Runs on a schedule so the work compounds.",
        "entry": "study_site",
-       "runBudgetCents": 900,
+       "runBudgetCents": 1100,
        "maxNodeVisits": 2,
        "seed": {
            "site_url": "https://example.com",
            "brand_voice": "clear, confident, technical but human — no hype, no buzzwords",
            "audience": "technical founders and engineering leaders evaluating developer tools",
-           "goal": "grow qualified sign-ups and become the obvious choice in our category"
+           "goal": "grow qualified sign-ups and become the obvious choice in our category",
+           "campaign_context": "Use only verifiable facts. Never invent traction, customers, ratings, benchmarks, or endorsements.",
+           "style": "detailed",
+           "launch_dossier.title": "Krelvan Launch Dossier",
+           "launch_dossier.section_map": "Executive plan=growth_plan.result,Verified positioning=analyze_site.result,Market evidence=market_research.result,Discovery and SEO audit=seo_audit.result,Publish-ready assets=draft_content.result,Outreach plan=prospect_outreach.result,AI-answer visibility=ai_visibility.result",
+           "publish_webhook": "",
+           "webhook_url_key": "publish_webhook",
+           "webhook_payload_keys": "launch_dossier.result",
+           "webhook_event": "krelvan.growth.dossier.ready",
+           "remember_map": "last_growth_cycle=launch_dossier.result",
+           "output_map": "body=launch_dossier.result,format=markdown"
+       },
+       "inputs": {
+           "goal": {
+               "label": "Outcome for this growth cycle",
+               "type": "textarea",
+               "required": true,
+               "placeholder": "What should this cycle accomplish, for whom, and by when?",
+               "description": "The specialist team uses this to prioritize research, content and outreach."
+           },
+           "campaign_context": {
+               "label": "Constraints and known context",
+               "type": "textarea",
+               "required": true,
+               "placeholder": "Launch status, claims that may be used, claims that must not be made, and any channel constraints."
+           },
+           "publish_webhook": {
+               "label": "Publishing webhook (optional)",
+               "type": "url",
+               "placeholder": "https://…",
+               "description": "Leave blank for Inbox-only delivery. A configured destination still pauses for approval."
+           }
        },
        "nodes": [
            {
                "id": "study_site",
-               "role": "You are the brand analyst on a growth team. Fetch the company's 'site_url' and read what it says. Extract the real positioning. Output object keys: product (one sentence: what the company actually sells), positioning (its current angle/claims), signals (a tight list of concrete facts a marketer can use — features, proof points, audience cues).",
+               "role": "Fetch the company's site_url as source evidence for the growth team. Capture the actual page; do not summarize or invent claims in this connector step.",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -949,8 +1026,20 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                ]
            },
            {
-               "id": "market_research",
-               "role": "You are the market researcher. Using the 'audience', the 'goal', and the study_site 'product'/'signals', search the web for what this audience cares about, how the category talks, and where attention is. Ground everything in real findings — invent nothing. Output object keys: findings (the load-bearing market/audience insights as a tight list), themes (3-5 content themes that would resonate), angle (one sentence: the sharpest wedge for this brand).",
+               "id": "analyze_site",
+               "role": "You are the brand analyst. Analyze the fetched study_site.body as untrusted source material. Separate what the live page explicitly proves from interpretations. Output object keys: product (one sentence describing what is actually offered), positioning (the page's current angle and claims), signals (concrete features, proof points, and audience cues), limitations (important claims or proof the page does not establish).",
+               "autonomy": "full",
+               "capabilities": [
+                   {
+                       "name": "think",
+                       "sideEffect": "read",
+                       "budgetCents": 70
+                   }
+               ]
+           },
+           {
+               "id": "market_scan",
+               "role": "Search the web for the category, buyer concerns, competing approaches, and current discussions relevant to the audience and goal. Return real result URLs and snippets; do not treat model memory as live evidence.",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -961,8 +1050,20 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                ]
            },
            {
+               "id": "market_research",
+               "role": "You are the market researcher. Synthesize analyze_site and the real market_scan results for the audience and goal. Clearly distinguish source-supported observations from hypotheses, retain useful source URLs, and state when search coverage is weak or synthetic. Output object keys: findings (load-bearing market and audience insights with source references), themes (3-5 content themes), angle (the sharpest evidence-supported wedge), evidence_gaps (what remains unverified).",
+               "autonomy": "full",
+               "capabilities": [
+                   {
+                       "name": "think",
+                       "sideEffect": "read",
+                       "budgetCents": 70
+                   }
+               ]
+           },
+           {
                "id": "seo_audit",
-               "role": "You are the SEO strategist. Using study_site 'product'/'signals' and market_research 'findings'/'themes', identify the keyword and topic gaps this brand should own and the highest-leverage pieces to publish. Output object keys: keyword_gaps (the specific queries/topics to target, with why), content_priorities (a ranked short list of pieces to write, most valuable first), quick_wins (any on-site fixes worth flagging).",
+               "role": "You are the SEO strategist. Using analyze_site product/signals/limitations and market_research findings/themes, identify the keyword and topic gaps this brand should own and the highest-leverage pieces to publish. Do not present estimated demand as measured volume. Output object keys: keyword_gaps (specific queries/topics and evidence-based rationale), content_priorities (ranked pieces), quick_wins (on-site fixes), caveats (what requires external keyword tooling to verify).",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -974,7 +1075,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "draft_content",
-               "role": "You are the content lead. Write channel-ready drafts in the exact 'brand_voice', grounded ONLY in study_site 'signals' and market_research 'findings'/'themes' — no invented claims. Produce, for the single highest-priority item from seo_audit 'content_priorities': a blog/article draft AND short social posts adapted for the platforms this 'audience' uses. Output object keys: article (title + full draft), social (2-3 platform-ready posts), why (one line on why this piece first).",
+               "role": "You are the content lead. Write channel-ready drafts in the exact brand_voice, grounded ONLY in analyze_site evidence and market_research findings. Produce the single highest-priority substantial technical article of 700-1000 words, with a strong title, useful sections, concrete evidence, honest limitations, and a clear next step, followed by three genuinely platform-specific social posts for the channels this audience uses. Never invent traction, users, adoption metrics, endorsements, or benchmarks. Do not mention money or budgets. Output result as the complete article and all three complete posts, not an outline or summary.",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -998,7 +1099,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "ai_visibility",
-               "role": "You are the AI-answer-visibility analyst. Increasingly, buyers ask AI assistants (not just search engines) for recommendations. Using study_site 'product'/'positioning' and market_research 'findings', assess how likely this brand is to be surfaced as an answer to the questions this 'audience' would ask an AI assistant, and what to change to be cited. Output object keys: likely_prompts (the real questions this audience would ask an assistant), gaps (why the brand may not surface today), actions (concrete moves to become the cited answer).",
+               "role": "You are the AI-answer-visibility analyst. Using analyze_site product/positioning and market_research findings, identify the questions this audience is likely to ask assistants, the evidence and entity-clarity gaps that may prevent citation, and concrete changes that improve discoverability. Do not claim to have queried or measured any assistant unless this run contains that evidence. Output object keys: likely_prompts, gaps, actions, measurement_plan.",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -1021,8 +1122,20 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                ]
            },
            {
+               "id": "launch_dossier",
+               "role": "Assemble the exact specialist outputs into one decision-grade markdown launch dossier without rewriting or summarizing them. The deterministic section map preserves the sourced analysis, complete publish-ready article and social drafts, outreach plan, AI-visibility work, and seven-day execution plan verbatim.",
+               "autonomy": "full",
+               "capabilities": [
+                   {
+                       "name": "compose",
+                       "sideEffect": "read",
+                       "budgetCents": 140
+                   }
+               ]
+           },
+           {
                "id": "publish",
-               "role": "Publish/announce the ready content (draft_content 'article'/'social') to the brand's channels. This SENDS TO REAL PEOPLE / posts publicly, so the run PAUSES here and shows you exactly what will go out to approve, edit, or reject first. Nothing is published without your explicit go-ahead. Deliver the approved content to the notification target. Output object key: announced.",
+               "role": "Deliver the exact launch dossier and publish-ready assets through the configured publish_webhook. The connector mapping is explicit: webhook_url_key identifies the destination and webhook_payload_keys identifies the only state values allowed in the payload. This pauses and shows the owner the exact destination, event and payload before anything leaves Krelvan. If no webhook is configured, deliver to the Agent Inbox only. Output object key: announced.",
                "autonomy": "suggest",
                "capabilities": [
                    {
@@ -1048,6 +1161,14 @@ export const REGISTRY_SEED: CatalogEntry[] = [
        "edges": [
            {
                "from": "study_site",
+               "to": "analyze_site"
+           },
+           {
+               "from": "analyze_site",
+               "to": "market_scan"
+           },
+           {
+               "from": "market_scan",
                "to": "market_research"
            },
            {
@@ -1072,6 +1193,10 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "from": "growth_plan",
+               "to": "launch_dossier"
+           },
+           {
+               "from": "launch_dossier",
                "to": "publish"
            },
            {
@@ -1103,6 +1228,12 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                "type": "text",
                "seedKey": "audience",
                "default": "technical founders and engineering leaders evaluating developer tools"
+           },
+           "publish_webhook": {
+               "label": "Publishing webhook (optional)",
+               "type": "text",
+               "seedKey": "publish_webhook",
+               "default": ""
            }
        }
    }
@@ -2583,35 +2714,88 @@ export const REGISTRY_SEED: CatalogEntry[] = [
  {
   "name": "incident-responder",
   "title": "Incident Responder",
-  "oneLiner": "Triage an alert's severity and page the on-call engineer when it matters.",
+  "oneLiner": "A multi-stage incident command workflow that recalls prior incidents, normalizes noisy alerts, separates evidence from hypotheses, routes by impact, prepares a page or quiet log, updates a real status connector, and records the outcome.",
   "category": "Templates",
   "sideEffect": "message-human",
   "tier": "official",
   "author": "Krelvan",
   "kind": "template",
-  "secretRefs": [
-   "telegram-bot-token",
-   "incident-webhook-url"
-  ],
+  "secretRefs": [],
   "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
   "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
   "manifest": {
        "version": 1,
        "name": "Incident Responder",
-       "intent": "When an alerting webhook fires, triage the incident's severity with an LLM, decide whether to page the on-call engineer or just log it, post an update to the status channel.",
-       "entry": "triage",
-       "runBudgetCents": 200,
+       "intent": "Operate as a defensive incident commander: recall relevant prior incidents, normalize an incoming alert without inventing facts, distinguish observations from hypotheses, assess impact and confidence, route page-worthy incidents to a human approval gate, produce an actionable incident brief, update the configured status webhook with an explicitly bound payload, and preserve the outcome for the next incident.",
+       "entry": "recall_context",
+       "runBudgetCents": 500,
        "maxNodeVisits": 2,
        "seed": {
            "alert_source": "monitoring-webhook",
            "status_channel": "https://hooks.example.com/incidents",
-           "remember_map": "last_incident=triage.summary",
-           "candidates": "page,log_only"
+           "remember_map": "last_incident=incident_brief.result",
+           "candidates": "prepare_page,log_only",
+           "telegram_text_key": "prepare_page.result",
+           "webhook_url_key": "status_channel",
+           "webhook_payload_keys": "normalize_alert.result,correlate.result,triage.severity,triage.result,route.chosen_node,prepare_page.result,log_only.result",
+           "webhook_event": "krelvan.incident.status",
+           "output_map": "body=incident_brief.result,format=markdown"
+       },
+       "inputs": {
+           "alert_source": {
+               "label": "Alert source",
+               "type": "text",
+               "required": true,
+               "placeholder": "Datadog, CloudWatch, Sentry, customer escalation…"
+           },
+           "message": {
+               "label": "Complete alert payload",
+               "type": "textarea",
+               "required": true,
+               "placeholder": "Include service, environment, timestamps, error text, metrics, affected regions, recent changes and any confirmed customer impact.",
+               "description": "The commander must separate observed facts from missing evidence and hypotheses."
+           }
        },
        "nodes": [
            {
+               "id": "recall_context",
+               "role": "Recall the most relevant prior incident recorded for this agent. Treat memory as historical context, never as proof that the new alert has the same cause. Output the recalled context or state clearly that there is no prior incident context.",
+               "autonomy": "full",
+               "capabilities": [
+                   {
+                       "name": "recall",
+                       "sideEffect": "read",
+                       "budgetCents": 5
+                   }
+               ]
+           },
+           {
+               "id": "normalize_alert",
+               "role": "Normalize the customer's exact 'message' alert payload. Separate: observed facts; affected service/environment/region; time window; customer-impact evidence; error and metric signals; recent-change evidence; and missing information. Never fill missing fields by guessing. Output object key: result (a structured markdown alert record).",
+               "autonomy": "full",
+               "capabilities": [
+                   {
+                       "name": "think",
+                       "sideEffect": "read",
+                       "budgetCents": 70
+                   }
+               ]
+           },
+           {
+               "id": "correlate",
+               "role": "Correlate normalize_alert with recall_context. Produce: confirmed observations; plausible hypotheses ranked by evidence; reasons each hypothesis might be wrong; blast-radius assessment; and the next five READ-ONLY checks an on-call engineer should perform. Historical similarity is a clue only, never confirmation. Output object key: result (the evidence table and investigation checklist).",
+               "autonomy": "full",
+               "capabilities": [
+                   {
+                       "name": "think",
+                       "sideEffect": "read",
+                       "budgetCents": 80
+                   }
+               ]
+           },
+           {
                "id": "triage",
-               "role": "You are an on-call incident triage analyst. The incoming alert payload (service name, error text, metrics, host, etc.) is in the CURRENT DATA TO ANALYZE section. Assess how serious this incident is RIGHT NOW. Output object keys: severity (a single bare lowercase word, EXACTLY one of: \"critical\", \"high\", \"medium\", \"low\" — choose \"critical\" or \"high\" only for user-facing outages, data loss, security breaches, or paging-worthy degradation; choose \"medium\" or \"low\" for transient blips, single-replica restarts, noisy non-customer-impacting warnings); summary (one tight sentence a human on-call can read at 3am — what is broken, where, and the blast radius). Do NOT invent details that are not in the payload. If the payload is empty or unreadable, set severity to \"low\" and summary to 'Unparseable or empty alert payload — logging only.'.",
+               "role": "You are the accountable incident triage lead. Use normalize_alert and correlate to assess severity RIGHT NOW. Output object keys: severity (exactly critical, high, medium, or low); summary (one evidence-grounded sentence stating what is observed, where, and the known blast radius); confidence (INTEGER 0-100); page_reason (why a human must or must not be woken now); evidence_gaps (what remains unknown). Critical/high requires confirmed or strongly evidenced user-facing outage, data loss, security impact, or paging-worthy degradation. Do not upgrade a hypothesis into a fact.",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -2623,7 +2807,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "route",
-               "role": "Routing step. Decide the next action for this incident. You MUST choose exactly one of the candidate nodes: 'page' (wake the on-call engineer via Telegram — use this when the triaged severity is critical or high, i.e. a real, user-impacting, page-worthy incident) or 'log_only' (record the incident quietly without paging — use this for medium/low severity, transient or non-customer-impacting noise). Base the decision on triage.severity and triage.summary in the run state. When in doubt for a genuinely ambiguous high-impact case, prefer 'page'; for clear low-impact noise, prefer 'log_only'.",
+               "role": "Choose exactly one candidate: prepare_page for critical/high page-worthy impact, or log_only for medium/low noise without demonstrated customer impact. Use triage severity, confidence, page_reason and evidence gaps. An ambiguous alert with no demonstrated impact must not wake someone merely because its wording is dramatic.",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -2634,8 +2818,20 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                ]
            },
            {
+               "id": "prepare_page",
+               "role": "Prepare the exact on-call page. Include severity, service/environment, observed impact, the evidence-grounded summary, confidence, the top two hypotheses clearly labelled as hypotheses, and the first three read-only checks. Keep it scannable at 3am. Output object key: result (the complete page text).",
+               "autonomy": "full",
+               "capabilities": [
+                   {
+                       "name": "compose",
+                       "sideEffect": "read",
+                       "budgetCents": 45
+                   }
+               ]
+           },
+           {
                "id": "page",
-               "role": "Page the on-call engineer over Telegram. Send a concise, actionable alert containing the triaged severity and the one-line summary so they can respond immediately. This wakes a human — only reached for high/critical incidents.",
+               "role": "Send the exact prepare_page.result through Telegram. telegram_text_key explicitly binds the connector text. This wakes a human, so the owner must approve the displayed message before it leaves Krelvan.",
                "autonomy": "suggest",
                "capabilities": [
                    {
@@ -2647,7 +2843,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "log_only",
-               "role": "Quietly note that this incident was triaged below the paging threshold and is being recorded for the audit trail without waking anyone. No human is messaged on this path.",
+               "role": "Produce a quiet-log decision explaining why this alert stays below the paging threshold, what evidence was observed, which checks should be scheduled, and what signal would cause escalation. Output object key: result (the log entry). No human is messaged on this branch.",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -2658,8 +2854,20 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                ]
            },
            {
+               "id": "incident_brief",
+               "role": "Assemble the incident command record in markdown. Include: executive status; normalized facts; severity/confidence and routing decision; ranked hypotheses with counter-evidence; immediate read-only investigation checklist; page text and delivery status if the page branch ran OR the quiet-log rationale; status-channel destination; and unresolved evidence gaps. Do not claim that a human was paged or a webhook updated unless the connector output confirms it. Output object key: result (the complete incident brief).",
+               "autonomy": "full",
+               "capabilities": [
+                   {
+                       "name": "compose",
+                       "sideEffect": "read",
+                       "budgetCents": 80
+                   }
+               ]
+           },
+           {
                "id": "update_status",
-               "role": "Post the incident status to the team's status channel webhook (status_channel) so the whole team has a single source of truth — include the severity, the summary, and whether the on-call was paged.",
+               "role": "Post only the explicitly mapped incident fields to status_channel. webhook_url_key and webhook_payload_keys define the exact destination and payload; do not substitute unrelated run state. Record whether the connector accepted the update.",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -2684,12 +2892,24 @@ export const REGISTRY_SEED: CatalogEntry[] = [
        ],
        "edges": [
            {
+               "from": "recall_context",
+               "to": "normalize_alert"
+           },
+           {
+               "from": "normalize_alert",
+               "to": "correlate"
+           },
+           {
+               "from": "correlate",
+               "to": "triage"
+           },
+           {
                "from": "triage",
                "to": "route"
            },
            {
                "from": "route",
-               "to": "page",
+               "to": "prepare_page",
                "when": {
                    "op": "eq",
                    "left": {
@@ -2698,7 +2918,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                    },
                    "right": {
                        "op": "const",
-                       "value": "page"
+                       "value": "prepare_page"
                    }
                }
            },
@@ -2718,6 +2938,10 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                }
            },
            {
+               "from": "prepare_page",
+               "to": "page"
+           },
+           {
                "from": "page",
                "to": "update_status"
            },
@@ -2727,13 +2951,13 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "from": "update_status",
+               "to": "incident_brief"
+           },
+           {
+               "from": "incident_brief",
                "to": "record"
            }
        ],
-       "schedule": {
-           "kind": "interval",
-           "ms": 3600000
-       },
        "customize": {
            "agent_name": {
                "label": "Agent name",
@@ -5038,10 +5262,13 @@ export async function loadRegistry(): Promise<{ entries: CatalogEntry[]; source:
     const data = await res.json() as { capabilities?: CatalogEntry[] } | CatalogEntry[];
     const remote = Array.isArray(data) ? data : (data.capabilities ?? []);
     if (remote.length > 0) {
-     // Union remote + seed by name (remote wins), so a thin remote can't hide bundled entries.
+     // Union by name, with the bundled release winning for entries it ships. Those official
+     // manifests were validated with this exact application version; allowing a mutable remote
+     // document to silently replace them would create both compatibility and supply-chain risk.
+     // The remote registry can still add community/new entries immediately.
      const byName = new Map<string, CatalogEntry>();
-     for (const e of REGISTRY_SEED) byName.set(e.name, e);
      for (const e of remote) if (e && e.name) byName.set(e.name, e);
+     for (const e of REGISTRY_SEED) byName.set(e.name, e);
      return { entries: [...byName.values()], source: "remote" };
     }
    }

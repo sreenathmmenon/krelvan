@@ -106,13 +106,20 @@ export default function CapabilitiesPage() {
   useEffect(() => {
     void loadRegistry().then(r => {
       setCatalog(r.entries);
-      // Deep-link from the homepage gallery: /capabilities?install=<name> opens that item's
-      // detail drawer so a visitor lands straight on "here's what it does + install".
+      // Deep-link from the public marketplace: customizable agents must land on the
+      // customization form promised by the CTA. Non-customizable entries still open their
+      // review drawer before installation.
       if (typeof window !== "undefined") {
         const want = new URLSearchParams(window.location.search).get("install");
         if (want) {
           const found = r.entries.find(e => e.name === want);
-          if (found) { setTab("discover"); setDetail(found); }
+          if (found) {
+            const canCustomize = found.kind === "template" &&
+              !!found.manifest?.customize && Object.keys(found.manifest.customize).length > 0;
+            setTab("discover");
+            if (canCustomize) setCustomizing(found);
+            else setDetail(found);
+          }
         }
       }
     }).catch(() => {});
@@ -192,6 +199,7 @@ export default function CapabilitiesPage() {
         <DetailDrawer
           e={detail} installed={installedNames.has(detail.name)} catalog={catalog}
           onClose={() => setDetail(null)} onInstalled={reload} flash={flash}
+          onCustomize={entry => { setDetail(null); setCustomizing(entry); }}
         />
       )}
       {customizing && (
@@ -542,9 +550,10 @@ function CatalogCard({ e, installed, autonomy, onInstalled, flash, onDetail, onC
 }
 
 // ── Detail drawer (per-capability) ───────────────────────────────────────────
-function DetailDrawer({ e, installed, catalog, onClose, onInstalled, flash }: {
+function DetailDrawer({ e, installed, catalog, onClose, onInstalled, flash, onCustomize }: {
   catalog: CatalogEntry[];
-  e: CatalogEntry; installed: boolean; onClose: () => void; onInstalled: () => Promise<void>; flash: (m: string) => void;
+  e: CatalogEntry; installed: boolean; onClose: () => void; onInstalled: () => Promise<void>;
+  flash: (m: string) => void; onCustomize: (e: CatalogEntry) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [ack, setAck] = useState(false);
@@ -552,6 +561,7 @@ function DetailDrawer({ e, installed, catalog, onClose, onInstalled, flash }: {
   const [done, setDone] = useState(false);
   const needAck = e.tier === "community" && !ack;
   const needsSecrets = (e.secretRefs?.length ?? 0) > 0;
+  const customizable = e.kind === "template" && !!e.manifest?.customize && Object.keys(e.manifest.customize).length > 0;
   const tools = e.kind === "mcp" ? (e.mcp?.tools ?? []) : [];
   const bundled = e.capabilities ?? [];
 
@@ -698,8 +708,9 @@ function DetailDrawer({ e, installed, catalog, onClose, onInstalled, flash }: {
                   <input type="checkbox" checked={ack} onChange={ev => setAck(ev.target.checked)} /> I&apos;ve reviewed this community item and understand the risks
                 </label>
               )}
-              <button className="btn btn-primary cap-install-cta" disabled={busy || needAck} onClick={install}>
-                {busy ? "Installing…" : e.kind === "mcp" ? "Connect" : e.kind === "template" ? "Install agent" : e.kind === "pack" ? "Install pack" : "Install"}
+              <button className="btn btn-primary cap-install-cta" disabled={busy || needAck}
+                onClick={customizable ? () => onCustomize(e) : install}>
+                {busy ? "Installing…" : customizable ? "Customize & install" : e.kind === "mcp" ? "Connect" : e.kind === "template" ? "Install agent" : e.kind === "pack" ? "Install pack" : "Install"}
               </button>
             </div>
           )}
