@@ -277,6 +277,9 @@ export default function SecretsPage() {
 
 function ModelSection() {
   const [status, setStatus] = useState<ModelStatus | null>(null);
+  const [activeProvider, setActiveProvider] = useState("anthropic");
+  const [activeModel, setActiveModel] = useState("");
+  const [activeReady, setActiveReady] = useState(false);
   const [modelLoading, setModelLoading] = useState(true);
   const [provider, setProvider] = useState("anthropic");
   const [apiKey, setApiKey] = useState("");
@@ -291,6 +294,10 @@ function ModelSection() {
       setStatus(s);
       setProvider(s.provider || "anthropic");
       setModelName(s.model || "");
+      setBaseUrl(s.baseUrl || "");
+      setActiveProvider(s.provider || "anthropic");
+      setActiveModel(s.model || "");
+      setActiveReady(s.hasLlm);
     } catch {
       /* API unreachable — leave defaults; the page-level error banner covers it */
     } finally {
@@ -307,13 +314,32 @@ function ModelSection() {
     }
   }, []);
 
-  const needsKey = provider !== "ollama";
+  const showsKey = provider !== "ollama";
+  const requiresKey = provider !== "ollama" && !(provider === "compatible" && !!baseUrl.trim());
   const ready = !!status?.hasLlm;
+  const configuredProviders = status?.configuredProviders ?? [];
+
+  async function handleProviderChange(next: string) {
+    setProvider(next);
+    setApiKey("");
+    setMsg(null);
+    setModelLoading(true);
+    try {
+      const profile = await getModel(next);
+      setStatus(profile);
+      setModelName(profile.model || "");
+      setBaseUrl(profile.baseUrl || "");
+    } catch (error) {
+      setMsg({ kind: "err", text: (error as Error).message });
+    } finally {
+      setModelLoading(false);
+    }
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
-    if (needsKey && !apiKey.trim() && !ready) { setMsg({ kind: "err", text: `An API key is required for ${provider}.` }); return; }
+    if (requiresKey && !apiKey.trim() && !ready) { setMsg({ kind: "err", text: `An API key is required for ${provider}.` }); return; }
     setSaving(true);
     try {
       // Only send apiKey if the user typed one — empty means "keep the existing key".
@@ -321,12 +347,15 @@ function ModelSection() {
         provider, model: model.trim(),
       };
       if (apiKey.trim()) cfg.apiKey = apiKey.trim();
-      if (provider === "ollama") cfg.baseUrl = baseUrl.trim();
+      if (provider === "ollama" || provider === "compatible") cfg.baseUrl = baseUrl.trim();
       const s = await setModel(cfg);
       setStatus(s);
+      setActiveProvider(s.provider);
+      setActiveModel(s.model || "");
+      setActiveReady(s.hasLlm);
       setApiKey("");
       setMsg(s.hasLlm
-        ? { kind: "ok", text: `Connected — ${s.provider}${s.model ? ` · ${s.model}` : ""}. Your next build will use it.` }
+        ? { kind: "ok", text: `Saved and selected ${s.provider}${s.model ? ` · ${s.model}` : ""}. It will be verified by the next model request.` }
         : { kind: "err", text: `Saved, but ${s.provider} still needs an API key before agents can build.` });
     } catch (e) {
       setMsg({ kind: "err", text: (e as Error).message });
@@ -340,38 +369,41 @@ function ModelSection() {
       <div className="card" style={{ padding: "var(--s6)", boxShadow: "var(--shadow-md)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--s4)", marginBottom: "var(--s2)", flexWrap: "wrap" }}>
           <h2 className="h2">Model</h2>
-          <span className={`badge ${ready ? "badge-done" : "badge-paused"}`}>
+          <span className={`badge ${activeReady ? "badge-done" : "badge-paused"}`}>
             <span className="dot" />
             {modelLoading
               ? "Loading model…"
-              : ready
-                ? `Connected · ${status?.provider}${status?.model ? ` · ${status.model}` : ""}`
-                : "No model connected"}
+              : activeReady
+                ? `Configured · ${activeProvider}${activeModel ? ` · ${activeModel}` : ""}`
+                : "No model configured"}
           </span>
         </div>
         <p className="small soft" style={{ margin: "0 0 var(--s5)", maxWidth: "62ch" }}>
-          The LLM that turns your plain-English goal into a working agent and reasons inside each run.
-          Stored encrypted on <em>this</em> instance. Pick a hosted provider with a key, or point at a
-          local Ollama — nothing leaves your machine with Ollama.
+          Model settings are shared by the whole product: building, reasoning, routing, diagnosis,
+          and capabilities that need a model. Each provider keeps its own encrypted key and model,
+          so adding another provider does not replace the ones already saved.
         </p>
 
         <form onSubmit={(e) => void handleSave(e)} style={{ display: "flex", flexDirection: "column", gap: "var(--s5)" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
             <span className="label" style={{ marginBottom: 0 }}>Provider</span>
-            <select className="input" value={provider} onChange={e => setProvider(e.target.value)} disabled={modelLoading} style={{ maxWidth: 280 }}>
-              <option value="anthropic">Anthropic (Claude)</option>
-              <option value="openai">OpenAI</option>
-              <option value="gemini">Google Gemini</option>
-              <option value="groq">Groq</option>
-              <option value="mistral">Mistral</option>
-              <option value="ollama">Ollama (local, no key)</option>
-              <option value="compatible">OpenAI-compatible endpoint</option>
+            <select className="input" value={provider} onChange={e => void handleProviderChange(e.target.value)} disabled={modelLoading} style={{ maxWidth: 320 }}>
+              <option value="anthropic">Anthropic (Claude){configuredProviders.includes("anthropic") ? " · saved" : ""}</option>
+              <option value="openai">OpenAI{configuredProviders.includes("openai") ? " · saved" : ""}</option>
+              <option value="gemini">Google Gemini{configuredProviders.includes("gemini") ? " · saved" : ""}</option>
+              <option value="groq">Groq{configuredProviders.includes("groq") ? " · saved" : ""}</option>
+              <option value="mistral">Mistral{configuredProviders.includes("mistral") ? " · saved" : ""}</option>
+              <option value="ollama">Ollama (local, no key){configuredProviders.includes("ollama") ? " · saved" : ""}</option>
+              <option value="compatible">OpenAI-compatible endpoint{configuredProviders.includes("compatible") ? " · saved" : ""}</option>
             </select>
+            <span className="small muted">
+              Active: <span className="mono">{activeProvider}{activeModel ? ` · ${activeModel}` : ""}</span>. Select a provider to view or update its saved profile.
+            </span>
           </label>
 
-          {needsKey && (
+          {showsKey && (
             <label style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
-              <span className="label" style={{ marginBottom: 0 }}>API key {ready && status?.source === "in-app" ? "(leave blank to keep current)" : ""}</span>
+              <span className="label" style={{ marginBottom: 0 }}>API key {ready ? "(saved; leave blank to keep)" : ""}</span>
               <input
                 type="password" className="input input-mono" value={apiKey}
                 onChange={e => setApiKey(e.target.value)} autoComplete="off"
@@ -418,7 +450,7 @@ function ModelSection() {
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--s3)", borderTop: "1px solid var(--line)", paddingTop: "var(--s5)" }}>
             <button type="submit" className="btn btn-primary" disabled={saving || modelLoading}>
-              {modelLoading ? "Loading…" : saving ? "Saving…" : ready ? "Update model" : "Connect model"}
+              {modelLoading ? "Loading…" : saving ? "Saving…" : provider === activeProvider ? "Save profile" : ready ? "Use this provider" : "Save and use provider"}
             </button>
           </div>
         </form>

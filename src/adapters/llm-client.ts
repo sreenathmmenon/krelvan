@@ -686,23 +686,31 @@ export function getLLMClient(): LLMClient {
  * provider (Anthropic — the default chat provider — has NO embeddings API, so RAG must
  * use a different one). Resolution:
  *   KRELVAN_EMBED_PROVIDER / _MODEL / _BASE_URL / _API_KEY override everything; else
- *   reuse the chat provider if it can embed (ollama/openai/compatible/gemini); else
- *   fall back to local Ollama (nomic-embed-text) so RAG works offline with no key.
+ *   reuse the chat provider if it can embed (ollama/openai/compatible/gemini). Runtime
+ *   centrally selects a saved embedding-capable profile when the active chat provider cannot
+ *   embed. There is no implicit network/local fallback to a provider the owner did not choose.
  */
 export function getEmbeddingsClient(): { client: LLMClient & { embed: NonNullable<LLMClient["embed"]> }; model: string } {
   const chatProvider = (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") as LLMProvider;
   const explicit = process.env["KRELVAN_EMBED_PROVIDER"] as LLMProvider | undefined;
-  let provider: LLMProvider = explicit ?? chatProvider;
-  // Anthropic (or anything that can't embed) → fall back to local Ollama.
-  if (!explicit && provider === "anthropic") provider = "ollama";
+  const provider: LLMProvider = explicit ?? chatProvider;
 
   const apiKey = process.env["KRELVAN_EMBED_API_KEY"] ?? resolveProviderApiKey(provider);
   const baseUrl = process.env["KRELVAN_EMBED_BASE_URL"] ?? (provider === (process.env["KRELVAN_LLM_PROVIDER"] ?? "anthropic") ? process.env["KRELVAN_LLM_BASE_URL"] : undefined);
   const model = process.env["KRELVAN_EMBED_MODEL"] ?? defaultEmbedModel(provider);
 
+  if (provider !== "openai" && provider !== "ollama" && provider !== "gemini" && provider !== "compatible") {
+    throw new ExpectedError(
+      `The active model provider "${provider}" does not provide embeddings. Configure OpenAI, Gemini, a compatible embeddings endpoint, or an explicitly chosen local provider in Model settings.`,
+      "EMBEDDINGS_NOT_CONFIGURED",
+    );
+  }
   const client = buildClient({ provider, apiKey, baseUrl });
   if (typeof client.embed !== "function") {
-    throw new Error(`llm-client: embeddings provider "${provider}" does not support embed(). Set KRELVAN_EMBED_PROVIDER to ollama or openai.`);
+    throw new ExpectedError(
+      `The active model provider "${provider}" does not provide embeddings. Configure OpenAI, Gemini, a compatible embeddings endpoint, or an explicitly chosen local provider in Model settings.`,
+      "EMBEDDINGS_NOT_CONFIGURED",
+    );
   }
   return { client: client as LLMClient & { embed: NonNullable<LLMClient["embed"]> }, model };
 }

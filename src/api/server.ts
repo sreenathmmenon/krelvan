@@ -50,6 +50,7 @@ import { validateCron } from "./scheduler.js";
 import { getLLMClient, resolveModel, type LLMProvider } from "../adapters/llm-client.js";
 import { authenticate, clientIp, type AuthState } from "./auth.js";
 import { buildExplanationFacts, buildExplanationPrompt, type ExplanationSource } from "./run-explanation.js";
+import { manualRunInitialState } from "./run-input.js";
 
 // The single allowed CORS origin (the web UI). Override via KRELVAN_WEB_ORIGIN.
 // We never use "*" — a wildcard with credentials is unsafe and the wildcard alone
@@ -496,8 +497,14 @@ async function handleStatus(_req: IncomingMessage, res: ServerResponse, rt: Krel
   json(res, 200, { ...rt.modelStatus, serverTz });
 }
 
-async function handleGetModel(_req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
-  json(res, 200, { ...rt.modelStatus });
+async function handleGetModel(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
+  const requested = new URL(req.url ?? "/api/model", "http://localhost").searchParams.get("provider");
+  if (!requested) { json(res, 200, { ...rt.modelStatus }); return; }
+  try {
+    json(res, 200, { ...rt.modelProfileStatus(requested) });
+  } catch (error) {
+    jsonError(res, 400, (error as Error).message);
+  }
 }
 
 async function handleSetModel(req: IncomingMessage, res: ServerResponse, rt: KrelvanRuntime): Promise<void> {
@@ -791,12 +798,7 @@ async function handleStartRun(req: IncomingMessage, res: ServerResponse, rt: Kre
   const agent = rt.agentRegistry.get(body.agentId);
   if (!agent) { jsonError(res, 404, "agent not found"); return; }
 
-  // Build the run's initial state: any explicit initialState, plus the user's message/input under
-  // the `message` key (accepting either field name). A blank message is simply omitted.
-  const initialState: Record<string, string | number | boolean | null> = { ...(body.initialState ?? {}) };
-  const userInput = typeof body.message === "string" ? body.message
-    : typeof body.input === "string" ? body.input : "";
-  if (userInput.trim() && initialState["message"] === undefined) initialState["message"] = userInput;
+  const initialState = manualRunInitialState(agent.signed.manifest, body);
 
   const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const runRecord = rt.runRegistry.create({ agentId: body.agentId, runId, manifestName: agent.signed.manifest.name });

@@ -276,15 +276,24 @@ export async function buildAgent(intent: string): Promise<BuildResult> {
   });
 }
 
-export interface ModelStatus { hasLlm: boolean; provider: string; model?: string | null; source?: "in-app" | "env"; serverTz?: string }
+export interface ModelStatus {
+  hasLlm: boolean;
+  provider: string;
+  model?: string | null;
+  baseUrl?: string | null;
+  source?: "in-app" | "env";
+  configuredProviders?: string[];
+  serverTz?: string;
+}
 /** Readiness: is a model wired up? Drives the build gate + the "Model connected" pill. */
 export async function getStatus(): Promise<ModelStatus> {
   return apiFetch<ModelStatus>("/api/status");
 }
 
 /** Current model configuration (provider, model, whether a key is wired, source). */
-export async function getModel(): Promise<ModelStatus> {
-  return apiFetch<ModelStatus>("/api/model");
+export async function getModel(provider?: string): Promise<ModelStatus> {
+  const query = provider ? `?provider=${encodeURIComponent(provider)}` : "";
+  return apiFetch<ModelStatus>(`/api/model${query}`);
 }
 
 export interface ModelConfigInput { provider?: string; apiKey?: string; model?: string; baseUrl?: string }

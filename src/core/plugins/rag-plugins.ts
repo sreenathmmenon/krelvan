@@ -104,8 +104,11 @@ function cosine(a: number[], b: number[]): number {
  * Accepts the content under any natural name a manifest/customer might use (text, docs,
  * document, content, corpus, knowledge, faq, body) so a support/knowledge agent works when
  * the customer pastes their docs under an intuitive key instead of the bare "text". */
-function resolveText(input: Record<string, unknown>, nodeId: string): string {
-  const keys = ["text", `${nodeId}.text`, "docs", "document", "content", "corpus", "knowledge", "faq", "body"];
+export function resolveRagText(input: Record<string, unknown>, nodeId: string): string {
+  // `Add input` in the agent UI sends the customer's text as `message`. Treat it as an
+  // explicit document input so the built-in ingestion template works from its primary UI,
+  // not only through a structured webhook payload.
+  const keys = ["text", "message", `${nodeId}.text`, "docs", "document", "content", "corpus", "knowledge", "faq", "body"];
   for (const k of keys) {
     const v = input[k];
     if (typeof v === "string" && v.trim()) return v;
@@ -115,6 +118,15 @@ function resolveText(input: Record<string, unknown>, nodeId: string): string {
     if ((k.endsWith(".body") || k.endsWith(".docs")) && typeof v === "string" && v.trim()) return v;
   }
   return "";
+}
+
+/** Resolve a retrieval question. A per-run UI message must win over the template's sample
+ * `query` seed; otherwise "Add input" appears to accept a new question while the agent keeps
+ * answering its baked-in example. Structured webhook callers can continue to send `query`. */
+export function resolveRagQuery(input: Record<string, unknown>, nodeId: string): string {
+  return String(
+    input["message"] ?? input["query"] ?? input[`${nodeId}.query`] ?? input["question"] ?? input["body"] ?? input["subject"] ?? "",
+  ).trim();
 }
 
 export const ragIngestCapability: CapabilityPlugin = {
@@ -127,7 +139,7 @@ export const ragIngestCapability: CapabilityPlugin = {
     // An explicit `kb` (named knowledge base) lets an ingest agent and a query agent SHARE
     // a store; otherwise the KB is scoped to the running agent's id.
     const agentId = String(input["kb"] ?? input["_agentId"] ?? input["agentId"] ?? "default");
-    const text = resolveText(input, call.nodeId);
+    const text = resolveRagText(input, call.nodeId);
     const source = String(input["source"] ?? input[`${call.nodeId}.source`] ?? "ingested");
     if (!text) return { output: { ok: false, error: "no text to ingest (set 'text' or provide a *.body)" }, claimedCostCents: 0 };
 
@@ -164,9 +176,7 @@ export const ragSearchCapability: CapabilityPlugin = {
     // Resolve the search query: an explicit `query`/`question`, else the inbound message text
     // (`body`/`subject`) so a ticket-shaped agent (support) retrieves on the customer's words
     // without needing a separate query-extraction node.
-    const query = String(
-      input["query"] ?? input[`${call.nodeId}.query`] ?? input["question"] ?? input["body"] ?? input["subject"] ?? "",
-    ).trim();
+    const query = resolveRagQuery(input, call.nodeId);
     const topK = Math.min(10, Math.max(1, Number(input["top_k"]) || 4));
     if (!query) return { output: { ok: false, error: "query is required" }, claimedCostCents: 0 };
 

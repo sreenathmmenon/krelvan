@@ -49,7 +49,7 @@ const SECTIONS: Section[] = [
       {
         q: "How do I install and run it?",
         a: [
-          "The fastest path is Node 22+ and `npx krelvan@0.1.2`. The version is explicit so a later release cannot replace the package you reviewed. For a container install, download the versioned `docker-compose.release.yml` from the GitHub release and start it with Docker Compose. The Download page has copyable commands for both paths and for the signed tarball.",
+          "The fastest path is Node 22+ and `npx krelvan@0.1.3`. The version is explicit so a later release cannot replace the package you reviewed. For a container install, download the versioned `docker-compose.release.yml` from the GitHub release and start it with Docker Compose. The Download page has copyable commands for both paths and for the signed tarball.",
           "The npm launcher's first start builds the web UI and can take a few minutes; later starts reuse that build. It opens at `localhost:3100` and stores persistent data in `~/.krelvan` unless you set another data directory.",
         ],
       },

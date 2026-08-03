@@ -1,8 +1,8 @@
-# Standalone customer compose file for the immutable Krelvan 0.1.2 container image.
-# This file is uploaded with the v0.1.2 release; it does not require a source checkout.
+# Standalone customer compose file for the immutable Krelvan 0.1.3 container image.
+# This file is uploaded with the v0.1.3 release; it does not require a source checkout.
 services:
   krelvan:
-    image: ghcr.io/sreenathmmenon/krelvan:0.1.2
+    image: ghcr.io/sreenathmmenon/krelvan:0.1.3
     ports:
       - "127.0.0.1:3100:3100"
     environment:

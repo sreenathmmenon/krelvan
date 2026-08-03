@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   makeLLMClient,
+  getEmbeddingsClient,
   resolveProviderApiKey,
   type LLMRequest,
 } from "./llm-client.js";
@@ -15,6 +16,25 @@ const REQUEST: LLMRequest = {
   maxTokens: 128,
   temperature: 0,
 };
+
+test("embeddings do not silently fall back to an unconfigured provider", () => {
+  const previousProvider = process.env["KRELVAN_LLM_PROVIDER"];
+  const previousEmbedProvider = process.env["KRELVAN_EMBED_PROVIDER"];
+  try {
+    process.env["KRELVAN_LLM_PROVIDER"] = "anthropic";
+    delete process.env["KRELVAN_EMBED_PROVIDER"];
+    assert.throws(() => getEmbeddingsClient(), (error: unknown) => {
+      return error instanceof Error
+        && error.message.includes("does not provide embeddings")
+        && !error.message.includes("fall back");
+    });
+  } finally {
+    if (previousProvider === undefined) delete process.env["KRELVAN_LLM_PROVIDER"];
+    else process.env["KRELVAN_LLM_PROVIDER"] = previousProvider;
+    if (previousEmbedProvider === undefined) delete process.env["KRELVAN_EMBED_PROVIDER"];
+    else process.env["KRELVAN_EMBED_PROVIDER"] = previousEmbedProvider;
+  }
+});
 
 test("OpenAI uses the Responses API with the official request and response shape", async () => {
   let seenUrl = "";

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ragIngestCapability, ragSearchCapability } from "./rag-plugins.js";
+import { ragIngestCapability, ragSearchCapability, resolveRagQuery, resolveRagText } from "./rag-plugins.js";
 
 let dir: string;
 let prevData: string | undefined;
@@ -48,6 +48,17 @@ test("rag.search on an empty store returns ok with 0 hits (no crash)", async () 
 test("rag.ingest validates: no text → ok:false", async () => {
   const r = await ragIngestCapability.invoke(ingest({ _agentId: "x" }));
   assert.equal((r.output as { ok: boolean }).ok, false);
+});
+
+test("rag.ingest accepts the agent UI's Add input message as document text", () => {
+  assert.equal(resolveRagText({ message: "Policy supplied from Add input" }, "ingest"), "Policy supplied from Add input");
+});
+
+test("rag.search lets a per-run Add input question override the template seed", () => {
+  assert.equal(
+    resolveRagQuery({ query: "sample template question", message: "customer's live question" }, "search"),
+    "customer's live question",
+  );
 });
 
 test("rag: ingest a doc then retrieve the relevant chunk (Ollama)", async (t) => {

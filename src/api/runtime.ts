@@ -79,7 +79,29 @@ const MODEL_PROVIDER_SECRET = "KRELVAN_LLM_PROVIDER";
 const MODEL_API_KEY_SECRET = "KRELVAN_LLM_API_KEY";
 const MODEL_NAME_SECRET = "KRELVAN_LLM_MODEL";
 const MODEL_BASE_URL_SECRET = "KRELVAN_LLM_BASE_URL";
-const RESERVED_MODEL_SECRETS = new Set([MODEL_PROVIDER_SECRET, MODEL_API_KEY_SECRET, MODEL_NAME_SECRET, MODEL_BASE_URL_SECRET]);
+const MODEL_PROFILE_PREFIX = "KRELVAN_LLM_PROFILE.";
+const SUPPORTED_MODEL_PROVIDERS = ["anthropic", "openai", "ollama", "groq", "mistral", "gemini", "compatible"] as const;
+type ModelProviderName = typeof SUPPORTED_MODEL_PROVIDERS[number];
+type ModelProfileField = "API_KEY" | "MODEL" | "BASE_URL";
+
+const EMBEDDING_CAPABLE_PROVIDERS: ReadonlySet<ModelProviderName> = new Set([
+  "openai",
+  "gemini",
+  "ollama",
+  "compatible",
+]);
+
+function modelProfileSecret(provider: string, field: ModelProfileField): string {
+  return `${MODEL_PROFILE_PREFIX}${provider}.${field}`;
+}
+
+function isReservedModelSecret(name: string): boolean {
+  return name === MODEL_PROVIDER_SECRET
+    || name === MODEL_API_KEY_SECRET
+    || name === MODEL_NAME_SECRET
+    || name === MODEL_BASE_URL_SECRET
+    || name.startsWith(MODEL_PROFILE_PREFIX);
+}
 
 /**
  * Choose the TypeScript-plugin loader (the sandbox mechanism). Default is the REAL
@@ -797,6 +819,11 @@ export class KrelvanRuntime {
   private readonly llmApiKeyDefault: string | null;
   private readonly llmBaseUrlDefault: string | undefined;
   private readonly llmModelDefault: string | undefined;
+  /** Explicit deployment-level embedding config. If present, it wins over profile routing. */
+  private readonly embedProviderDefault: string | undefined;
+  private readonly embedApiKeyDefault: string | undefined;
+  private readonly embedBaseUrlDefault: string | undefined;
+  private readonly embedModelDefault: string | undefined;
   private readonly pluginLifecycle: PluginLifecycleService;
   private readonly pluginRepository: SqlitePluginRepository;
   private readonly capsDir: string;
@@ -931,6 +958,15 @@ export class KrelvanRuntime {
       null;
     this.llmBaseUrlDefault = config.llmBaseUrl ?? process.env["KRELVAN_LLM_BASE_URL"];
     this.llmModelDefault = config.llmModel ?? process.env["KRELVAN_LLM_MODEL"];
+    this.embedProviderDefault = process.env["KRELVAN_EMBED_PROVIDER"];
+    this.embedApiKeyDefault = process.env["KRELVAN_EMBED_API_KEY"];
+    this.embedBaseUrlDefault = process.env["KRELVAN_EMBED_BASE_URL"];
+    this.embedModelDefault = process.env["KRELVAN_EMBED_MODEL"];
+    // Releases before provider profiles kept one shared key/model/base URL. Associate those
+    // encrypted values with the provider that was selected at the time, then remove the shared
+    // slots. This is lossless and prevents an Anthropic key being reused as an OpenAI key after
+    // an upgrade or provider switch.
+    this.migrateLegacyModelProfile();
     // SecretStore loads synchronously above. Mirror its effective model connection into
     // the process environment before any built-in capability can create the shared client.
     // This also makes an in-app connection survive a process restart.
@@ -1901,7 +1937,7 @@ export class KrelvanRuntime {
   /** Public metadata for all set secrets, plus which are still needed by installed caps. */
   listSecrets(): { secrets: import("./secret-store.js").SecretMeta[]; required: { name: string; capability: string; set: boolean }[] } {
     // Hide the reserved model-config secrets — they're managed via the dedicated /api/model surface.
-    const secrets = this.secretStore.list().filter((s) => !RESERVED_MODEL_SECRETS.has(s.name));
+    const secrets = this.secretStore.list().filter((s) => !isReservedModelSecret(s.name));
     // Gather secret refs declared by installed/enabled capabilities.
     const required: { name: string; capability: string; set: boolean }[] = [];
     const seen = new Set<string>();
@@ -1918,14 +1954,14 @@ export class KrelvanRuntime {
   }
 
   setSecret(name: string, value: string): { ok: true; meta: import("./secret-store.js").SecretMeta } | { ok: false; error: string } {
-    if (RESERVED_MODEL_SECRETS.has(name.trim())) {
+    if (isReservedModelSecret(name.trim())) {
       return { ok: false, error: `'${name.trim()}' is managed in Settings → Model, not as a secret` };
     }
     return this.secretStore.set(name, value);
   }
 
   deleteSecret(name: string): boolean {
-    if (RESERVED_MODEL_SECRETS.has(name.trim())) return false;
+    if (isReservedModelSecret(name.trim())) return false;
     return this.secretStore.delete(name);
   }
 
@@ -1946,10 +1982,33 @@ export class KrelvanRuntime {
       ? (this.secretStore.resolve(MODEL_PROVIDER_SECRET) ?? this.llmProviderDefault)
       : this.llmProviderDefault;
   }
-  private get llmApiKey(): string | null {
-    if (this.secretStore.isStored(MODEL_API_KEY_SECRET)) {
-      return this.secretStore.resolve(MODEL_API_KEY_SECRET) ?? null;
+
+  private profileValue(provider: string, field: ModelProfileField): string | undefined {
+    const name = modelProfileSecret(provider, field);
+    return this.secretStore.isStored(name) ? this.secretStore.resolve(name) : undefined;
+  }
+
+  private migrateLegacyModelProfile(): void {
+    const selected = this.secretStore.isStored(MODEL_PROVIDER_SECRET)
+      ? (this.secretStore.resolve(MODEL_PROVIDER_SECRET) ?? this.llmProviderDefault)
+      : this.llmProviderDefault;
+    const fields: ReadonlyArray<readonly [string, ModelProfileField]> = [
+      [MODEL_API_KEY_SECRET, "API_KEY"],
+      [MODEL_NAME_SECRET, "MODEL"],
+      [MODEL_BASE_URL_SECRET, "BASE_URL"],
+    ];
+    for (const [legacyName, field] of fields) {
+      if (!this.secretStore.isStored(legacyName)) continue;
+      const value = this.secretStore.resolve(legacyName);
+      const profileName = modelProfileSecret(selected, field);
+      if (value && !this.secretStore.isStored(profileName)) this.secretStore.set(profileName, value);
+      this.secretStore.delete(legacyName);
     }
+  }
+
+  private get llmApiKey(): string | null {
+    const stored = this.profileValue(this.llmProvider, "API_KEY");
+    if (stored) return stored;
     // A key supplied for one provider must never be silently sent to another after
     // the operator changes only the provider in the UI.
     if (this.llmProvider === this.llmProviderDefault) return this.llmApiKeyDefault;
@@ -1958,16 +2017,61 @@ export class KrelvanRuntime {
     return null;
   }
   private get llmBaseUrl(): string | undefined {
-    if (this.secretStore.isStored(MODEL_BASE_URL_SECRET)) {
-      return this.secretStore.resolve(MODEL_BASE_URL_SECRET);
-    }
+    const stored = this.profileValue(this.llmProvider, "BASE_URL");
+    if (stored) return stored;
     return this.llmProvider === this.llmProviderDefault ? this.llmBaseUrlDefault : undefined;
   }
   private get llmModel(): string | undefined {
-    if (this.secretStore.isStored(MODEL_NAME_SECRET)) {
-      return this.secretStore.resolve(MODEL_NAME_SECRET);
-    }
+    const stored = this.profileValue(this.llmProvider, "MODEL");
+    if (stored) return stored;
     return this.llmProvider === this.llmProviderDefault ? this.llmModelDefault : undefined;
+  }
+
+  private configuredModelProviders(): string[] {
+    return SUPPORTED_MODEL_PROVIDERS.filter((provider) => {
+      if (provider === "ollama") {
+        return this.secretStore.isStored(modelProfileSecret(provider, "MODEL"))
+          || this.secretStore.isStored(modelProfileSecret(provider, "BASE_URL"))
+          || provider === this.llmProvider;
+      }
+      if (provider === "compatible" && this.secretStore.isStored(modelProfileSecret(provider, "BASE_URL"))) return true;
+      if (this.secretStore.isStored(modelProfileSecret(provider, "API_KEY"))) return true;
+      if (provider === this.llmProviderDefault && !!this.llmApiKeyDefault) return true;
+      if (provider === "openai" && !!process.env["OPENAI_API_KEY"]) return true;
+      if (provider === "anthropic" && !!process.env["KRELVAN_ANTHROPIC_KEY"]) return true;
+      return false;
+    });
+  }
+
+  /** Safe metadata for the model settings UI. Never returns a credential value. */
+  modelProfileStatus(provider = this.llmProvider): {
+    hasLlm: boolean;
+    provider: string;
+    model: string | null;
+    baseUrl: string | null;
+    source: "in-app" | "env";
+    configuredProviders: string[];
+  } {
+    const selected = provider.trim().toLowerCase();
+    if (!SUPPORTED_MODEL_PROVIDERS.includes(selected as ModelProviderName)) {
+      throw new Error(`unsupported model provider: ${selected}`);
+    }
+    const profileKey = this.profileValue(selected, "API_KEY");
+    const envKey = selected === this.llmProviderDefault ? this.llmApiKeyDefault
+      : selected === "openai" ? process.env["OPENAI_API_KEY"]
+      : selected === "anthropic" ? process.env["KRELVAN_ANTHROPIC_KEY"]
+      : undefined;
+    const profileModel = this.profileValue(selected, "MODEL");
+    const profileBaseUrl = this.profileValue(selected, "BASE_URL");
+    const usesDefaults = selected === this.llmProviderDefault;
+    return {
+      hasLlm: selected === "ollama" || !!profileKey || !!envKey || (selected === "compatible" && !!profileBaseUrl),
+      provider: selected,
+      model: profileModel ?? (usesDefaults ? this.llmModelDefault : undefined) ?? null,
+      baseUrl: profileBaseUrl ?? (usesDefaults ? this.llmBaseUrlDefault : undefined) ?? null,
+      source: profileKey || profileModel || profileBaseUrl ? "in-app" : "env",
+      configuredProviders: this.configuredModelProviders(),
+    };
   }
 
   /**
@@ -1984,18 +2088,69 @@ export class KrelvanRuntime {
     assign("KRELVAN_LLM_API_KEY", this.llmApiKey);
     assign("KRELVAN_LLM_MODEL", this.llmModel);
     assign("KRELVAN_LLM_BASE_URL", this.llmBaseUrl);
+    this.syncEmbeddingConfigToEnv(assign);
     resetLLMClient();
   }
 
+  /**
+   * Select embeddings centrally for every capability that needs them. An explicit deployment
+   * configuration wins. Otherwise the active provider is reused when it supports embeddings;
+   * if it does not (for example Anthropic), a saved OpenAI/Gemini/compatible profile is used.
+   * We never silently route to a local provider that the owner did not configure.
+   */
+  private syncEmbeddingConfigToEnv(assign: (name: string, value: string | null | undefined) => void): void {
+    if (this.embedProviderDefault) {
+      assign("KRELVAN_EMBED_PROVIDER", this.embedProviderDefault);
+      assign("KRELVAN_EMBED_API_KEY", this.embedApiKeyDefault);
+      assign("KRELVAN_EMBED_BASE_URL", this.embedBaseUrlDefault);
+      assign("KRELVAN_EMBED_MODEL", this.embedModelDefault);
+      return;
+    }
+
+    const active = this.llmProvider as ModelProviderName;
+    if (EMBEDDING_CAPABLE_PROVIDERS.has(active)) {
+      // No override: getEmbeddingsClient reuses the active provider's effective config.
+      assign("KRELVAN_EMBED_PROVIDER", undefined);
+      assign("KRELVAN_EMBED_API_KEY", undefined);
+      assign("KRELVAN_EMBED_BASE_URL", undefined);
+      assign("KRELVAN_EMBED_MODEL", undefined);
+      return;
+    }
+
+    const fallback = (["openai", "gemini", "compatible"] as const).find((provider) => {
+      if (this.profileValue(provider, "API_KEY")) return true;
+      if (provider === this.llmProviderDefault && this.llmApiKeyDefault) return true;
+      if (provider === "openai" && process.env["OPENAI_API_KEY"]) return true;
+      return false;
+    });
+    if (!fallback) {
+      assign("KRELVAN_EMBED_PROVIDER", undefined);
+      assign("KRELVAN_EMBED_API_KEY", undefined);
+      assign("KRELVAN_EMBED_BASE_URL", undefined);
+      assign("KRELVAN_EMBED_MODEL", undefined);
+      return;
+    }
+
+    const apiKey = this.profileValue(fallback, "API_KEY")
+      ?? (fallback === this.llmProviderDefault ? this.llmApiKeyDefault ?? undefined : undefined)
+      ?? (fallback === "openai" ? process.env["OPENAI_API_KEY"] : undefined);
+    assign("KRELVAN_EMBED_PROVIDER", fallback);
+    assign("KRELVAN_EMBED_API_KEY", apiKey);
+    assign("KRELVAN_EMBED_BASE_URL", this.profileValue(fallback, "BASE_URL"));
+    // A chat model name is not an embeddings model name. Let the adapter choose its
+    // provider-appropriate embeddings default unless an explicit deployment override exists.
+    assign("KRELVAN_EMBED_MODEL", undefined);
+  }
+
   get hasLlm(): boolean {
-    return !!(this.llmApiKey) || this.llmProvider === "ollama";
+    return !!this.llmApiKey || this.llmProvider === "ollama" || (this.llmProvider === "compatible" && !!this.llmBaseUrl);
   }
 
   /** Readiness for the UI: is a model wired up, and which provider/model. Drives the build gate + pill. */
-  get modelStatus(): { hasLlm: boolean; provider: string; model: string | null; source: "in-app" | "env" } {
-    const inApp = this.secretStore.isStored(MODEL_PROVIDER_SECRET)
-      || this.secretStore.isStored(MODEL_API_KEY_SECRET);
-    return { hasLlm: this.hasLlm, provider: this.llmProvider, model: this.llmModel ?? null, source: inApp ? "in-app" : "env" };
+  get modelStatus(): { hasLlm: boolean; provider: string; model: string | null; source: "in-app" | "env"; configuredProviders: string[] } {
+    const profile = this.modelProfileStatus(this.llmProvider);
+    const inApp = this.secretStore.isStored(MODEL_PROVIDER_SECRET) || profile.source === "in-app";
+    return { hasLlm: this.hasLlm, provider: this.llmProvider, model: this.llmModel ?? null, source: inApp ? "in-app" : "env", configuredProviders: profile.configuredProviders };
   }
 
   /**
@@ -2005,22 +2160,22 @@ export class KrelvanRuntime {
    * API key is not required.
    */
   setModelConfig(cfg: { provider?: string; apiKey?: string; model?: string; baseUrl?: string }): { ok: true; status: ReturnType<KrelvanRuntime["modelStatusGetter"]> } | { ok: false; error: string } {
-    const provider = (cfg.provider ?? "").trim().toLowerCase();
+    const requestedProvider = (cfg.provider ?? "").trim().toLowerCase();
+    const targetProvider = requestedProvider || this.llmProvider;
     // The llm-client adapter natively supports these OpenAI-compatible providers (each with a
     // built-in base URL) plus anthropic and local ollama — keep this list in sync with it so a
     // supported provider isn't rejected here. "compatible" requires an explicit baseUrl.
-    const SUPPORTED = ["anthropic", "openai", "ollama", "groq", "mistral", "gemini", "compatible"];
-    if (provider && !SUPPORTED.includes(provider)) {
-      return { ok: false, error: `provider must be one of: ${SUPPORTED.join(", ")}` };
+    if (requestedProvider && !SUPPORTED_MODEL_PROVIDERS.includes(requestedProvider as ModelProviderName)) {
+      return { ok: false, error: `provider must be one of: ${SUPPORTED_MODEL_PROVIDERS.join(", ")}` };
     }
     const apply = (name: string, value: string | undefined) => {
       const v = (value ?? "").trim();
       if (v) { this.secretStore.set(name, v); } else { this.secretStore.delete(name); }
     };
-    if (cfg.provider !== undefined) apply(MODEL_PROVIDER_SECRET, provider);
-    if (cfg.apiKey !== undefined) apply(MODEL_API_KEY_SECRET, cfg.apiKey);
-    if (cfg.model !== undefined) apply(MODEL_NAME_SECRET, cfg.model);
-    if (cfg.baseUrl !== undefined) apply(MODEL_BASE_URL_SECRET, cfg.baseUrl);
+    if (cfg.provider !== undefined) apply(MODEL_PROVIDER_SECRET, requestedProvider);
+    if (cfg.apiKey !== undefined) apply(modelProfileSecret(targetProvider, "API_KEY"), cfg.apiKey);
+    if (cfg.model !== undefined) apply(modelProfileSecret(targetProvider, "MODEL"), cfg.model);
+    if (cfg.baseUrl !== undefined) apply(modelProfileSecret(targetProvider, "BASE_URL"), cfg.baseUrl);
     // Built-ins use the process-wide shared client. Apply the effective values (including
     // constructor/env fallbacks after a field is cleared), then invalidate its cache.
     this.syncEffectiveModelConfigToEnv();

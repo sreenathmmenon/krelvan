@@ -379,7 +379,10 @@ async function up() {
       source: "env",
     };
     try {
-      const response = await fetch(`${apiOrigin}/api/status`, { signal: AbortSignal.timeout(1500) });
+      const response = await fetch(`${apiOrigin}/api/status`, {
+        headers: { authorization: `Bearer ${AUTH_TOKEN}` },
+        signal: AbortSignal.timeout(1500),
+      });
       if (response.ok) {
         const current = await response.json();
         if (typeof current?.hasLlm === "boolean" && typeof current?.provider === "string") {
