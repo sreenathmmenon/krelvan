@@ -154,10 +154,10 @@ if (enableTs.ok) {
   console.log("\n5. Invoking text.transform (uppercase 'hello world')...");
   const call: EffectCall = { nodeId: "demo-node", capability: "text.transform", input: { text: "hello world", operation: "uppercase" } };
   const estimate = supervisor.estimate(call);
-  console.log("   Budget estimate:", estimate, "units");
+  console.log("   Reservation admitted:", estimate >= 0 ? "yes" : "no");
   const result = await supervisor.run(call, "demo-idem-001");
   console.log("   Output:", result.output);
-  console.log("   Budget settled:", result.costCents, "units");
+  console.log("   Reservation accounting: settled");
 
   // word count
   const call2: EffectCall = { nodeId: "demo-node", capability: "text.transform", input: { text: "the quick brown fox jumps", operation: "word-count" } };

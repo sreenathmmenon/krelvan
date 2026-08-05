@@ -32,6 +32,16 @@ const log = getLogger("notify-webhook");
 
 const TIMEOUT_MS = 10_000;
 
+// Webhook URLs commonly contain an unguessable path or query token. Resolve those endpoints
+// through the encrypted SecretStore at execution time instead of carrying plaintext URLs in a
+// manifest, run state, approval event, or ledger payload. Env fallback keeps headless installs
+// compatible with the same named-secret convention.
+let secretResolver: (name: string) => string | undefined = (name) => process.env[name];
+
+export function setWebhookSecretResolver(fn: (name: string) => string | undefined): void {
+  secretResolver = fn;
+}
+
 // (SSRF protection moved to the shared ssrf-guard.ts — see assertPublicUrl.)
 
 function buildBody(payload: unknown): string {
@@ -69,9 +79,13 @@ function nonEmptyString(value: unknown): string | undefined {
 export function resolveWebhookInput(nodeId: string, input: Record<string, unknown>): ResolvedWebhookInput {
   const mappedUrlKey = nonEmptyString(input["webhook_url_key"]);
   const mappedUrl = mappedUrlKey ? nonEmptyString(input[mappedUrlKey]) : undefined;
+  const urlSecretRef = nonEmptyString(input[`${nodeId}.url_ref`])
+    ?? nonEmptyString(input["webhook_url_ref"]);
+  const secretUrl = urlSecretRef ? nonEmptyString(secretResolver(urlSecretRef)) : undefined;
   const url = nonEmptyString(input[`${nodeId}.url`])
     ?? nonEmptyString(input[`${nodeId}.webhook_url`])
     ?? mappedUrl
+    ?? secretUrl
     ?? nonEmptyString(input["url"])
     ?? nonEmptyString(input["webhook_url"])
     ?? nonEmptyString(input["publish_webhook"])
@@ -91,11 +105,19 @@ export function resolveWebhookInput(nodeId: string, input: Record<string, unknow
     : Object.keys(mappedPayload).length > 0 ? mappedPayload
       : genericPayload !== undefined ? genericPayload : {};
 
+  const signingSecretRef = nonEmptyString(input[`${nodeId}.secret_ref`])
+    ?? nonEmptyString(input["webhook_signing_secret_ref"]);
+  const resolvedSigningSecret = signingSecretRef
+    ? nonEmptyString(secretResolver(signingSecretRef))
+    : undefined;
+
   return {
     url,
     payload,
     ...(nonEmptyString(input[`${nodeId}.event`] ?? input["webhook_event"] ?? input["event"]) ? { event: nonEmptyString(input[`${nodeId}.event`] ?? input["webhook_event"] ?? input["event"])! } : {}),
-    ...(nonEmptyString(input[`${nodeId}.secret`] ?? input["webhook_secret"] ?? input["secret"]) ? { secret: nonEmptyString(input[`${nodeId}.secret`] ?? input["webhook_secret"] ?? input["secret"])! } : {}),
+    ...(resolvedSigningSecret ?? nonEmptyString(input[`${nodeId}.secret`] ?? input["webhook_secret"] ?? input["secret"])
+      ? { secret: resolvedSigningSecret ?? nonEmptyString(input[`${nodeId}.secret`] ?? input["webhook_secret"] ?? input["secret"])! }
+      : {}),
   };
 }
 
@@ -169,7 +191,7 @@ export const notifyWebhookCapability: CapabilityPlugin = {
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     log.info(
-      { nodeId: call.nodeId, url: rawUrl.trim(), bodyLen: body.length, hasEvent: !!event, hasSig: !!secret },
+      { nodeId: call.nodeId, destination: parsed.origin, bodyLen: body.length, hasEvent: !!event, hasSig: !!secret },
       "notify_webhook: posting webhook",
     );
 
@@ -184,7 +206,7 @@ export const notifyWebhookCapability: CapabilityPlugin = {
     } catch (e) {
       clearTimeout(timer);
       const msg = (e as Error).message ?? String(e);
-      log.warn({ nodeId: call.nodeId, url: rawUrl.trim(), err: msg }, "notify_webhook: network error");
+      log.warn({ nodeId: call.nodeId, destination: parsed.origin, err: msg }, "notify_webhook: network error");
       return {
         output: { notified: false, status: 0, via: "webhook", destination: parsed.origin, error: msg },
         claimedCostCents: 1,

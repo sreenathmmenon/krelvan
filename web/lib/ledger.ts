@@ -116,12 +116,12 @@ function detailFor(e: LedgerEvent): string {
       return `manifest "${String(e.payload.manifest ?? "")}"`;
     case "AdmissionDecision":
       return e.payload.admitted
-        ? `admitted ${String(e.payload.capability ?? "")} (reserve ${num(e.payload.reservedCents)}¢)`
+        ? `admitted ${String(e.payload.capability ?? "")}`
         : `DENIED: ${String(e.payload.reason ?? "")}`;
     case "EffectRequested":
       return `${String(e.payload.capability ?? "")} — ${shortIdem(e.payload.idem)}`;
     case "EffectResult":
-      return `${num(e.payload.costCents)}¢ · signed by ${e.author}`;
+      return `settled · signed by ${e.author}`;
     case "AwaitRequested":
       return `parked for approval (${shortIdem(e.payload.correlationId)})`;
     case "NodeConcluded":
@@ -131,9 +131,6 @@ function detailFor(e: LedgerEvent): string {
   }
 }
 
-function num(v: unknown): number {
-  return Number(v ?? 0);
-}
 function shortIdem(v: unknown): string {
   const s = String(v ?? "");
   return s.length > 24 ? s.slice(0, 21) + "…" : s;
@@ -155,6 +152,6 @@ export function statusPillClass(s: string): string {
   }
 }
 
-export function fmtCents(c: number): string {
-  return `${c}¢`;
+export function fmtCents(_c: number): string {
+  return "internal reservation";
 }

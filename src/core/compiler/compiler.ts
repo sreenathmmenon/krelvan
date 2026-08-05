@@ -204,7 +204,7 @@ export function checkMonotonicity(m: Manifest, principal: Principal): Validation
   if (m.runBudgetCents > principal.maxRunBudgetCents) {
     issues.push({
       code: "BUDGET_ESCALATION",
-      message: `manifest runBudget ${m.runBudgetCents}¢ exceeds principal max ${principal.maxRunBudgetCents}¢`,
+      message: "manifest run reservation exceeds this principal's allowed ceiling",
     });
   }
 
@@ -224,7 +224,7 @@ export function checkMonotonicity(m: Manifest, principal: Principal): Validation
           } else if (cap.budgetCents > delegateAllowed.maxBudgetCents) {
             issues.push({
               code: "SUBAGENT_BUDGET_ESCALATION",
-              message: `node '${node.id}' subAgent cap '${cap.name}' budget ${cap.budgetCents}¢ exceeds delegate ceiling ${delegateAllowed.maxBudgetCents}¢`,
+              message: `node '${node.id}' subAgent cap '${cap.name}' reservation exceeds the delegate ceiling`,
             });
           }
           // subAgent bindings must always be declared as "read" from the parent's perspective
@@ -251,7 +251,7 @@ export function checkMonotonicity(m: Manifest, principal: Principal): Validation
       if (cap.budgetCents > a.maxBudgetCents) {
         issues.push({
           code: "CAP_BUDGET_ESCALATION",
-          message: `node '${node.id}' cap '${cap.name}' budget ${cap.budgetCents}¢ exceeds allowed ${a.maxBudgetCents}¢`,
+          message: `node '${node.id}' cap '${cap.name}' reservation exceeds the allowed ceiling`,
         });
       }
     }

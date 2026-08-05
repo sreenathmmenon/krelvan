@@ -93,8 +93,10 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   "sideEffect": "message-human",
   "tier": "official",
   "author": "Krelvan",
-  "kind": "template",
-  "secretRefs": [],
+ "kind": "template",
+  "secretRefs": [
+   "growth-publishing-webhook-url"
+  ],
   "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
   "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
   "manifest": {
@@ -554,8 +556,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   "author": "Krelvan",
   "kind": "template",
   "secretRefs": [
-   "slack-bot-token",
-   "resend-api-key"
+   "social-publishing-webhook-url"
   ],
   "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
   "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
@@ -572,7 +573,11 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            "audience": "engineering leaders and founders building with AI",
            "channel": "LinkedIn",
            "query": "applied AI for engineering teams recent developments",
-           "remember_map": "last_topic=find_the_angle.angle"
+           "webhook_url_ref": "social-publishing-webhook-url",
+           "webhook_payload_keys": "red_pen.final_post,find_the_angle.rationale,research_desk.evidence",
+           "webhook_event": "krelvan.social.draft.approved",
+           "remember_map": "last_topic=find_the_angle.angle",
+           "output_map": "body=red_pen.final_post,format=markdown"
        },
        "nodes": [
            {
@@ -642,7 +647,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                "capabilities": [
                    {
                        "name": "notify_webhook",
-                       "sideEffect": "message-human",
+                       "sideEffect": "write-reversible",
                        "budgetCents": 10
                    }
                ]
@@ -718,8 +723,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   "author": "Krelvan",
   "kind": "template",
   "secretRefs": [
-   "slack-bot-token",
-   "resend-api-key"
+   "chief-of-staff-webhook-url"
   ],
   "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
   "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
@@ -734,7 +738,11 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            "meetings": "2:00pm — Priya Nair, VP Engineering at Corven Systems (technical evaluation of our platform). 4:00pm — Marcus Webb, CTO at Lumen Data (intro call, they build analytics infra).",
            "my_context": "I sell a self-hosted agentic-AI platform to engineering teams. My goal is to move deals forward and build real relationships.",
            "query": "Corven Systems company",
-           "remember_map": "last_prep=brief.result"
+           "webhook_url_ref": "chief-of-staff-webhook-url",
+           "webhook_payload_keys": "brief.result,brief.headline",
+           "webhook_event": "krelvan.meeting.brief.ready",
+           "remember_map": "last_prep=brief.result",
+           "output_map": "title=brief.headline,body=brief.result,format=markdown"
        },
        "nodes": [
            {
@@ -775,7 +783,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "brief",
-               "role": "You are writing the morning briefing the user reads before their day. Assemble assess_stakes 'ranked' and 'per_meeting' into ONE crisp, scannable briefing — lead with the meeting that matters most, one clear section per meeting (who, the one thing to know, open loops, talking points), no filler. Write it so the user could walk into any meeting prepared. Output object keys: result (the full briefing, ready to read), headline (one line: the single most important thing about today).",
+               "role": "You are writing the morning briefing the user reads before their day. Assemble assess_stakes 'ranked' and 'per_meeting' into ONE crisp, scannable briefing — lead with the meeting that matters most, one clear section per meeting (who, the one thing to know, open loops, talking points), no filler. End with a Sources section containing the complete public URLs from research_people that support factual claims; never show internal state-key references such as research_people.findings [1]. If a claim has no supporting URL, label it as a hypothesis or discussion prompt. Write it so the user could walk into any meeting prepared. Output object keys: result (the full briefing, ready to read), headline (one line: the single most important thing about today).",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -792,7 +800,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                "capabilities": [
                    {
                        "name": "notify_webhook",
-                       "sideEffect": "message-human",
+                       "sideEffect": "write-reversible",
                        "budgetCents": 10
                    }
                ]
@@ -957,7 +965,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
    }
  },
  {
-  "name": "growth-team",
+ "name": "growth-team",
   "title": "Autonomous Growth Team",
   "oneLiner": "A twelve-stage growth command team that reads and analyzes your live site, researches the market, audits discovery gaps, produces publish-ready assets, plans outreach, checks AI visibility, and pauses on the exact outbound payload.",
   "category": "Templates",
@@ -965,7 +973,9 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   "tier": "official",
   "author": "Krelvan",
   "kind": "template",
-  "secretRefs": [],
+  "secretRefs": [
+   "growth-publishing-webhook-url"
+  ],
   "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
   "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
   "manifest": {
@@ -984,8 +994,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            "style": "detailed",
            "launch_dossier.title": "Krelvan Launch Dossier",
            "launch_dossier.section_map": "Executive plan=growth_plan.result,Verified positioning=analyze_site.result,Market evidence=market_research.result,Discovery and SEO audit=seo_audit.result,Publish-ready assets=draft_content.result,Outreach plan=prospect_outreach.result,AI-answer visibility=ai_visibility.result",
-           "publish_webhook": "",
-           "webhook_url_key": "publish_webhook",
+           "webhook_url_ref": "growth-publishing-webhook-url",
            "webhook_payload_keys": "launch_dossier.result",
            "webhook_event": "krelvan.growth.dossier.ready",
            "remember_map": "last_growth_cycle=launch_dossier.result",
@@ -1004,12 +1013,6 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                "type": "textarea",
                "required": true,
                "placeholder": "Launch status, claims that may be used, claims that must not be made, and any channel constraints."
-           },
-           "publish_webhook": {
-               "label": "Publishing webhook (optional)",
-               "type": "url",
-               "placeholder": "https://…",
-               "description": "Leave blank for Inbox-only delivery. A configured destination still pauses for approval."
            }
        },
        "nodes": [
@@ -1135,12 +1138,12 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "publish",
-               "role": "Deliver the exact launch dossier and publish-ready assets through the configured publish_webhook. The connector mapping is explicit: webhook_url_key identifies the destination and webhook_payload_keys identifies the only state values allowed in the payload. This pauses and shows the owner the exact destination, event and payload before anything leaves Krelvan. If no webhook is configured, deliver to the Agent Inbox only. Output object key: announced.",
+               "role": "Deliver the exact launch dossier and publish-ready assets through the encrypted publishing-webhook secret. The connector mapping is explicit: webhook_payload_keys identifies the only state values allowed in the payload. This pauses and shows the owner the destination origin, event and payload before anything leaves Krelvan. If no webhook is configured, deliver to the Agent Inbox only. Output object key: announced.",
                "autonomy": "suggest",
                "capabilities": [
                    {
                        "name": "notify_webhook",
-                       "sideEffect": "message-human",
+                       "sideEffect": "write-reversible",
                        "budgetCents": 5
                    }
                ]
@@ -1228,12 +1231,6 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                "type": "text",
                "seedKey": "audience",
                "default": "technical founders and engineering leaders evaluating developer tools"
-           },
-           "publish_webhook": {
-               "label": "Publishing webhook (optional)",
-               "type": "text",
-               "seedKey": "publish_webhook",
-               "default": ""
            }
        }
    }
@@ -1796,7 +1793,6 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   "author": "Krelvan",
   "kind": "template",
   "secretRefs": [
-   "firecrawl-api-key",
    "intel-webhook-url"
   ],
   "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
@@ -1811,7 +1807,11 @@ export const REGISTRY_SEED: CatalogEntry[] = [
        "seed": {
            "competitor_url": "https://example.com/pricing",
            "competitor_label": "the watched competitor page",
-           "webhook_label": "the team intel channel"
+           "webhook_label": "the team intel channel",
+           "webhook_url_ref": "intel-webhook-url",
+           "webhook_payload_keys": "digest.result,extract.signal,deep_think.deep_findings",
+           "webhook_event": "krelvan.competitive-intel.ready",
+           "output_map": "body=digest.result,format=markdown"
        },
        "nodes": [
            {
@@ -1864,7 +1864,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "digest",
-               "role": "Compose a concise competitive-intel digest for the team. Use the extracted signal (extract.signal) and, if a deep dive ran, the deep_think.deep_findings synthesis. Lead with the headline change, then the external context if present, then a one-line 'why it matters'. Keep it skimmable — a few sentences, no fluff.",
+               "role": "Compose a concise competitive-intel digest for the team. Use the extracted signal (extract.signal) and, if a deep dive ran, the deep_think.deep_findings synthesis. Lead with the headline change, then the external context if present, then a one-line 'why it matters'. End with the exact competitor_url and any complete public source URLs returned by deep_dive; never cite an internal state-key reference. Keep it skimmable — a few sentences, no fluff.",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -2712,7 +2712,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
    }
  },
  {
-  "name": "incident-responder",
+ "name": "incident-responder",
   "title": "Incident Responder",
   "oneLiner": "A multi-stage incident command workflow that recalls prior incidents, normalizes noisy alerts, separates evidence from hypotheses, routes by impact, prepares a page or quiet log, updates a real status connector, and records the outcome.",
   "category": "Templates",
@@ -2720,7 +2720,9 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   "tier": "official",
   "author": "Krelvan",
   "kind": "template",
-  "secretRefs": [],
+  "secretRefs": [
+   "incident-status-webhook-url"
+  ],
   "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
   "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
   "manifest": {
@@ -2732,11 +2734,10 @@ export const REGISTRY_SEED: CatalogEntry[] = [
        "maxNodeVisits": 2,
        "seed": {
            "alert_source": "monitoring-webhook",
-           "status_channel": "https://hooks.example.com/incidents",
+           "webhook_url_ref": "incident-status-webhook-url",
            "remember_map": "last_incident=incident_brief.result",
            "candidates": "prepare_page,log_only",
            "telegram_text_key": "prepare_page.result",
-           "webhook_url_key": "status_channel",
            "webhook_payload_keys": "normalize_alert.result,correlate.result,triage.severity,triage.result,route.chosen_node,prepare_page.result,log_only.result",
            "webhook_event": "krelvan.incident.status",
            "output_map": "body=incident_brief.result,format=markdown"
@@ -2867,7 +2868,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "update_status",
-               "role": "Post only the explicitly mapped incident fields to status_channel. webhook_url_key and webhook_payload_keys define the exact destination and payload; do not substitute unrelated run state. Record whether the connector accepted the update.",
+               "role": "Post only the explicitly mapped incident fields to the encrypted status-webhook secret. webhook_payload_keys defines the exact payload; do not substitute unrelated run state. Record whether the connector accepted the update.",
                "autonomy": "full",
                "capabilities": [
                    {
@@ -2964,12 +2965,6 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                "type": "text",
                "rename": true,
                "default": "Incident Responder"
-           },
-           "status_channel": {
-               "label": "Status channel",
-               "type": "text",
-               "seedKey": "status_channel",
-               "default": "https://hooks.example.com/incidents"
            }
        }
    }
@@ -2999,7 +2994,13 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            "source": "Long-form blog post or transcript goes here.",
            "brand_label": "my brand voice profile",
            "channel": "default",
-           "remember_map": "last_core=extract.core"
+           "webhook_url_ref": "publishing-queue-webhook-url",
+           "webhook_payload_keys": "assemble.result,channel",
+           "webhook_event": "krelvan.content.draft.ready",
+           "remember_map": "last_core=extract.core",
+           "assemble.title": "Content package",
+           "assemble.section_map": "Short-form post=compose_short.result,Thread=compose_thread.result",
+           "output_map": "body=assemble.result,format=markdown"
        },
        "nodes": [
            {
@@ -3051,8 +3052,20 @@ export const REGISTRY_SEED: CatalogEntry[] = [
                ]
            },
            {
+               "id": "assemble",
+               "role": "Assemble both completed formats into one customer-facing markdown package without rewriting them. Use headings 'Short-form post' and 'Thread', then include compose_short.result and compose_thread.result verbatim under their matching heading. Output object key: result (the complete two-format package).",
+               "autonomy": "full",
+               "capabilities": [
+                   {
+                       "name": "compose",
+                       "sideEffect": "read",
+                       "budgetCents": 20
+                   }
+               ]
+           },
+           {
                "id": "queue",
-               "role": "Push BOTH finished formats (the short-form post from compose_short.result and the thread from compose_thread.result) to my publishing queue webhook as a single draft batch, tagged with the channel. This is a draft for me to approve before it goes live.",
+               "role": "Push the exact assembled two-format package (assemble.result) to my publishing queue webhook as a single draft batch, tagged with the channel. This is a draft for me to approve before it goes live.",
                "autonomy": "suggest",
                "capabilities": [
                    {
@@ -3105,6 +3118,10 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "from": "compose_thread",
+               "to": "assemble"
+           },
+           {
+               "from": "assemble",
                "to": "queue"
            }
        ],
@@ -3439,8 +3456,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
   "author": "Krelvan",
   "kind": "template",
   "secretRefs": [
-   "slack-bot-token",
-   "firecrawl-api-key"
+   "price-alert-webhook-url"
   ],
   "sourceUrl": "https://github.com/sreenathmmenon/krelvan-registry",
   "recommendedModel": "a capable model (Claude, GPT-4o, Gemini, or a strong local model on Ollama)",
@@ -3454,7 +3470,11 @@ export const REGISTRY_SEED: CatalogEntry[] = [
        "seed": {
            "url": "https://example.com",
            "watch_label": "the watched page",
-           "remember_map": "last_price=analyze.current_price"
+           "webhook_url_ref": "price-alert-webhook-url",
+           "webhook_payload_keys": "analyze.current_price,analyze.result,watch_label,url",
+           "webhook_event": "krelvan.price.changed",
+           "remember_map": "last_price=analyze.current_price",
+           "output_map": "body=analyze.result,format=text"
        },
        "nodes": [
            {
@@ -3495,7 +3515,7 @@ export const REGISTRY_SEED: CatalogEntry[] = [
            },
            {
                "id": "alert",
-               "role": "Post the price-change summary to the operator.",
+               "role": "Post only the explicitly mapped price-change summary to the encrypted alert-webhook secret. Never use the watched page URL as the notification destination.",
                "autonomy": "full",
                "capabilities": [
                    {

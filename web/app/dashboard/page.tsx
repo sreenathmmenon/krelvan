@@ -418,7 +418,7 @@ export default function Dashboard() {
                 <span className="workspace-trust__mark" aria-hidden="true"><SealGlyph size={13} /></span>
                 <span className="workspace-trust__text">
                   <strong>Every run recorded</strong>
-                  <span>complete · replayable</span>
+                  <span>signed · replayable</span>
                 </span>
               </div>
             </div>
@@ -558,7 +558,7 @@ export default function Dashboard() {
               ) : (
                 <div className="stat-cell stat-cell--proof">
                   <span className="stat-value">{recordedRuns}<span className="stat-value__sub">/{runs.length}</span></span>
-                  <span className="stat-label">complete · replayable</span>
+                  <span className="stat-label">recorded · replayable</span>
                 </div>
               )}
             </div>
@@ -642,7 +642,9 @@ export default function Dashboard() {
                           {(r.status === "completed" || r.status === "failed") && (
                             <div className="run-record-strip">
                               <span className="run-record-strip__seal" style={{ display: "inline-flex" }}><SealGlyph size={11} /></span>
-                              <span className="run-record-strip__tag">complete · replayable</span>
+                              <span className="run-record-strip__tag">
+                                {r.status === "completed" ? "completed · replayable" : "failed · recorded"}
+                              </span>
                               <span className="run-record-strip__hash mono">{r.runId.replace(/^run-/, "").slice(-6)}</span>
                             </div>
                           )}

@@ -1116,13 +1116,13 @@ async function handleChat(req: IncomingMessage, res: ServerResponse, params: Rec
   json(res, 200, { reply: result.reply, runId: result.runId, status: result.status, threadId });
 }
 
-async function handleGetDelivery(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
-  const agentId = params["id"] ?? "";
-  const agent = rt.agentRegistry.get(agentId);
-  if (!agent) { jsonError(res, 404, "agent not found"); return; }
+function maskDeliveryTargets(targets: import("./delivery.js").DeliveryTarget[]): Array<{
+  channel: import("./delivery.js").DeliveryChannel;
+  config?: Record<string, string | boolean>;
+}> {
   // Never return secret refs to the client. Replace each `<field>_ref` with a `<field>_saved: true`
   // flag so the UI can show "saved" without the secret name or value leaving the server.
-  const masked = (agent.deliverTo ?? []).map((t) => {
+  return targets.map((t) => {
     if (!t.config) return t;
     const config: Record<string, string | boolean> = {};
     for (const [k, v] of Object.entries(t.config)) {
@@ -1131,28 +1131,47 @@ async function handleGetDelivery(_req: IncomingMessage, res: ServerResponse, par
     }
     return { ...t, config };
   });
+}
+
+async function handleGetDelivery(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
+  const agentId = params["id"] ?? "";
+  const agent = rt.agentRegistry.get(agentId);
+  if (!agent) { jsonError(res, 404, "agent not found"); return; }
+  const masked = maskDeliveryTargets(agent.deliverTo ?? []);
   json(res, 200, { deliverTo: masked });
 }
 
 async function handleSetDelivery(req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {
   const agentId = params["id"] ?? "";
-  if (!rt.agentRegistry.get(agentId)) { jsonError(res, 404, "agent not found"); return; }
+  const agent = rt.agentRegistry.get(agentId);
+  if (!agent) { jsonError(res, 404, "agent not found"); return; }
   let body: unknown;
   try { body = JSON.parse(await readBody(req)); } catch { jsonError(res, 400, "invalid JSON"); return; }
   const { sanitizeTargets } = await import("./delivery.js");
   const targets = sanitizeTargets((body as { deliverTo?: unknown })?.deliverTo);
-  // Secrets in a delivery config (Twilio auth_token, X/LinkedIn bearer_token) must NOT be persisted
-  // in plaintext in the agent record on disk. Move each secret-like field into the encrypted
-  // SecretStore under a per-agent/channel name and leave only a reference the delivery layer resolves.
-  const SECRET_FIELDS = new Set(["bearer_token", "auth_token", "account_sid"]);
+  // Credentials in a delivery config must NOT be persisted in plaintext in the agent record on
+  // disk. Webhook URLs are credentials too: Slack, Discord, and many generic hooks carry an
+  // unguessable bearer token in the path or query. Move them into the encrypted SecretStore and
+  // leave only a server-side reference that is resolved immediately before delivery.
+  const SECRET_FIELDS = new Set(["bearer_token", "auth_token", "account_sid", "webhook_url", "url"]);
+  const existingByChannel = new Map((agent.deliverTo ?? []).map((target) => [target.channel, target]));
   for (const t of targets) {
-    if (!t.config) continue;
+    t.config ??= {};
+    const previous = existingByChannel.get(t.channel)?.config;
+    // A masked GET deliberately gives the browser only `<field>_saved: true`. When the customer
+    // saves without entering a replacement, retain the already-encrypted reference. Disabling the
+    // channel still removes the target and therefore disables delivery.
+    for (const field of SECRET_FIELDS) {
+      if (t.config[field]) continue;
+      const ref = previous?.[`${field}_ref`];
+      if (ref) t.config[`${field}_ref`] = ref;
+    }
     for (const [k, v] of Object.entries(t.config)) {
       if (SECRET_FIELDS.has(k) && v && !k.endsWith("_ref")) {
         // Secret names allow only [a-zA-Z0-9_.-] — sanitize the agentId (sha256:…) and channel
         // into that charset so the store accepts the name and the field is actually extracted.
         const safe = (s: string) => s.replace(/[^a-zA-Z0-9_.-]/g, "_");
-        const secretName = `delivery.${safe(agentId)}.${safe(t.channel)}.${k}`;
+        const secretName = `__delivery__.${safe(agentId)}.${safe(t.channel)}.${k}`;
         const r = rt.secretStore.set(secretName, v);
         // Either way, the plaintext secret must NOT remain on the record. On success, store the
         // ref; on failure (e.g. empty value), drop the field entirely rather than persist it.
@@ -1162,7 +1181,7 @@ async function handleSetDelivery(req: IncomingMessage, res: ServerResponse, para
     }
   }
   rt.agentRegistry.setDeliverTo(agentId, targets);
-  json(res, 200, { deliverTo: targets });
+  json(res, 200, { deliverTo: maskDeliveryTargets(targets) });
 }
 
 async function handleGetTrigger(_req: IncomingMessage, res: ServerResponse, params: Record<string, string>, rt: KrelvanRuntime): Promise<void> {

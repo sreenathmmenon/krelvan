@@ -282,7 +282,7 @@ export function validateManifest(m: Manifest): ValidationIssue[] {
   for (const n of m.nodes) {
     for (const c of n.capabilities) {
       if (!Number.isInteger(c.budgetCents) || c.budgetCents < 0) {
-        issues.push({ code: "BAD_CAP_BUDGET", message: `node '${n.id}' cap '${c.name}' budget must be a non-negative integer cents` });
+        issues.push({ code: "BAD_CAP_BUDGET", message: `node '${n.id}' cap '${c.name}' reservation must be a non-negative integer` });
       }
     }
   }

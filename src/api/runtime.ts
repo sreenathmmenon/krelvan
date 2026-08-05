@@ -53,7 +53,7 @@ import { telegramSendCapability, resolveTelegramInput, setTelegramSecretResolver
 import { resolveSlackInput, slackSendCapability } from "../core/plugins/slack-send.js";
 import { httpGetCapability } from "../core/plugins/http-get.js";
 import { httpPostCapability } from "../core/plugins/http-post.js";
-import { notifyWebhookCapability, resolveWebhookInput } from "../core/plugins/notify-webhook.js";
+import { notifyWebhookCapability, resolveWebhookInput, setWebhookSecretResolver } from "../core/plugins/notify-webhook.js";
 import { PluginLifecycleService } from "../core/plugins/lifecycle-service.js";
 import { PluginActivator } from "../core/plugins/plugin-activator.js";
 import { PluginFactory } from "../core/plugins/plugin-factory.js";
@@ -897,6 +897,7 @@ export class KrelvanRuntime {
     // the encrypted SecretStore so a UI-connected Telegram works with no env var / restart.
     setTelegramSecretResolver((name) => this.secretStore.resolve(name));
     setEmailSecretResolver((name) => this.secretStore.resolve(name));
+    setWebhookSecretResolver((name) => this.secretStore.resolve(name));
     // web_search resolves its search-provider key (Brave/Tavily/Serper/… — the customer's choice)
     // through the same encrypted SecretStore, so a customer configures search in the UI with no
     // env var or restart. Falls back to env for a platform default.
@@ -1894,7 +1895,12 @@ export class KrelvanRuntime {
       add("Message", request.text);
     } else if (capability === "notify_webhook") {
       const request = resolveWebhookInput(nodeId, state);
-      add("Destination", request.url || "Agent Inbox only");
+      let destination = "Agent Inbox only";
+      if (request.url) {
+        try { destination = new URL(request.url).origin; }
+        catch { destination = "Configured webhook (invalid URL)"; }
+      }
+      add("Destination", destination);
       const payload = typeof request.payload === "string" ? request.payload : JSON.stringify(request.payload, null, 2);
       add("Payload", payload);
       add("Event", request.event);
@@ -2958,15 +2964,34 @@ export class KrelvanRuntime {
       // Resolve any *_ref delivery secrets (stored encrypted, never in plaintext on the record)
       // back into their plaintext values only at send time, in memory, for this one delivery.
       const resolvedTargets = targets.map((t) => {
-        if (!t.config) return t;
         const config: Record<string, string> = {};
-        for (const [k, v] of Object.entries(t.config)) {
+        for (const [k, v] of Object.entries(t.config ?? {})) {
           if (k.endsWith("_ref")) {
             const val = this.secretStore.resolve(v);
             if (val) config[k.slice(0, -"_ref".length)] = val;
           } else {
             config[k] = v;
           }
+        }
+        // Secrets entered on the instance Secrets page use the same names as headless env
+        // configuration. Inject them only when an agent-specific value is absent. This makes
+        // the UI promise true for direct delivery channels without copying credentials into the
+        // agent record or process environment.
+        const defaultSecret = (field: string, name: string): void => {
+          if (config[field]) return;
+          const value = this.secretStore.resolve(name);
+          if (value) config[field] = value;
+        };
+        if (t.channel === "slack") defaultSecret("webhook_url", "KRELVAN_SLACK_WEBHOOK_URL");
+        if (t.channel === "sms" || t.channel === "whatsapp") {
+          defaultSecret("account_sid", "KRELVAN_TWILIO_SID");
+          defaultSecret("auth_token", "KRELVAN_TWILIO_TOKEN");
+          defaultSecret("from", "KRELVAN_TWILIO_FROM");
+        }
+        if (t.channel === "twitter") defaultSecret("bearer_token", "KRELVAN_X_BEARER");
+        if (t.channel === "linkedin") {
+          defaultSecret("bearer_token", "KRELVAN_LINKEDIN_BEARER");
+          defaultSecret("author_urn", "KRELVAN_LINKEDIN_URN");
         }
         return { ...t, config };
       });

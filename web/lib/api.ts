@@ -1029,7 +1029,8 @@ export type DeliveryChannel =
 
 export interface DeliveryTarget {
   channel: DeliveryChannel;
-  config?: Record<string, string>;
+  /** GET responses may include `<credential>_saved: true`; plaintext credentials never return. */
+  config?: Record<string, string | boolean>;
 }
 
 /** Where this agent's output is delivered when a run completes. Inbox is always included by the server. */

@@ -1,7 +1,49 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { resolveWebhookInput } from "./notify-webhook.js";
+import { resolveWebhookInput, setWebhookSecretResolver } from "./notify-webhook.js";
+
+test("notify webhook resolves encrypted endpoint and signing-secret references", () => {
+  const values: Record<string, string> = {
+    "publishing-endpoint": "https://example.com/hooks/private-path?token=sensitive",
+    "publishing-signing-key": "signing-secret",
+  };
+  setWebhookSecretResolver((name) => values[name]);
+
+  try {
+    const resolved = resolveWebhookInput("publish", {
+      webhook_url_ref: "publishing-endpoint",
+      webhook_signing_secret_ref: "publishing-signing-key",
+      webhook_payload_keys: "draft.result",
+      "draft.result": "Approved draft",
+    });
+
+    assert.deepEqual(resolved, {
+      url: values["publishing-endpoint"],
+      payload: { "draft.result": "Approved draft" },
+      secret: "signing-secret",
+    });
+  } finally {
+    setWebhookSecretResolver((name) => process.env[name]);
+  }
+});
+
+test("encrypted webhook endpoint wins over an unrelated generic URL", () => {
+  setWebhookSecretResolver((name) => name === "alert-endpoint" ? "https://example.com/alerts" : undefined);
+
+  try {
+    const resolved = resolveWebhookInput("alert", {
+      webhook_url_ref: "alert-endpoint",
+      url: "https://example.com/product-being-watched",
+      webhook_payload_keys: "analyze.result",
+      "analyze.result": "Price changed",
+    });
+
+    assert.equal(resolved.url, "https://example.com/alerts");
+  } finally {
+    setWebhookSecretResolver((name) => process.env[name]);
+  }
+});
 
 test("notify webhook resolves explicit destination and payload mappings", () => {
   const resolved = resolveWebhookInput("publish", {

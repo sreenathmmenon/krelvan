@@ -91,14 +91,14 @@ async function main(): Promise<void> {
   console.log("\nVIEW — Canvas (node states), folded from the log:");
   for (const [node, st] of Object.entries(p.nodes)) console.log(`  ${node}: ${st.concluded ? "done" : st.entered ? "running" : "idle"} (visits ${st.visits})`);
 
-  console.log("\nVIEW — Budget meter (abstract units, folded exactly from the log):");
-  console.log(`  used ${p.budget.runSpentCents} of ${manifest.runBudgetCents} budget units; reserved open: ${p.budget.runReservedCents}`);
+  console.log("\nVIEW — Reservation accounting, folded exactly from the log:");
+  console.log(`  settled from signed results; open reservations: ${p.budget.runReservedCents === 0 ? "none" : "present"}`);
 
   console.log("\nVIEW — Who signed each effect result (plugins never self-sign):");
   for (const e of events as LedgerEvent[]) {
     if (e.type === "EffectResult") {
       const pl = e.payload as { idem?: string; costCents?: number };
-      console.log(`  ${pl.idem} → ${pl.costCents} units, signed by '${e.author}'`);
+      console.log(`  ${pl.idem} → settled, signed by '${e.author}'`);
     }
   }
 

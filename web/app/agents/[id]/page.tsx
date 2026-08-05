@@ -1722,17 +1722,19 @@ const DELIVERY_CHANNELS: {
   placeholder: string;
   fieldLabel: string;
   needsSecret: boolean;
+  /** The value entered in this field is itself a credential and is encrypted at rest. */
+  credentialField?: boolean;
   note?: string;
 }[] = [
-  { channel: "email",    label: "Email",       blurb: "Send the result to an email address.",              configKey: "to",           required: true,  placeholder: "you@company.com",                     fieldLabel: "Send to",                     needsSecret: true  },
-  { channel: "slack",    label: "Slack",       blurb: "Post the result to a Slack channel.",               configKey: "webhook_url",  required: false, placeholder: "https://hooks.slack.com/services/…",  fieldLabel: "Incoming webhook URL (optional)", needsSecret: true  },
-  { channel: "telegram", label: "Telegram",    blurb: "Message the result to a Telegram chat.",            configKey: "chat_id",      required: false, placeholder: "123456789",                           fieldLabel: "Chat ID (optional)",          needsSecret: true  },
-  { channel: "webhook",  label: "Webhook",     blurb: "POST the result as JSON to any URL you control.",   configKey: "url",          required: true,  placeholder: "https://api.example.com/hook",        fieldLabel: "POST to URL",                 needsSecret: false },
-  { channel: "discord",  label: "Discord",     blurb: "Post the result to a Discord channel.",             configKey: "url",          required: true,  placeholder: "https://discord.com/api/webhooks/…",  fieldLabel: "Discord webhook URL",         needsSecret: true  },
-  { channel: "sms",      label: "SMS",         blurb: "Text the result via Twilio SMS.",                   configKey: "to",           required: true,  placeholder: "+15551234567",                        fieldLabel: "Send to (phone)",             needsSecret: true, note: "Also set your Twilio account SID, auth token, and from-number in Secrets." },
-  { channel: "whatsapp", label: "WhatsApp",    blurb: "Message the result via Twilio WhatsApp.",           configKey: "to",           required: true,  placeholder: "+15551234567",                        fieldLabel: "Send to (WhatsApp number)",   needsSecret: true, note: "Also set your Twilio account SID, auth token, and from-number in Secrets." },
-  { channel: "twitter",  label: "X (Twitter)", blurb: "Auto-post the result to X.",                        configKey: "bearer_token", required: true,  placeholder: "your X API bearer token",             fieldLabel: "X bearer token",              needsSecret: true, note: "Paste an X (Twitter) API bearer token with write access — no other keys needed." },
-  { channel: "linkedin", label: "LinkedIn",    blurb: "Auto-post the result to LinkedIn.",                 configKey: "author_urn",   required: true,  placeholder: "urn:li:person:…",                     fieldLabel: "LinkedIn author URN",         needsSecret: true, note: "Also set a LinkedIn member bearer token in Secrets; the author URN identifies who posts." },
+  { channel: "email",    label: "Email",       blurb: "Send the result to an email address.",              configKey: "to",           required: true,  placeholder: "you@company.com",                     fieldLabel: "Send to",                     needsSecret: true, note: "Connect your email provider once, then choose recipients per agent." },
+  { channel: "slack",    label: "Slack",       blurb: "Post the result to a Slack channel.",               configKey: "webhook_url",  required: false, placeholder: "https://hooks.slack.com/services/…",  fieldLabel: "Incoming webhook URL (optional)", needsSecret: false, credentialField: true, note: "Paste a URL here for this agent, or save KRELVAN_SLACK_WEBHOOK_URL in Secrets as the instance default." },
+  { channel: "telegram", label: "Telegram",    blurb: "Message the result to a Telegram chat.",            configKey: "chat_id",      required: false, placeholder: "123456789",                           fieldLabel: "Chat ID (optional)",          needsSecret: true, note: "Connect Telegram once; leave Chat ID blank to use the connected default chat." },
+  { channel: "webhook",  label: "Webhook",     blurb: "POST the result as JSON to any URL you control.",   configKey: "url",          required: true,  placeholder: "https://api.example.com/hook",        fieldLabel: "POST to URL",                 needsSecret: false, credentialField: true },
+  { channel: "discord",  label: "Discord",     blurb: "Post the result to a Discord channel.",             configKey: "url",          required: true,  placeholder: "https://discord.com/api/webhooks/…",  fieldLabel: "Discord webhook URL",         needsSecret: false, credentialField: true },
+  { channel: "sms",      label: "SMS",         blurb: "Text the result via Twilio SMS.",                   configKey: "to",           required: true,  placeholder: "+15551234567",                        fieldLabel: "Send to (phone)",             needsSecret: true, note: "In Secrets, add KRELVAN_TWILIO_SID, KRELVAN_TWILIO_TOKEN, and KRELVAN_TWILIO_FROM." },
+  { channel: "whatsapp", label: "WhatsApp",    blurb: "Message the result via Twilio WhatsApp.",           configKey: "to",           required: true,  placeholder: "+15551234567",                        fieldLabel: "Send to (WhatsApp number)",   needsSecret: true, note: "In Secrets, add KRELVAN_TWILIO_SID, KRELVAN_TWILIO_TOKEN, and KRELVAN_TWILIO_FROM." },
+  { channel: "twitter",  label: "X (Twitter)", blurb: "Auto-post the result to X.",                        configKey: "bearer_token", required: true,  placeholder: "your X API bearer token",             fieldLabel: "X bearer token",              needsSecret: false, credentialField: true, note: "Use a bearer token with write access. It is encrypted at rest and never returned to the browser." },
+  { channel: "linkedin", label: "LinkedIn",    blurb: "Auto-post the result to LinkedIn.",                 configKey: "author_urn",   required: true,  placeholder: "urn:li:person:…",                     fieldLabel: "LinkedIn author URN",         needsSecret: true, note: "In Secrets, add KRELVAN_LINKEDIN_BEARER. The author URN identifies who posts." },
 ];
 
 function DeliveryPanel({ agentId }: { agentId: string }) {
@@ -1740,6 +1742,7 @@ function DeliveryPanel({ agentId }: { agentId: string }) {
   // string even while a channel is toggled off, so toggling back on doesn't lose a typed URL.
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [config, setConfig] = useState<Record<string, string>>({});
+  const [savedCredential, setSavedCredential] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1752,14 +1755,20 @@ function DeliveryPanel({ agentId }: { agentId: string }) {
       const targets = await getDelivery(agentId);
       const en: Record<string, boolean> = {};
       const cfg: Record<string, string> = {};
+      const savedCfg: Record<string, boolean> = {};
       for (const t of targets) {
         if (t.channel === "inbox") continue; // inbox is implicit/always-on
         en[t.channel] = true;
         const meta = DELIVERY_CHANNELS.find(c => c.channel === t.channel);
-        if (meta?.configKey && t.config) cfg[t.channel] = t.config[meta.configKey] ?? "";
+        if (meta?.configKey && t.config) {
+          const value = t.config[meta.configKey];
+          if (typeof value === "string") cfg[t.channel] = value;
+          if (t.config[`${meta.configKey}_saved`] === true) savedCfg[t.channel] = true;
+        }
       }
       setEnabled(en);
       setConfig(cfg);
+      setSavedCredential(savedCfg);
       setLoadErr(null);
     } catch (e) {
       setLoadErr((e as Error).message || "Could not load delivery settings.");
@@ -1777,11 +1786,12 @@ function DeliveryPanel({ agentId }: { agentId: string }) {
   function setCfg(channel: string, value: string) {
     setSaved(false);
     setConfig(prev => ({ ...prev, [channel]: value }));
+    setSavedCredential(prev => ({ ...prev, [channel]: false }));
   }
 
   // Channels that are enabled but still missing a required config value — block Save.
   const incomplete = DELIVERY_CHANNELS.filter(
-    c => enabled[c.channel] && c.required && !(config[c.channel] ?? "").trim(),
+    c => enabled[c.channel] && c.required && !(config[c.channel] ?? "").trim() && !savedCredential[c.channel],
   );
 
   async function handleSave() {
@@ -1803,6 +1813,9 @@ function DeliveryPanel({ agentId }: { agentId: string }) {
         targets.push(target);
       }
       await setDelivery(agentId, targets);
+      // Reload the masked response so a newly entered credential is immediately removed from
+      // browser state and shown only as securely saved.
+      await load();
       setSaved(true);
       setTimeout(() => setSaved(false), 4000);
     } catch (e) {
@@ -1846,7 +1859,7 @@ function DeliveryPanel({ agentId }: { agentId: string }) {
           {/* The addable channels */}
           {DELIVERY_CHANNELS.map(c => {
             const on = !!enabled[c.channel];
-            const missing = on && c.required && !(config[c.channel] ?? "").trim();
+            const missing = on && c.required && !(config[c.channel] ?? "").trim() && !savedCredential[c.channel];
             return (
               <div key={c.channel} className="card" style={{ padding: "var(--s4) var(--s5)", display: "flex", flexDirection: "column", gap: on && c.configKey ? "var(--s4)" : 0, borderLeft: `3px solid ${on ? "var(--brand)" : "var(--line-strong)"}` }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "var(--s4)" }}>
@@ -1880,6 +1893,11 @@ function DeliveryPanel({ agentId }: { agentId: string }) {
                       placeholder={c.placeholder}
                       aria-invalid={missing}
                     />
+                    {c.credentialField && savedCredential[c.channel] && !(config[c.channel] ?? "").trim() && (
+                      <span className="small" style={{ color: "var(--ok)" }}>
+                        Saved securely. Leave blank to keep it, or enter a replacement.
+                      </span>
+                    )}
                     {c.needsSecret && (
                       <span className="small muted">
                         Set the channel&apos;s key in{" "}

@@ -114,7 +114,7 @@ async function main(): Promise<void> {
 
   console.log(`  run status: ${res.status}`);
   console.log(`  ledger: ${events.length} signed events, verified: ${v.ok ? "✔" : "✗"}`);
-  console.log(`  budget: ${p.budget.runSpentCents} of ${asOwner.signed.manifest.runBudgetCents} units used`);
+  console.log(`  reservation accounting: ${p.budget.runReservedCents === 0 ? "fully settled" : "open reservations remain"}`);
   console.log(`  nodes: ${Object.entries(p.nodes).map(([n, s]) => `${n}=${s.concluded ? "done" : "?"}`).join(", ")}`);
 
   const allOk = !asChannel.ok && res.status === "completed" && v.ok && p.budget.runSpentCents === 10;
