@@ -154,7 +154,7 @@ if (enableTs.ok) {
   console.log("\n5. Invoking text.transform (uppercase 'hello world')...");
   const call: EffectCall = { nodeId: "demo-node", capability: "text.transform", input: { text: "hello world", operation: "uppercase" } };
   const estimate = supervisor.estimate(call);
-  console.log("   Reservation admitted:", estimate >= 0 ? "yes" : "no");
+  console.log("   Reservation admitted:", estimate === null ? "no" : "yes");
   const result = await supervisor.run(call, "demo-idem-001");
   console.log("   Output:", result.output);
   console.log("   Reservation accounting: settled");
