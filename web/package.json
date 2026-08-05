@@ -1,6 +1,6 @@
 {
   "name": "krelvan-web",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "Krelvan web UI — the ledger made visible.",
   "scripts": {

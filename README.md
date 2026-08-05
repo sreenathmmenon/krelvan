@@ -87,7 +87,7 @@ switches on after you connect a hosted provider or local Ollama.
 
 ```bash
 node -v                    # must be 22 or newer
-npx krelvan@0.1.4
+npx krelvan@0.1.5
 ```
 
 The first start installs and builds the web UI, so it can take a few minutes. Later starts
@@ -115,7 +115,7 @@ the same command again to restart. Ports: `PORT` or `KRELVAN_WEB_PORT` (web, def
 Download the versioned compose file; no source checkout or Node toolchain is required:
 
 ```bash
-curl -LO https://github.com/sreenathmmenon/krelvan/releases/download/v0.1.4/docker-compose.release.yml
+curl -LO https://github.com/sreenathmmenon/krelvan/releases/download/v0.1.5/docker-compose.release.yml
 docker compose -f docker-compose.release.yml up -d
 ```
 
@@ -124,12 +124,12 @@ persist in the named volume `krelvan-data`.
 
 ### Signed manual release
 
-Download `krelvan-0.1.4.tgz`, `SHA256SUMS`, and the attestations from the
-[v0.1.4 release](https://github.com/sreenathmmenon/krelvan/releases/tag/v0.1.4).
+Download `krelvan-0.1.5.tgz`, `SHA256SUMS`, and the attestations from the
+[v0.1.5 release](https://github.com/sreenathmmenon/krelvan/releases/tag/v0.1.5).
 After verification:
 
 ```bash
-npm install --global ./krelvan-0.1.4.tgz
+npm install --global ./krelvan-0.1.5.tgz
 krelvan
 ```
 

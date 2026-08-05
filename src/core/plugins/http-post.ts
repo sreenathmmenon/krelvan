@@ -27,6 +27,21 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_TIMEOUT_MS = 30_000;
 const RESPONSE_MAX_BYTES = 16_384;
 
+function mappedString(nodeId: string, input: Record<string, unknown>, field: "url" | "body"): string | undefined {
+  const ref = input[`${nodeId}.${field}_key`] ?? input[`http_${field}_key`];
+  if (typeof ref !== "string" || !ref.trim()) return undefined;
+  const value = input[ref.trim()];
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+/** Resolve connector bindings without evaluating model output as code. */
+export function resolveHttpPostInput(nodeId: string, input: Record<string, unknown>): { url: unknown; body: string } {
+  return {
+    url: mappedString(nodeId, input, "url") ?? input["url"] ?? input["target_url"],
+    body: mappedString(nodeId, input, "body") ?? (typeof input["body"] === "string" ? input["body"] : ""),
+  };
+}
+
 // (SSRF protection moved to the shared ssrf-guard.ts — see assertPublicUrl.)
 
 function parseOptionalHeaders(raw: unknown): Record<string, string> {
@@ -57,7 +72,8 @@ export const httpPostCapability: CapabilityPlugin = {
 
     // ── Input validation ──────────────────────────────────────────────────────
 
-    const rawUrl = input["url"];
+    const resolved = resolveHttpPostInput(call.nodeId, input);
+    const rawUrl = resolved.url;
     if (!rawUrl || typeof rawUrl !== "string" || rawUrl.trim() === "") {
       return {
         output: { ok: false, error: "url is required" },
@@ -86,8 +102,7 @@ export const httpPostCapability: CapabilityPlugin = {
       };
     }
 
-    const bodyRaw = input["body"];
-    const bodyStr = typeof bodyRaw === "string" ? bodyRaw : "";
+    const bodyStr = resolved.body;
 
     const contentType =
       typeof input["content_type"] === "string" && input["content_type"].trim() !== ""

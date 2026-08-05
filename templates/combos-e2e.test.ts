@@ -2,8 +2,8 @@
  * Combination-workflow proofs for two more build-and-sell chains:
  *   #2 Lead to Outreach:  enrich(read) -> qualify(read) -> crm_write(reversible)
  *                         -> draft(read) -> send(email, human-gated) | done_unqualified
- *   #5 Order to Refund:   lookup(read) -> decide(read) -> refund(MONEY, irreversible,
- *                         human-gated) -> notify(email) | deny_note
+ *   #5 Order to Refund:   lookup(read) -> decide(read) -> prepare_refund(read)
+ *                         -> refund(MONEY, irreversible, human-gated) -> notify(email) | deny_note
  *
  * These test the two things that separate a platform from a toy across MORE connectors:
  * a chain of side-effects that BRANCHES on an LLM decision, and the human-approval gate
@@ -125,16 +125,17 @@ test("order-to-refund validates; refund is irreversible + human-gated", () => {
   assert.equal(r.capabilities[0]!.sideEffect, "write-irreversible");
 });
 
-test("REFUND approved: lookup -> decide -> refund -> notify; money moves once; ledger verifies", async () => {
+test("REFUND approved: request is prepared, reviewed, posted once, then notified; ledger verifies", async () => {
   const out = {
     lookup: { amount_cents: 12900, days_since_order: 9, status: "DELIVERED", issue: "damaged" },
     decide: { verdict: "refund", amount_cents: 12900, reason: "damaged within 30 days per policy" },
+    prepare_refund: { body: '{"order_id":"A-2481","amount_minor_units":12900}', subject: "Refund for A-2481", confirmation: "The refund was issued." },
     refund: { refund_id: "re_1" },
     notify: { sent: true },
   };
   const { res, ring, store, seq } = await run(refund, out, () => true);
   assert.equal(res.status, "completed", `expected completed, got ${res.status} ${res.reason ?? ""}`);
-  assert.deepEqual(seq, ["lookup", "decide", "refund", "notify"]);
+  assert.deepEqual(seq, ["lookup", "decide", "prepare_refund", "refund", "notify"]);
   assert.equal(res.projection.state["refund.refund_id"], "re_1");
   assert.ok(verify(await store.read("t1"), ring).ok);
 });
@@ -143,6 +144,7 @@ test("REFUND denied at the money gate: NO money moves", async () => {
   const out = {
     lookup: { amount_cents: 12900, days_since_order: 9, status: "DELIVERED", issue: "damaged" },
     decide: { verdict: "refund", amount_cents: 12900, reason: "…" },
+    prepare_refund: { body: '{"order_id":"A-2481","amount_minor_units":12900}', subject: "Refund for A-2481", confirmation: "The refund was approved." },
   };
   // approve everything except the irreversible refund http_post
   const { res, store, seq } = await run(refund, out, (c) => c.capability !== "http_post");

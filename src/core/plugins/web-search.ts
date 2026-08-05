@@ -187,6 +187,31 @@ export function subjectFromInstruction(s: string): string {
   return t;
 }
 
+/**
+ * Resolve an explicitly mapped search subject from run state. A multi-step agent often learns
+ * the precise subject in an earlier node (for example `extract.signal`), so forcing it to carry a
+ * static top-level `query` makes the later search unrelated to what the agent discovered. The
+ * manifest names the state key as data; we read that value without evaluating it as code.
+ */
+export function mappedSearchSubject(nodeId: string, input: Record<string, unknown>): string {
+  const mapping = [
+    input[`${nodeId}.query_key`],
+    input[`${nodeId}_query_key`],
+    input["web_search_query_key"],
+    input["search_query_key"],
+  ].find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  if (!mapping) return "";
+  const value = input[mapping.trim()];
+  if (typeof value !== "string") return "";
+  const subject = value.trim();
+  if (!subject || subject.length > 400) return "";
+  // isInstruction intentionally rejects any value over 140 characters. Bound first so a normal
+  // one-sentence upstream signal is usable, while instruction-shaped prefixes still fail closed.
+  const bounded = subject.slice(0, 140).trim();
+  if (!bounded || isInstruction(bounded)) return "";
+  return bounded;
+}
+
 // Trim a snippet to a single, clean line for the human-facing summary — strip any markdown the
 // source embedded (headings, inline links, emphasis, code), collapse whitespace, drop to the first
 // sentence-ish, and cap the length so each result stays scannable.
@@ -328,7 +353,7 @@ export const webSearchCapability: CapabilityPlugin = {
     // ambiguous `topic`/`subject` fields still get the instruction filter.
     const literalKeys = ["query", "search_query", "q"];
     const ambiguousKeys = ["topic", "subject"];
-    let query = "";
+    let query = mappedSearchSubject(call.nodeId, input);
     for (const k of literalKeys) {
       const v = String(input[k] ?? "").trim();
       if (v) { query = v; break; }

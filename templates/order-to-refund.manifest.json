@@ -3,15 +3,26 @@
   "name": "Order to Refund",
   "intent": "Handle a refund request: pull the order, decide if it qualifies under policy, and — only with my explicit approval — issue the refund and email the customer. The refund MOVES REAL MONEY, so it is the hardest-gated step in the system",
   "entry": "lookup",
-  "runBudgetCents": 437,
+  "runBudgetCents": 500,
   "maxNodeVisits": 2,
   "seed": {
-    "order_id": "A-2481",
-    "order_record": "Order A-2481: $129.00, placed 9 days ago, status DELIVERED 2 days ago. Customer reports item arrived damaged, photo attached.",
+    "order_id": "",
+    "order_record": "",
     "refund_policy": "Full refund within 30 days if item is defective or damaged on arrival. No refund for buyer's remorse after delivery.",
-    "customer_email": "sam@example.com",
-    "url": "https://postman-echo.com/post",
-    "refund_url": "https://postman-echo.com/post"
+    "customer_email": "",
+    "url": "",
+    "refund.body_key": "prepare_refund.body",
+    "email_to_key": "customer_email",
+    "email_subject_key": "prepare_refund.subject",
+    "email_body_key": "prepare_refund.confirmation",
+    "output_map": "title=prepare_refund.subject,body=prepare_refund.confirmation,format=text"
+  },
+  "inputs": {
+    "order_id": { "label": "Order ID", "type": "text", "required": true, "placeholder": "The order to evaluate" },
+    "order_record": { "label": "Order facts", "type": "textarea", "required": true, "placeholder": "Status, amount in integer minor units, dates, and the customer's reported issue" },
+    "refund_policy": { "label": "Refund policy", "type": "textarea", "required": true, "placeholder": "The exact policy this decision must follow" },
+    "customer_email": { "label": "Customer email", "type": "email", "required": true, "placeholder": "customer@your-domain.com" },
+    "url": { "label": "Refund API endpoint", "type": "url", "required": true, "placeholder": "Your HTTPS refund endpoint" }
   },
   "nodes": [
     {
@@ -39,8 +50,20 @@
       ]
     },
     {
+      "id": "prepare_refund",
+      "role": "Prepare the exact reviewed refund request from order_id and decide.amount_cents. Output object keys: body (a compact JSON string containing order_id, amount_minor_units, and reason), subject (a concise customer email subject containing the order id), confirmation (a clear customer message stating that the approved refund was issued under the policy). Use only recorded state; do not invent identifiers or outcomes.",
+      "autonomy": "full",
+      "capabilities": [
+        {
+          "name": "think",
+          "sideEffect": "read",
+          "budgetCents": 80
+        }
+      ]
+    },
+    {
       "id": "refund",
-      "role": "Issue the refund for decide.amount_cents by POSTing it to the 'url'. This is irreversible, so the run PAUSES here and shows me the exact amount and order to approve, edit, or reject before any money moves. Output object key: refund_id.",
+      "role": "POST the exact prepare_refund.body to the customer-supplied refund API endpoint. This can move real money, so the run pauses and shows the endpoint and payload before dispatch. Never construct or change the payload in this connector step.",
       "autonomy": "suggest",
       "capabilities": [
         {
@@ -52,7 +75,7 @@
     },
     {
       "id": "notify",
-      "role": "Email the customer (customer_email) that the refund was issued, with the amount and order id. This messages a human. Output object key: sent.",
+      "role": "Email prepare_refund.confirmation to customer_email using the explicitly bound subject and body. This messages a human, so show the exact recipient and message for approval before sending.",
       "autonomy": "suggest",
       "capabilities": [
         {
@@ -82,7 +105,7 @@
     },
     {
       "from": "decide",
-      "to": "refund",
+      "to": "prepare_refund",
       "when": {
         "op": "eq",
         "left": {
@@ -94,6 +117,10 @@
           "value": "refund"
         }
       }
+    },
+    {
+      "from": "prepare_refund",
+      "to": "refund"
     },
     {
       "from": "decide",
